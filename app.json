@@ -1,5 +1,5 @@
 {
-"expo": {
+  "expo": {
     "name": "PENCHANT",
     "slug": "penchant",
     "version": "1.0.0",
@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#111111"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true
     },
@@ -23,6 +25,11 @@
     },
     "web": {
       "favicon": "./assets/templogo.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-web-browser",
+      "expo-secure-store"
+    ]
   }
 }

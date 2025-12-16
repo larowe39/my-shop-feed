@@ -13,10 +13,10 @@ export type Product = {
   id: string;
   title: string;
   brand: string;
-  price: string;
-  url: string;
+  price: string | null;
+  url: string | null;
   category: string;
-  image_url?: string;
+  image_url?: string | null;
   created_at?: string;
 };
 
@@ -29,6 +29,7 @@ type ProductsContextType = {
   ) => Promise<void>;
   loading: boolean;
   error: string | null;
+  refresh: () => Promise<void>;
 };
 
 const ProductsContext = createContext<ProductsContextType | undefined>(
@@ -41,39 +42,36 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 🔹 Load products from Supabase on app start
-  useEffect(() => {
-    async function loadProducts() {
-      setLoading(true);
-      setError(null);
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
 
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-      if (error) {
-        console.log("Error loading products", error);
-        setError(error.message);
-      } else if (data) {
-        setProducts(data as Product[]);
-      }
-
+    if (error) {
+      console.log("Error loading products", error);
+      setError(error.message);
       setLoading(false);
+      return;
     }
 
-    loadProducts();
+    setProducts((data as Product[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    refresh();
   }, []);
 
   const toggleLike = (id: string) => {
     setLikedIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : [...prev, id]
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
-  // 🔹 Add a new product to Supabase + local state
   const addProduct = async (
     input: Omit<Product, "id" | "created_at">
   ): Promise<void> => {
@@ -85,6 +83,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         price: input.price,
         url: input.url,
         category: input.category,
+        image_url: input.image_url ?? null,
       })
       .select()
       .single();
@@ -107,6 +106,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       addProduct,
       loading,
       error,
+      refresh,
     }),
     [products, likedIds, loading, error]
   );

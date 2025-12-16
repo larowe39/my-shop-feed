@@ -23,7 +23,7 @@ export default function UploadScreen() {
   const router = useRouter();
   const { refresh } = useProducts();
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [brand, setBrand] = useState("");
   const [price, setPrice] = useState("");
@@ -31,7 +31,6 @@ export default function UploadScreen() {
   const [url, setUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  // Pick from gallery
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
@@ -46,11 +45,10 @@ export default function UploadScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setSelectedImage(result.assets[0].uri);
+      setImageUri(result.assets[0].uri);
     }
   };
 
-  // Take photo
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
@@ -64,17 +62,17 @@ export default function UploadScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setSelectedImage(result.assets[0].uri);
+      setImageUri(result.assets[0].uri);
     }
   };
 
   const handleSave = async () => {
-    if (!selectedImage) {
+    if (!imageUri) {
       Alert.alert("Please pick an image first.");
       return;
     }
 
-    if (!title || !brand || !category) {
+    if (!title.trim() || !brand.trim() || !category.trim()) {
       Alert.alert("Title, brand, and category are required.");
       return;
     }
@@ -82,57 +80,73 @@ export default function UploadScreen() {
     try {
       setIsSaving(true);
 
-      // 1) Turn image URI into an ArrayBuffer (works in Expo / RN)
-      const response = await fetch(selectedImage);
+      // 0) Make sure user is signed in (needed for owner_id + RLS later)
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        Alert.alert("Not signed in", "Please log in again.");
+        return;
+      }
+
+      // 1) Convert local image URI -> ArrayBuffer (RN doesn't support blob() reliably)
+      const response = await fetch(imageUri);
       const arrayBuffer = await response.arrayBuffer();
 
       const ext =
-        selectedImage.split(".").pop()?.split("?")[0]?.toLowerCase() ?? "jpg";
-      const fileName = `${Date.now()}.${ext}`;
+        imageUri.split(".").pop()?.split("?")[0]?.toLowerCase() ?? "jpg";
+      const safeExt = ext === "jpeg" ? "jpg" : ext;
+      const fileName = `${Date.now()}.${safeExt}`;
       const filePath = `products/${fileName}`;
 
-      // 2) Upload to Supabase Storage
-      const { data: uploadData, error: storageError } = await supabase.storage
+      // 2) Upload to Supabase Storage bucket named: "products"
+      const { error: storageError } = await supabase.storage
         .from("products")
         .upload(filePath, arrayBuffer, {
-          contentType: `image/${ext === "jpg" ? "jpeg" : ext}`,
+          contentType: `image/${safeExt === "jpg" ? "jpeg" : safeExt}`,
+          upsert: false,
         });
 
       if (storageError) {
         console.error(storageError);
         Alert.alert("Upload failed", storageError.message);
-        setIsSaving(false);
         return;
       }
 
-      // 3) Get public URL
+      // 3) Get public URL for image
       const { data: publicData } = supabase.storage
         .from("products")
         .getPublicUrl(filePath);
 
       const imageUrl = publicData?.publicUrl ?? "";
 
-      // 4) Insert row into products table
-      const { error: insertError } = await supabase.from("products").insert({
-        title,
-        brand,
-        price: price || null,
-        url: url || null, 
-        category,
-        image_url: imageUrl, // make sure your table has this column if you want it
-      });
+      // 4) Insert product row (URL is OPTIONAL)
+      const insertPayload: any = {
+        title: title.trim(),
+        brand: brand.trim(),
+        price: price.trim() ? price.trim() : null,
+        category: category.trim(),
+        image_url: imageUrl,
+        owner_id: user.id, // if you added owner_id column
+      };
+
+      // only include url if user typed one
+      const cleanUrl = url.trim();
+      if (cleanUrl) insertPayload.url = cleanUrl;
+
+      const { error: insertError } = await supabase
+        .from("products")
+        .insert(insertPayload);
 
       if (insertError) {
         console.error(insertError);
         Alert.alert("Save error", insertError.message);
-        setIsSaving(false);
         return;
       }
 
       Alert.alert("Product saved!");
-
-      // optional: refresh feed
-      refresh?.();
 
       // Reset form
       setTitle("");
@@ -140,7 +154,13 @@ export default function UploadScreen() {
       setPrice("");
       setCategory("shoes");
       setUrl("");
-      setSelectedImage(null);
+      setImageUri(null);
+
+      // Refresh feed data (if you use it)
+      await refresh?.();
+
+      // Optional: navigate back to home
+      router.back();
     } catch (err: any) {
       console.error("Unexpected upload error", err);
       Alert.alert("Unexpected error", err?.message ?? "Something went wrong.");
@@ -151,18 +171,18 @@ export default function UploadScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: "#fff" }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Upload a product</Text>
 
         <View style={styles.imageWrapper}>
-          {selectedImage ? (
-            <Image source={{ uri: selectedImage }} style={styles.image} />
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={styles.image} />
           ) : (
             <View style={styles.placeholder}>
-              <Text style={styles.placeholderText}>No image selected</Text>
+              <Text style={styles.placeholderText}>Pick an image</Text>
             </View>
           )}
         </View>
@@ -171,6 +191,7 @@ export default function UploadScreen() {
           <Pressable style={styles.button} onPress={pickImage}>
             <Text style={styles.buttonText}>Pick from gallery</Text>
           </Pressable>
+
           <Pressable style={styles.button} onPress={takePhoto}>
             <Text style={styles.buttonText}>Take photo</Text>
           </Pressable>
@@ -178,7 +199,7 @@ export default function UploadScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Product title"
+          placeholder="Title"
           value={title}
           onChangeText={setTitle}
         />
@@ -191,31 +212,31 @@ export default function UploadScreen() {
         <TextInput
           style={styles.input}
           placeholder="Price (optional)"
-          keyboardType="numeric"
           value={price}
           onChangeText={setPrice}
+          keyboardType="numeric"
         />
         <TextInput
           style={styles.input}
-          placeholder="Category (e.g. shoes)"
+          placeholder="Category"
           value={category}
           onChangeText={setCategory}
         />
         <TextInput
           style={styles.input}
-          placeholder="Product URL (link to site)"
-          autoCapitalize="none"
+          placeholder="URL (optional)"
           value={url}
           onChangeText={setUrl}
+          autoCapitalize="none"
         />
 
         <Pressable
-          style={styles.saveButton}
+          style={[styles.saveButton, isSaving && { opacity: 0.6 }]}
           onPress={handleSave}
           disabled={isSaving}
         >
           {isSaving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator />
           ) : (
             <Text style={styles.saveButtonText}>Save product</Text>
           )}
@@ -282,7 +303,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 16,
-    marginTop: 8,
   },
   saveButton: {
     marginTop: 12,

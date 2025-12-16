@@ -1,16 +1,18 @@
+import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
 import {
   FlatList,
-  Linking,
+  Image,
   Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 import { useProducts } from "../hooks/ProductsContext";
 
 export default function FeedScreen() {
+  const router = useRouter();
   const { products, likedIds, toggleLike } = useProducts();
 
   const sortedProducts = useMemo(() => {
@@ -36,17 +38,26 @@ export default function FeedScreen() {
 
           return (
             <Pressable
-              onPress={() => item.url && Linking.openURL(item.url)}
+              onPress={() =>
+                router.push({
+                  pathname: "/[id]",
+                  params: { id: item.id },
+                })
+              }
               style={styles.card}
             >
-              <View style={styles.imagePlaceholder}>
-                <Text style={styles.imageText}>IMG</Text>
-              </View>
+              {item.image_url ? (
+                <Image source={{ uri: item.image_url }} style={styles.image} />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Text style={styles.imageText}>IMG</Text>
+                </View>
+              )}
 
               <View style={styles.cardText}>
                 <Text style={styles.brand}>{item.brand}</Text>
                 <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.price}>{item.price}</Text>
+                {!!item.price && <Text style={styles.price}>{item.price}</Text>}
               </View>
 
               <Pressable
@@ -56,12 +67,7 @@ export default function FeedScreen() {
                   toggleLike(item.id);
                 }}
               >
-                <Text
-                  style={[
-                    styles.likeText,
-                    liked && styles.likeTextLiked,
-                  ]}
-                >
+                <Text style={[styles.likeText, liked && styles.likeTextLiked]}>
                   {liked ? "♥" : "♡"}
                 </Text>
               </Pressable>
@@ -97,6 +103,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
+
+  image: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: "#eee",
+  },
   imagePlaceholder: {
     width: 72,
     height: 72,
@@ -107,10 +121,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   imageText: { fontWeight: "bold", color: "#555" },
+
   cardText: { flex: 1 },
   brand: { fontSize: 12, textTransform: "uppercase", color: "#999" },
   title: { fontSize: 16, fontWeight: "600", marginTop: 2 },
   price: { marginTop: 4, fontWeight: "bold", color: "#111" },
+
   likeButton: { paddingHorizontal: 8, paddingVertical: 4 },
   likeText: { fontSize: 20, color: "#999" },
   likeTextLiked: { color: "#e0245e" },
