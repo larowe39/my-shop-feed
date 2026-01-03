@@ -1,33 +1,24 @@
 // lib/supabase.ts
-import { createClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
 import "react-native-url-polyfill/auto";
+import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("Supabase env vars missing");
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export const PRODUCT_BUCKET = "product-images";
+
+// Accepts either a full https URL OR a storage path like "userId/file.jpg"
+export function getProductImageUrl(imageUrl: string | null | undefined) {
+  if (!imageUrl) return null;
+
+  // already a full remote URL (Unsplash / CDN / etc.)
+  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+    return imageUrl;
+  }
+
+  // otherwise treat as Supabase Storage path
+  const { data } = supabase.storage.from(PRODUCT_BUCKET).getPublicUrl(imageUrl);
+  return data.publicUrl ?? null;
 }
-
-// SecureStore adapter (persists login)
-const ExpoSecureStoreAdapter = {
-  getItem: async (key: string) => {
-    return SecureStore.getItemAsync(key);
-  },
-  setItem: async (key: string, value: string) => {
-    await SecureStore.setItemAsync(key, value);
-  },
-  removeItem: async (key: string) => {
-    await SecureStore.deleteItemAsync(key);
-  },
-};
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: ExpoSecureStoreAdapter,
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false,
-  },
-});

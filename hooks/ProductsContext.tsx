@@ -24,17 +24,25 @@ type ProductsContextType = {
   products: Product[];
   likedIds: string[];
   toggleLike: (id: string) => void;
-  addProduct: (
-    input: Omit<Product, "id" | "created_at">
-  ) => Promise<void>;
+  addProduct: (input: Omit<Product, "id" | "created_at">) => Promise<void>;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
 };
 
-const ProductsContext = createContext<ProductsContextType | undefined>(
-  undefined
-);
+const ProductsContext = createContext<ProductsContextType | undefined>(undefined);
+
+const DEMO: Product = {
+  id: "demo-1",
+  title: "Black hoodie, heavy-weight fit",
+  brand: "PENCHANT",
+  price: "98",
+  url: "https://example.com",
+  category: "hoodies",
+  image_url:
+    "https://images.unsplash.com/photo-1520975682031-a3be94a0c177?auto=format&fit=crop&w=1200&q=80",
+  created_at: new Date().toISOString(),
+};
 
 export function ProductsProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -54,11 +62,15 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     if (error) {
       console.log("Error loading products", error);
       setError(error.message);
+      setProducts([DEMO]); // still show something
       setLoading(false);
       return;
     }
 
-    setProducts((data as Product[]) || []);
+    const rows = (data as Product[]) || [];
+    console.log("Loaded products:", rows.length);
+
+    setProducts(rows.length ? rows : [DEMO]);
     setLoading(false);
   };
 
@@ -120,8 +132,6 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
 export function useProducts() {
   const ctx = useContext(ProductsContext);
-  if (!ctx) {
-    throw new Error("useProducts must be used inside ProductsProvider");
-  }
+  if (!ctx) throw new Error("useProducts must be used inside ProductsProvider");
   return ctx;
 }

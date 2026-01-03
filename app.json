@@ -2,6 +2,7 @@
   "expo": {
     "name": "PENCHANT",
     "slug": "penchant",
+    "scheme": "penchant",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/templogo.png",
@@ -11,25 +12,19 @@
       "resizeMode": "contain",
       "backgroundColor": "#111111"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/templogo.png",
+        "foregroundImage": "./assets/images/templogo.png",
         "backgroundColor": "#111111"
       }
     },
     "web": {
-      "favicon": "./assets/templogo.png"
+      "favicon": "./assets/images/templogo.png"
     },
-    "plugins": [
-      "expo-router",
-      "expo-web-browser",
-      "expo-secure-store"
-    ]
+    "plugins": ["expo-router", "expo-web-browser", "expo-secure-store"]
   }
 }
