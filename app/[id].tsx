@@ -2,11 +2,13 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo } from "react";
 import { Image, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { useAuth } from "../hooks/AuthContext";
 import { useProducts } from "../hooks/ProductsContext";
 
 export default function ProductDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
   const { products, likedIds, toggleLike } = useProducts();
 
   const product = useMemo(() => {
@@ -25,6 +27,7 @@ export default function ProductDetailsScreen() {
   }
 
   const liked = likedIds.includes(product.id);
+  const isOwner = String(product.user_id ?? "") === String(user?.id ?? "");
 
   return (
     <SafeAreaView style={styles.container}>
@@ -55,6 +58,15 @@ export default function ProductDetailsScreen() {
             {String(product.price)}
           </Text>
         )}
+
+        {isOwner ? (
+          <Pressable
+            style={styles.editBtn}
+            onPress={() => router.push(`/edit/${encodeURIComponent(String(product.id))}`)}
+          >
+            <Text style={styles.editBtnText}>Edit Product</Text>
+          </Pressable>
+        ) : null}
 
         <View style={styles.row}>
           <Pressable
@@ -102,6 +114,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: "800", marginTop: 6, color: "#111" },
   meta: { marginTop: 10, color: "#444", fontSize: 16 },
   price: { marginTop: 10, fontSize: 18, fontWeight: "800", color: "#111" },
+  editBtn: {
+    marginTop: 14,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  editBtnText: { color: "#111", fontWeight: "700" },
 
   row: { flexDirection: "row", alignItems: "center", marginTop: 16, gap: 12 },
 

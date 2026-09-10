@@ -11,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { useProducts } from "../../hooks/ProductsContext";
 
 function safeImageUri(uri?: string | null) {
@@ -27,6 +28,7 @@ function safeImageUri(uri?: string | null) {
 }
 
 export default function FeedScreen() {
+  const router = useRouter();
   const { products, loading, error } = useProducts();
 
   if (loading) {
@@ -59,7 +61,10 @@ export default function FeedScreen() {
           const link = (item as any).url?.trim?.() || "";
 
           return (
-            <View style={styles.card}>
+            <Pressable
+              style={styles.card}
+              onPress={() => router.push(`/${encodeURIComponent(String(item.id))}`)}
+            >
               {/* header */}
               <View style={styles.header}>
                 <View style={styles.avatar} />
@@ -111,7 +116,7 @@ export default function FeedScreen() {
                   </Pressable>
                 ) : null}
               </View>
-            </View>
+            </Pressable>
           );
         }}
         ListEmptyComponent={

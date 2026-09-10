@@ -12,8 +12,8 @@ import {
   Text,
   TextInput
 } from "react-native";
+import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
-import { supabase } from "../../lib/supabase";
 
 export default function EditProductScreen() {
   const router = useRouter();
@@ -25,7 +25,7 @@ export default function EditProductScreen() {
     return products.find((p: any) => String(p.id) === String(id));
   }, [products, id]);
 
-  const [userId, setUserId] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const [title, setTitle] = useState("");
   const [brand, setBrand] = useState("");
@@ -34,13 +34,6 @@ export default function EditProductScreen() {
   const [url, setUrl] = useState("");
 
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      setUserId(data?.user?.id ?? null);
-    })();
-  }, []);
 
   useEffect(() => {
     if (!product) return;
@@ -53,8 +46,8 @@ export default function EditProductScreen() {
 
   const isOwner = useMemo(() => {
     if (!product) return false;
-    return String(product.owner_id ?? "") === String(userId ?? "");
-  }, [product, userId]);
+    return String(product.user_id ?? "") === String(user?.id ?? "");
+  }, [product, user?.id]);
 
   const handleSave = async () => {
     if (!product) return;

@@ -16,6 +16,7 @@ export type Product = {
   price: string | null;
   url: string | null;
   category: string;
+  user_id?: string | null;
   image_url?: string | null;
   created_at?: string;
 };
@@ -39,6 +40,7 @@ const DEMO: Product = {
   price: "98",
   url: "https://example.com",
   category: "hoodies",
+  user_id: null,
   image_url:
     "https://images.unsplash.com/photo-1520975682031-a3be94a0c177?auto=format&fit=crop&w=1200&q=80",
   created_at: new Date().toISOString(),
