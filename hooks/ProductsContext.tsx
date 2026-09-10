@@ -195,6 +195,24 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const setReactionActive = useCallback(
+    (reaction: ProductReaction, productId: string, active: boolean) => {
+      updateReactionIds(reaction, (prev) => {
+        const hasProduct = prev.includes(productId);
+        if (active && !hasProduct) {
+          return [...prev, productId];
+        }
+        if (!active && hasProduct) {
+          return prev.filter((id) => id !== productId);
+        }
+        return prev;
+      });
+    },
+    [updateReactionIds]
+  );
+
+  // Keep both a ref and state in sync: the ref prevents rapid double-taps from
+  // bypassing the pending guard before React commits, while state drives the UI.
   const setPending = useCallback((key: string, pending: boolean) => {
     if (pending) {
       pendingKeysRef.current.add(key);
@@ -234,9 +252,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
       setPending(key, true);
       pendingReactionValuesRef.current.set(key, nextActive);
-      updateReactionIds(reaction, (prev) =>
-        nextActive ? [...prev, productId] : prev.filter((id) => id !== productId)
-      );
+      setReactionActive(reaction, productId, nextActive);
 
       try {
         if (wasActive) {
@@ -259,16 +275,14 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         return "updated";
       } catch (mutationError) {
         console.log(`Error toggling ${reaction}`, mutationError);
-        updateReactionIds(reaction, (prev) =>
-          wasActive ? [...prev, productId] : prev.filter((id) => id !== productId)
-        );
+        setReactionActive(reaction, productId, wasActive);
         return "error";
       } finally {
         pendingReactionValuesRef.current.delete(key);
         setPending(key, false);
       }
     },
-    [setPending, updateReactionIds, user?.id]
+    [setPending, setReactionActive, user?.id]
   );
 
   const toggleLike = useCallback(
