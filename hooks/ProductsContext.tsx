@@ -5,6 +5,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useAuth } from "./AuthContext";
@@ -57,16 +58,13 @@ const DEMO: Product = {
   created_at: new Date().toISOString(),
 };
 
-function setContains(set: Set<string>, key: string) {
-  return set.has(key);
-}
-
 export function ProductsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [likedIds, setLikedIds] = useState<string[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+  const pendingKeysRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,6 +140,12 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const setPending = useCallback((key: string, pending: boolean) => {
+    if (pending) {
+      pendingKeysRef.current.add(key);
+    } else {
+      pendingKeysRef.current.delete(key);
+    }
+
     setPendingKeys((prev) => {
       const next = new Set(prev);
       if (pending) {
@@ -165,7 +169,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       const key = `${reaction}:${productId}`;
-      if (setContains(pendingKeys, key)) {
+      if (pendingKeysRef.current.has(key)) {
         return true;
       }
 
@@ -206,7 +210,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         setPending(key, false);
       }
     },
-    [pendingKeys, setPending, user?.id]
+    [setPending, user?.id]
   );
 
   const toggleLike = useCallback(
