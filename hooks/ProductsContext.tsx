@@ -84,6 +84,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const pendingReactionValuesRef = useRef<PendingReactionValues>(
     makePendingReactionValues()
   );
+  const reactionLoadRequestIdRef = useRef(0);
   // These refs mirror the rendered liked/saved arrays so async mutations and
   // refreshes can always read the latest intended reaction state.
   const likedIdsRef = useRef<string[]>([]);
@@ -107,6 +108,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   const loadUserReactions = useCallback(
     async (userId: string) => {
+      const requestId = ++reactionLoadRequestIdRef.current;
       const [
         { data: likesData, error: likesError },
         { data: savesData, error: savesError },
@@ -123,6 +125,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
       if (likesError) throw likesError;
       if (savesError) throw savesError;
+      if (requestId !== reactionLoadRequestIdRef.current) return;
 
       const nextLikedIds = ((likesData as ProductReactionRow[] | null) ?? []).map(
         (row) => row.product_id
@@ -301,13 +304,19 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       } catch (mutationError) {
         console.log(`Error toggling ${reaction}`, mutationError);
         setReactionActive(reaction, productId, wasActive);
+        pendingReactionValuesRef.current[reaction].set(productId, wasActive);
         return "error";
       } finally {
+        try {
+          await loadUserReactions(user.id);
+        } catch (reactionsError) {
+          console.log("Error reloading product reactions", reactionsError);
+        }
         pendingReactionValuesRef.current[reaction].delete(productId);
         setPending(reaction, productId, false);
       }
     },
-    [setPending, setReactionActive, user?.id]
+    [loadUserReactions, setPending, setReactionActive, user?.id]
   );
 
   const toggleLike = useCallback(
