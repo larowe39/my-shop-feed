@@ -65,6 +65,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const pendingKeysRef = useRef<Set<string>>(new Set());
+  const likedIdsRef = useRef<string[]>([]);
+  const savedIdsRef = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,12 +102,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       if (likesError) throw likesError;
       if (savesError) throw savesError;
 
-      setLikedIds(
-        ((likesData as ProductReactionRow[] | null) ?? []).map((row) => row.product_id)
+      const nextLikedIds = ((likesData as ProductReactionRow[] | null) ?? []).map(
+        (row) => row.product_id
       );
-      setSavedIds(
-        ((savesData as ProductReactionRow[] | null) ?? []).map((row) => row.product_id)
+      const nextSavedIds = ((savesData as ProductReactionRow[] | null) ?? []).map(
+        (row) => row.product_id
       );
+
+      likedIdsRef.current = nextLikedIds;
+      savedIdsRef.current = nextSavedIds;
+      setLikedIds(nextLikedIds);
+      setSavedIds(nextSavedIds);
     },
     []
   );
@@ -119,8 +126,18 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       setProducts(rows);
 
       if (user?.id) {
-        await loadUserReactions(user.id);
+        try {
+          await loadUserReactions(user.id);
+        } catch (reactionsError) {
+          console.log("Error loading product reactions", reactionsError);
+          likedIdsRef.current = [];
+          savedIdsRef.current = [];
+          setLikedIds([]);
+          setSavedIds([]);
+        }
       } else {
+        likedIdsRef.current = [];
+        savedIdsRef.current = [];
         setLikedIds([]);
         setSavedIds([]);
       }
@@ -138,6 +155,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const updateReactionIds = useCallback(
+    (
+      reaction: ProductReaction,
+      updater: (prev: string[]) => string[]
+    ) => {
+      const ref = reaction === "like" ? likedIdsRef : savedIdsRef;
+      const setIds = reaction === "like" ? setLikedIds : setSavedIds;
+      const nextIds = updater(ref.current);
+      ref.current = nextIds;
+      setIds(nextIds);
+      return nextIds;
+    },
+    []
+  );
 
   const setPending = useCallback((key: string, pending: boolean) => {
     if (pending) {
@@ -160,9 +192,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const toggleReaction = useCallback(
     async (
       productId: string,
-      reaction: ProductReaction,
-      ids: string[],
-      setIds: React.Dispatch<React.SetStateAction<string[]>>
+      reaction: ProductReaction
     ) => {
       if (!user?.id) {
         return false;
@@ -174,10 +204,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
 
       const table = reaction === "like" ? "product_likes" : "product_saves";
-      const wasActive = ids.includes(productId);
+      const idsRef = reaction === "like" ? likedIdsRef : savedIdsRef;
+      const wasActive = idsRef.current.includes(productId);
 
       setPending(key, true);
-      setIds((prev) =>
+      updateReactionIds(reaction, (prev) =>
         wasActive ? prev.filter((id) => id !== productId) : [...prev, productId]
       );
 
@@ -202,7 +233,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         return true;
       } catch (mutationError) {
         console.log(`Error toggling ${reaction}`, mutationError);
-        setIds((prev) =>
+        updateReactionIds(reaction, (prev) =>
           wasActive ? [...prev, productId] : prev.filter((id) => id !== productId)
         );
         return false;
@@ -210,17 +241,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         setPending(key, false);
       }
     },
-    [setPending, user?.id]
+    [setPending, updateReactionIds, user?.id]
   );
 
   const toggleLike = useCallback(
-    (id: string) => toggleReaction(id, "like", likedIds, setLikedIds),
-    [likedIds, toggleReaction]
+    (id: string) => toggleReaction(id, "like"),
+    [toggleReaction]
   );
 
   const toggleSave = useCallback(
-    (id: string) => toggleReaction(id, "save", savedIds, setSavedIds),
-    [savedIds, toggleReaction]
+    (id: string) => toggleReaction(id, "save"),
+    [toggleReaction]
   );
 
   const addProduct = async (
