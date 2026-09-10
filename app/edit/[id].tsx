@@ -19,6 +19,7 @@ import { supabase } from "../../lib/supabase";
 export default function EditProductScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const productsTable = supabase.from("products");
 
   const { products, refresh } = useProducts();
 
@@ -71,8 +72,7 @@ export default function EditProductScreen() {
 
       const finalPrice = price.trim().length ? price.trim() : null; // price optional
 
-      const { error } = await supabase
-        .from("products")
+      const { error } = await productsTable
         .update({
           title: title.trim(),
           brand: brand.trim(),

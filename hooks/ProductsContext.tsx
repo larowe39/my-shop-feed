@@ -145,6 +145,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       console.log("Error loading products", refreshError);
       setError(refreshError?.message ?? "Failed to load products.");
       setProducts([DEMO]);
+      likedIdsRef.current = [];
+      savedIdsRef.current = [];
       setLikedIds([]);
       setSavedIds([]);
     } finally {
