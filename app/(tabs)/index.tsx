@@ -71,6 +71,7 @@ export default function FeedScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {!!reactionError && <Text style={styles.reactionError}>{reactionError}</Text>}
       <FlatList
         data={products}
         keyExtractor={(item) => String(item.id)}
@@ -124,7 +125,6 @@ export default function FeedScreen() {
               <View style={styles.caption}>
                 <Text style={styles.title}>{item.title}</Text>
                 {!!item.price && <Text style={styles.price}>${item.price}</Text>}
-                {!!reactionError && <Text style={styles.reactionError}>{reactionError}</Text>}
 
                 {!!link ? (
                   <Pressable
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   actionText: { color: "#666", fontWeight: "700" },
   actionTextLiked: { color: "#e0245e" },
   actionTextSaved: { color: "#111" },
-  reactionError: { color: "#b00020", fontSize: 12, marginTop: 2 },
+  reactionError: { color: "#b00020", fontSize: 12, marginHorizontal: 14, marginTop: 12 },
 
   errorTitle: { fontSize: 18, fontWeight: "700", color: "#b00020" },
   errorText: { color: "#b00020", paddingHorizontal: 20, textAlign: "center" },

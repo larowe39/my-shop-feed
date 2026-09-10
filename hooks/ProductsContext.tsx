@@ -67,6 +67,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const pendingKeysRef = useRef<Set<string>>(new Set());
+  const pendingReactionValuesRef = useRef<Map<string, boolean>>(new Map());
   const likedIdsRef = useRef<string[]>([]);
   const savedIdsRef = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +112,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       const nextSavedIds = ((savesData as ProductReactionRow[] | null) ?? []).map(
         (row) => row.product_id
       );
+
+      for (const [key, isActive] of pendingReactionValuesRef.current.entries()) {
+        const [reaction, productId] = key.split(":");
+        const targetIds = reaction === "like" ? nextLikedIds : nextSavedIds;
+        const hasProduct = targetIds.includes(productId);
+
+        if (isActive && !hasProduct) {
+          targetIds.push(productId);
+        }
+
+        if (!isActive && hasProduct) {
+          const idx = targetIds.indexOf(productId);
+          targetIds.splice(idx, 1);
+        }
+      }
 
       likedIdsRef.current = nextLikedIds;
       savedIdsRef.current = nextSavedIds;
@@ -214,10 +230,12 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       const table = reaction === "like" ? "product_likes" : "product_saves";
       const idsRef = reaction === "like" ? likedIdsRef : savedIdsRef;
       const wasActive = idsRef.current.includes(productId);
+      const nextActive = !wasActive;
 
       setPending(key, true);
+      pendingReactionValuesRef.current.set(key, nextActive);
       updateReactionIds(reaction, (prev) =>
-        wasActive ? prev.filter((id) => id !== productId) : [...prev, productId]
+        nextActive ? [...prev, productId] : prev.filter((id) => id !== productId)
       );
 
       try {
@@ -246,6 +264,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         );
         return "error";
       } finally {
+        pendingReactionValuesRef.current.delete(key);
         setPending(key, false);
       }
     },
