@@ -25,6 +25,8 @@ export type Product = {
 
 type ProductReaction = "like" | "save";
 type ToggleReactionResult = "updated" | "pending" | "auth_required" | "error";
+type PendingReactionSets = Record<ProductReaction, Set<string>>;
+type PendingReactionValues = Record<ProductReaction, Map<string, boolean>>;
 
 type ProductsContextType = {
   products: Product[];
@@ -60,14 +62,30 @@ const DEMO: Product = {
   created_at: new Date().toISOString(),
 };
 
+function makePendingReactionSets(): PendingReactionSets {
+  return { like: new Set<string>(), save: new Set<string>() };
+}
+
+function makePendingReactionValues(): PendingReactionValues {
+  return { like: new Map<string, boolean>(), save: new Map<string, boolean>() };
+}
+
 export function ProductsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [likedIds, setLikedIds] = useState<string[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
-  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
-  const pendingKeysRef = useRef<Set<string>>(new Set());
-  const pendingReactionValuesRef = useRef<Map<string, boolean>>(new Map());
+  const [pendingReactions, setPendingReactions] = useState<PendingReactionSets>(
+    makePendingReactionSets
+  );
+  // Refs keep rapid toggles and refresh reconciliation in sync with the latest
+  // optimistic reaction state before React finishes committing visible updates.
+  const pendingReactionsRef = useRef<PendingReactionSets>(makePendingReactionSets());
+  const pendingReactionValuesRef = useRef<PendingReactionValues>(
+    makePendingReactionValues()
+  );
+  // These refs mirror the rendered liked/saved arrays so async mutations and
+  // refreshes can always read the latest intended reaction state.
   const likedIdsRef = useRef<string[]>([]);
   const savedIdsRef = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,18 +131,22 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         (row) => row.product_id
       );
 
-      for (const [key, isActive] of pendingReactionValuesRef.current.entries()) {
-        const [reaction, productId] = key.split(":");
+      for (const reaction of ["like", "save"] as const) {
         const targetIds = reaction === "like" ? nextLikedIds : nextSavedIds;
-        const hasProduct = targetIds.includes(productId);
 
-        if (isActive && !hasProduct) {
-          targetIds.push(productId);
-        }
+        for (const [productId, isActive] of pendingReactionValuesRef.current[
+          reaction
+        ].entries()) {
+          const hasProduct = targetIds.includes(productId);
 
-        if (!isActive && hasProduct) {
-          const idx = targetIds.indexOf(productId);
-          targetIds.splice(idx, 1);
+          if (isActive && !hasProduct) {
+            targetIds.push(productId);
+          }
+
+          if (!isActive && hasProduct) {
+            const idx = targetIds.indexOf(productId);
+            targetIds.splice(idx, 1);
+          }
         }
       }
 
@@ -167,10 +189,6 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       console.log("Error loading products", refreshError);
       setError(refreshError?.message ?? "Failed to load products.");
       setProducts([DEMO]);
-      likedIdsRef.current = [];
-      savedIdsRef.current = [];
-      setLikedIds([]);
-      setSavedIds([]);
     } finally {
       setLoading(false);
     }
@@ -213,23 +231,31 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   // Keep both a ref and state in sync: the ref prevents rapid double-taps from
   // bypassing the pending guard before React commits, while state drives the UI.
-  const setPending = useCallback((key: string, pending: boolean) => {
-    if (pending) {
-      pendingKeysRef.current.add(key);
-    } else {
-      pendingKeysRef.current.delete(key);
-    }
-
-    setPendingKeys((prev) => {
-      const next = new Set(prev);
+  const setPending = useCallback(
+    (reaction: ProductReaction, productId: string, pending: boolean) => {
       if (pending) {
-        next.add(key);
+        pendingReactionsRef.current[reaction].add(productId);
       } else {
-        next.delete(key);
+        pendingReactionsRef.current[reaction].delete(productId);
       }
-      return next;
-    });
-  }, []);
+
+      setPendingReactions((prev) => {
+        const next = {
+          like: new Set(prev.like),
+          save: new Set(prev.save),
+        };
+
+        if (pending) {
+          next[reaction].add(productId);
+        } else {
+          next[reaction].delete(productId);
+        }
+
+        return next;
+      });
+    },
+    []
+  );
 
   const toggleReaction = useCallback(
     async (
@@ -240,8 +266,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         return "auth_required";
       }
 
-      const key = `${reaction}:${productId}`;
-      if (pendingKeysRef.current.has(key)) {
+      if (pendingReactionsRef.current[reaction].has(productId)) {
         return "pending";
       }
 
@@ -250,8 +275,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       const wasActive = idsRef.current.includes(productId);
       const nextActive = !wasActive;
 
-      setPending(key, true);
-      pendingReactionValuesRef.current.set(key, nextActive);
+      setPending(reaction, productId, true);
+      pendingReactionValuesRef.current[reaction].set(productId, nextActive);
       setReactionActive(reaction, productId, nextActive);
 
       try {
@@ -278,8 +303,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         setReactionActive(reaction, productId, wasActive);
         return "error";
       } finally {
-        pendingReactionValuesRef.current.delete(key);
-        setPending(key, false);
+        pendingReactionValuesRef.current[reaction].delete(productId);
+        setPending(reaction, productId, false);
       }
     },
     [setPending, setReactionActive, user?.id]
@@ -327,8 +352,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       products,
       likedIds,
       savedIds,
-      isLikePending: (id: string) => pendingKeys.has(`like:${id}`),
-      isSavePending: (id: string) => pendingKeys.has(`save:${id}`),
+      isLikePending: (id: string) => pendingReactions.like.has(id),
+      isSavePending: (id: string) => pendingReactions.save.has(id),
       toggleLike,
       toggleSave,
       addProduct,
@@ -341,7 +366,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       products,
       likedIds,
       savedIds,
-      pendingKeys,
+      pendingReactions,
       toggleLike,
       toggleSave,
       loading,
