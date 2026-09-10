@@ -37,6 +37,7 @@ type ProductsContextType = {
   addProduct: (input: Omit<Product, "id" | "created_at">) => Promise<void>;
   loading: boolean;
   error: string | null;
+  reactionError: string | null;
   refresh: () => Promise<void>;
 };
 
@@ -70,6 +71,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const savedIdsRef = useRef<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reactionError, setReactionError] = useState<string | null>(null);
 
   const loadProducts = useCallback(async (): Promise<Product[]> => {
     const { data, error: productsError } = await supabase
@@ -121,6 +123,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setReactionError(null);
 
     try {
       const rows = await loadProducts();
@@ -131,6 +134,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           await loadUserReactions(user.id);
         } catch (reactionsError) {
           console.log("Error loading product reactions", reactionsError);
+          setReactionError("We couldn't load your likes and saves right now.");
           likedIdsRef.current = [];
           savedIdsRef.current = [];
           setLikedIds([]);
@@ -141,6 +145,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         savedIdsRef.current = [];
         setLikedIds([]);
         setSavedIds([]);
+        setReactionError(null);
       }
     } catch (refreshError: any) {
       console.log("Error loading products", refreshError);
@@ -296,9 +301,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       addProduct,
       loading,
       error,
+      reactionError,
       refresh,
     }),
-    [products, likedIds, savedIds, pendingKeys, toggleLike, toggleSave, loading, error, refresh]
+    [
+      products,
+      likedIds,
+      savedIds,
+      pendingKeys,
+      toggleLike,
+      toggleSave,
+      loading,
+      error,
+      reactionError,
+      refresh,
+    ]
   );
 
   return (

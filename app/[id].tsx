@@ -26,6 +26,7 @@ export default function ProductDetailsScreen() {
     isSavePending,
     toggleLike,
     toggleSave,
+    reactionError,
   } = useProducts();
 
   const product = useMemo(() => {
@@ -85,6 +86,8 @@ export default function ProductDetailsScreen() {
           </Text>
         )}
 
+        {!!reactionError && <Text style={styles.reactionError}>{reactionError}</Text>}
+
         {isOwner ? (
           <Pressable
             style={styles.editBtn}
@@ -108,6 +111,9 @@ export default function ProductDetailsScreen() {
           <Pressable
             style={[styles.reactionBtn, likePending && styles.btnDisabled]}
             disabled={likePending}
+            accessibilityRole="button"
+            accessibilityLabel={liked ? "Unlike product" : "Like product"}
+            accessibilityState={{ disabled: likePending, selected: liked }}
             onPress={async () => {
               if (!requireAuth()) return;
               const result = await toggleLike(product.id);
@@ -124,6 +130,9 @@ export default function ProductDetailsScreen() {
           <Pressable
             style={[styles.reactionBtn, savePending && styles.btnDisabled]}
             disabled={savePending}
+            accessibilityRole="button"
+            accessibilityLabel={saved ? "Remove saved product" : "Save product"}
+            accessibilityState={{ disabled: savePending, selected: saved }}
             onPress={async () => {
               if (!requireAuth()) return;
               const result = await toggleSave(product.id);
@@ -163,6 +172,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 26, fontWeight: "800", marginTop: 6, color: "#111" },
   meta: { marginTop: 10, color: "#444", fontSize: 16 },
   price: { marginTop: 10, fontSize: 18, fontWeight: "800", color: "#111" },
+  reactionError: { marginTop: 10, color: "#b00020", fontSize: 13 },
   editBtn: {
     marginTop: 14,
     alignSelf: "flex-start",

@@ -42,6 +42,7 @@ export default function FeedScreen() {
     toggleSave,
     loading,
     error,
+    reactionError,
   } = useProducts();
 
   const requireAuth = () => {
@@ -123,6 +124,7 @@ export default function FeedScreen() {
               <View style={styles.caption}>
                 <Text style={styles.title}>{item.title}</Text>
                 {!!item.price && <Text style={styles.price}>${item.price}</Text>}
+                {!!reactionError && <Text style={styles.reactionError}>{reactionError}</Text>}
 
                 {!!link ? (
                   <Pressable
@@ -143,6 +145,9 @@ export default function FeedScreen() {
                   <Pressable
                     style={[styles.actionBtn, likePending && styles.actionBtnDisabled]}
                     disabled={likePending}
+                    accessibilityRole="button"
+                    accessibilityLabel={liked ? "Unlike product" : "Like product"}
+                    accessibilityState={{ disabled: likePending, selected: liked }}
                     onPress={async (event) => {
                       event.stopPropagation();
                       if (!requireAuth()) return;
@@ -160,6 +165,9 @@ export default function FeedScreen() {
                   <Pressable
                     style={[styles.actionBtn, savePending && styles.actionBtnDisabled]}
                     disabled={savePending}
+                    accessibilityRole="button"
+                    accessibilityLabel={saved ? "Remove saved product" : "Save product"}
+                    accessibilityState={{ disabled: savePending, selected: saved }}
                     onPress={async (event) => {
                       event.stopPropagation();
                       if (!requireAuth()) return;
@@ -232,6 +240,7 @@ const styles = StyleSheet.create({
   actionText: { color: "#666", fontWeight: "700" },
   actionTextLiked: { color: "#e0245e" },
   actionTextSaved: { color: "#111" },
+  reactionError: { color: "#b00020", fontSize: 12, marginTop: 2 },
 
   errorTitle: { fontSize: 18, fontWeight: "700", color: "#b00020" },
   errorText: { color: "#b00020", paddingHorizontal: 20, textAlign: "center" },

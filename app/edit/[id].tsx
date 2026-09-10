@@ -16,6 +16,10 @@ import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
 import { supabase } from "../../lib/supabase";
 
+function getProductsTable() {
+  return supabase.from("products");
+}
+
 export default function EditProductScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -71,8 +75,7 @@ export default function EditProductScreen() {
 
       const finalPrice = price.trim().length ? price.trim() : null; // price optional
 
-      const { error } = await supabase
-        .from("products")
+      const { error } = await getProductsTable()
         .update({
           title: title.trim(),
           brand: brand.trim(),
