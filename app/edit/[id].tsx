@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
+import { supabase } from "../../lib/supabase";
 
 export default function EditProductScreen() {
   const router = useRouter();

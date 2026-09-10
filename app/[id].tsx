@@ -1,7 +1,16 @@
 // app/[id].tsx
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo } from "react";
-import { Image, Linking, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Image,
+  Linking,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useAuth } from "../hooks/AuthContext";
 import { useProducts } from "../hooks/ProductsContext";
 
@@ -9,7 +18,15 @@ export default function ProductDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { products, likedIds, toggleLike } = useProducts();
+  const {
+    products,
+    likedIds,
+    savedIds,
+    isLikePending,
+    isSavePending,
+    toggleLike,
+    toggleSave,
+  } = useProducts();
 
   const product = useMemo(() => {
     return products.find((p: any) => String(p.id) === String(id));
@@ -27,7 +44,16 @@ export default function ProductDetailsScreen() {
   }
 
   const liked = likedIds.includes(product.id);
+  const saved = savedIds.includes(product.id);
   const isOwner = String(product.user_id ?? "") === String(user?.id ?? "");
+  const likePending = isLikePending(product.id);
+  const savePending = isSavePending(product.id);
+
+  const requireAuth = () => {
+    if (user) return true;
+    Alert.alert("Sign in required", "Please sign in to like or save products.");
+    return false;
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -80,11 +106,34 @@ export default function ProductDetailsScreen() {
           </Pressable>
 
           <Pressable
-            style={styles.likeBtn}
-            onPress={() => toggleLike(product.id)}
+            style={[styles.reactionBtn, likePending && styles.btnDisabled]}
+            disabled={likePending}
+            onPress={async () => {
+              if (!requireAuth()) return;
+              const ok = await toggleLike(product.id);
+              if (!ok) {
+                Alert.alert("Like failed", "We couldn't update your like just now.");
+              }
+            }}
           >
-            <Text style={[styles.likeText, liked && styles.likeTextLiked]}>
-              {liked ? "♥" : "♡"}
+            <Text style={[styles.reactionText, liked && styles.likeTextLiked]}>
+              {liked ? "♥ Liked" : "♡ Like"}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.reactionBtn, savePending && styles.btnDisabled]}
+            disabled={savePending}
+            onPress={async () => {
+              if (!requireAuth()) return;
+              const ok = await toggleSave(product.id);
+              if (!ok) {
+                Alert.alert("Save failed", "We couldn't update your save just now.");
+              }
+            }}
+          >
+            <Text style={[styles.reactionText, saved && styles.saveTextActive]}>
+              {saved ? "★ Saved" : "☆ Save"}
             </Text>
           </Pressable>
         </View>
@@ -138,15 +187,17 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.4 },
   btnText: { color: "#fff", fontWeight: "700" },
 
-  likeBtn: {
-    width: 54,
+  reactionBtn: {
+    minWidth: 92,
     height: 44,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#ddd",
+    paddingHorizontal: 14,
   },
-  likeText: { fontSize: 22, color: "#999" },
+  reactionText: { fontSize: 16, color: "#999", fontWeight: "700" },
   likeTextLiked: { color: "#e0245e" },
+  saveTextActive: { color: "#111" },
 });

@@ -2,6 +2,7 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Linking,
@@ -12,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
 
 function safeImageUri(uri?: string | null) {
@@ -29,7 +31,24 @@ function safeImageUri(uri?: string | null) {
 
 export default function FeedScreen() {
   const router = useRouter();
-  const { products, loading, error } = useProducts();
+  const { user } = useAuth();
+  const {
+    products,
+    likedIds,
+    savedIds,
+    isLikePending,
+    isSavePending,
+    toggleLike,
+    toggleSave,
+    loading,
+    error,
+  } = useProducts();
+
+  const requireAuth = () => {
+    if (user) return true;
+    Alert.alert("Sign in required", "Please sign in to like or save products.");
+    return false;
+  };
 
   if (loading) {
     return (
@@ -59,6 +78,10 @@ export default function FeedScreen() {
         renderItem={({ item }) => {
           const uri = safeImageUri((item as any).image_url);
           const link = (item as any).url?.trim?.() || "";
+          const liked = likedIds.includes(item.id);
+          const saved = savedIds.includes(item.id);
+          const likePending = isLikePending(item.id);
+          const savePending = isSavePending(item.id);
 
           return (
             <Pressable
@@ -115,6 +138,42 @@ export default function FeedScreen() {
                     <Text style={styles.url}>{link}</Text>
                   </Pressable>
                 ) : null}
+
+                <View style={styles.actionsRow}>
+                  <Pressable
+                    style={[styles.actionBtn, likePending && styles.actionBtnDisabled]}
+                    disabled={likePending}
+                    onPress={async (event) => {
+                      event.stopPropagation();
+                      if (!requireAuth()) return;
+                      const ok = await toggleLike(item.id);
+                      if (!ok) {
+                        Alert.alert("Like failed", "We couldn't update your like just now.");
+                      }
+                    }}
+                  >
+                    <Text style={[styles.actionText, liked && styles.actionTextLiked]}>
+                      {liked ? "♥ Liked" : "♡ Like"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[styles.actionBtn, savePending && styles.actionBtnDisabled]}
+                    disabled={savePending}
+                    onPress={async (event) => {
+                      event.stopPropagation();
+                      if (!requireAuth()) return;
+                      const ok = await toggleSave(item.id);
+                      if (!ok) {
+                        Alert.alert("Save failed", "We couldn't update your save just now.");
+                      }
+                    }}
+                  >
+                    <Text style={[styles.actionText, saved && styles.actionTextSaved]}>
+                      {saved ? "★ Saved" : "☆ Save"}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             </Pressable>
           );
@@ -161,6 +220,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 14, color: "#111" },
   price: { fontSize: 13, color: "#111", fontWeight: "600" },
   url: { fontSize: 12, color: "#0a66c2" },
+  actionsRow: { flexDirection: "row", gap: 10, marginTop: 8 },
+  actionBtn: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  actionBtnDisabled: { opacity: 0.5 },
+  actionText: { color: "#666", fontWeight: "700" },
+  actionTextLiked: { color: "#e0245e" },
+  actionTextSaved: { color: "#111" },
 
   errorTitle: { fontSize: 18, fontWeight: "700", color: "#b00020" },
   errorText: { color: "#b00020", paddingHorizontal: 20, textAlign: "center" },

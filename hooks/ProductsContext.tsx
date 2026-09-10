@@ -1,12 +1,13 @@
-// hooks/ProductsContext.tsx
 import React, {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import { useAuth } from "./AuthContext";
 import { supabase } from "../lib/supabase";
 
 export type Product = {
@@ -21,14 +22,24 @@ export type Product = {
   created_at?: string;
 };
 
+type ProductReaction = "like" | "save";
+
 type ProductsContextType = {
   products: Product[];
   likedIds: string[];
-  toggleLike: (id: string) => void;
+  savedIds: string[];
+  isLikePending: (id: string) => boolean;
+  isSavePending: (id: string) => boolean;
+  toggleLike: (id: string) => Promise<boolean>;
+  toggleSave: (id: string) => Promise<boolean>;
   addProduct: (input: Omit<Product, "id" | "created_at">) => Promise<void>;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+};
+
+type ProductReactionRow = {
+  product_id: string;
 };
 
 const ProductsContext = createContext<ProductsContextType | undefined>(undefined);
@@ -46,50 +57,172 @@ const DEMO: Product = {
   created_at: new Date().toISOString(),
 };
 
+function setContains(set: Set<string>, key: string) {
+  return set.has(key);
+}
+
 export function ProductsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [likedIds, setLikedIds] = useState<string[]>([]);
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
-    setLoading(true);
-    setError(null);
-
-    const { data, error } = await supabase
+  const loadProducts = useCallback(async (): Promise<Product[]> => {
+    const { data, error: productsError } = await supabase
       .from("products")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.log("Error loading products", error);
-      setError(error.message);
-      setProducts([DEMO]); // still show something
-      setLoading(false);
-      return;
+    if (productsError) {
+      throw productsError;
     }
 
-    const rows = (data as Product[]) || [];
-    console.log("Loaded products:", rows.length);
+    return ((data as Product[]) || []).length ? (data as Product[]) : [DEMO];
+  }, []);
 
-    setProducts(rows.length ? rows : [DEMO]);
-    setLoading(false);
-  };
+  const loadUserReactions = useCallback(
+    async (userId: string) => {
+      const [
+        { data: likesData, error: likesError },
+        { data: savesData, error: savesError },
+      ] = await Promise.all([
+        supabase
+          .from("product_likes")
+          .select("product_id")
+          .eq("user_id", userId),
+        supabase
+          .from("product_saves")
+          .select("product_id")
+          .eq("user_id", userId),
+      ]);
+
+      if (likesError) throw likesError;
+      if (savesError) throw savesError;
+
+      setLikedIds(
+        ((likesData as ProductReactionRow[] | null) ?? []).map((row) => row.product_id)
+      );
+      setSavedIds(
+        ((savesData as ProductReactionRow[] | null) ?? []).map((row) => row.product_id)
+      );
+    },
+    []
+  );
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const rows = await loadProducts();
+      setProducts(rows);
+
+      if (user?.id) {
+        await loadUserReactions(user.id);
+      } else {
+        setLikedIds([]);
+        setSavedIds([]);
+      }
+    } catch (refreshError: any) {
+      console.log("Error loading products", refreshError);
+      setError(refreshError?.message ?? "Failed to load products.");
+      setProducts([DEMO]);
+      setLikedIds([]);
+      setSavedIds([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadProducts, loadUserReactions, user?.id]);
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  const setPending = useCallback((key: string, pending: boolean) => {
+    setPendingKeys((prev) => {
+      const next = new Set(prev);
+      if (pending) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
   }, []);
 
-  const toggleLike = (id: string) => {
-    setLikedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
+  const toggleReaction = useCallback(
+    async (
+      productId: string,
+      reaction: ProductReaction,
+      ids: string[],
+      setIds: React.Dispatch<React.SetStateAction<string[]>>
+    ) => {
+      if (!user?.id) {
+        return false;
+      }
+
+      const key = `${reaction}:${productId}`;
+      if (setContains(pendingKeys, key)) {
+        return true;
+      }
+
+      const table = reaction === "like" ? "product_likes" : "product_saves";
+      const wasActive = ids.includes(productId);
+
+      setPending(key, true);
+      setIds((prev) =>
+        wasActive ? prev.filter((id) => id !== productId) : [...prev, productId]
+      );
+
+      try {
+        if (wasActive) {
+          const { error: deleteError } = await supabase
+            .from(table)
+            .delete()
+            .eq("user_id", user.id)
+            .eq("product_id", productId);
+
+          if (deleteError) throw deleteError;
+        } else {
+          const { error: insertError } = await supabase.from(table).insert({
+            user_id: user.id,
+            product_id: productId,
+          });
+
+          if (insertError) throw insertError;
+        }
+
+        return true;
+      } catch (mutationError) {
+        console.log(`Error toggling ${reaction}`, mutationError);
+        setIds((prev) =>
+          wasActive ? [...prev, productId] : prev.filter((id) => id !== productId)
+        );
+        return false;
+      } finally {
+        setPending(key, false);
+      }
+    },
+    [pendingKeys, setPending, user?.id]
+  );
+
+  const toggleLike = useCallback(
+    (id: string) => toggleReaction(id, "like", likedIds, setLikedIds),
+    [likedIds, toggleReaction]
+  );
+
+  const toggleSave = useCallback(
+    (id: string) => toggleReaction(id, "save", savedIds, setSavedIds),
+    [savedIds, toggleReaction]
+  );
 
   const addProduct = async (
     input: Omit<Product, "id" | "created_at">
   ): Promise<void> => {
-    const { data, error } = await supabase
+    const { data, error: insertError } = await supabase
       .from("products")
       .insert({
         title: input.title,
@@ -98,13 +231,14 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         url: input.url,
         category: input.category,
         image_url: input.image_url ?? null,
+        user_id: input.user_id ?? null,
       })
       .select()
       .single();
 
-    if (error) {
-      console.log("Error adding product", error);
-      throw error;
+    if (insertError) {
+      console.log("Error adding product", insertError);
+      throw insertError;
     }
 
     if (data) {
@@ -116,13 +250,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     () => ({
       products,
       likedIds,
+      savedIds,
+      isLikePending: (id: string) => pendingKeys.has(`like:${id}`),
+      isSavePending: (id: string) => pendingKeys.has(`save:${id}`),
       toggleLike,
+      toggleSave,
       addProduct,
       loading,
       error,
       refresh,
     }),
-    [products, likedIds, loading, error]
+    [products, likedIds, savedIds, pendingKeys, toggleLike, toggleSave, loading, error, refresh]
   );
 
   return (
