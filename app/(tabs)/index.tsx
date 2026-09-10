@@ -34,6 +34,7 @@ export default function FeedScreen() {
   const { user } = useAuth();
   const {
     products,
+    sellerProfiles,
     likedIds,
     savedIds,
     isLikePending,
@@ -79,6 +80,9 @@ export default function FeedScreen() {
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={({ item }) => {
           const uri = safeImageUri((item as any).image_url);
+          const sellerProfile = item.user_id ? sellerProfiles[item.user_id] : undefined;
+          const sellerName = sellerProfile?.display_name?.trim() || item.brand || "Seller";
+          const sellerAvatarUri = safeImageUri(sellerProfile?.avatar_url);
           const link = (item as any).url?.trim?.() || "";
           const liked = likedIds.includes(item.id);
           const saved = savedIds.includes(item.id);
@@ -92,11 +96,25 @@ export default function FeedScreen() {
             >
               {/* header */}
               <View style={styles.header}>
-                <View style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.brand}>{item.brand || "PENCHANT"}</Text>
-                  <Text style={styles.category}>{item.category}</Text>
-                </View>
+                <Pressable
+                  style={styles.sellerButton}
+                  disabled={!item.user_id}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    if (!item.user_id) return;
+                    router.push(`/seller/${encodeURIComponent(item.user_id)}`);
+                  }}
+                >
+                  {sellerAvatarUri ? (
+                    <Image source={{ uri: sellerAvatarUri }} style={styles.avatarImage} />
+                  ) : (
+                    <View style={styles.avatar} />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.brand}>{sellerName}</Text>
+                    <Text style={styles.category}>{item.category}</Text>
+                  </View>
+                </Pressable>
               </View>
 
               {/* image */}
@@ -211,7 +229,19 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     gap: 10,
   },
+  sellerButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#ddd",
+  },
+  avatarImage: {
     width: 34,
     height: 34,
     borderRadius: 17,
