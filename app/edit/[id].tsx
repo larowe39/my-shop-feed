@@ -14,13 +14,12 @@ import {
 } from "react-native";
 import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
-import { supabase } from "../../lib/supabase";
 
 export default function EditProductScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const { products, refresh } = useProducts();
+  const { products, updateProduct } = useProducts();
 
   const product = useMemo(() => {
     return products.find((p: any) => String(p.id) === String(id));
@@ -71,25 +70,18 @@ export default function EditProductScreen() {
 
       const finalPrice = price.trim().length ? price.trim() : null; // price optional
 
-      const { error } = await supabase
-        .from("products")
-        .update({
+      await updateProduct(product.id, {
           title: title.trim(),
           brand: brand.trim(),
           category: category.trim(),
           price: finalPrice,
           url: finalUrl,
-        })
-        .eq("id", product.id);
+        });
 
-      if (error) {
-        Alert.alert("Update failed", error.message);
-        return;
-      }
-
-      await refresh?.();
       Alert.alert("Saved!");
       router.back();
+    } catch (error: any) {
+      Alert.alert("Update failed", error?.message ?? "Unknown error");
     } finally {
       setSaving(false);
     }

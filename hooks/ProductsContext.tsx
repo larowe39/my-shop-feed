@@ -37,6 +37,10 @@ type ProductsContextType = {
   toggleLike: (id: string) => Promise<ToggleReactionResult>;
   toggleSave: (id: string) => Promise<ToggleReactionResult>;
   addProduct: (input: Omit<Product, "id" | "created_at">) => Promise<void>;
+  updateProduct: (
+    id: string,
+    input: Partial<Omit<Product, "id" | "created_at">>
+  ) => Promise<void>;
   loading: boolean;
   error: string | null;
   reactionError: string | null;
@@ -356,6 +360,30 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateProduct = async (
+    id: string,
+    input: Partial<Omit<Product, "id" | "created_at">>
+  ): Promise<void> => {
+    const { data, error: updateError } = await supabase
+      .from("products")
+      .update(input)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (data) {
+      setProducts((prev) =>
+        prev.map((product) =>
+          product.id === id ? ({ ...product, ...(data as Product) } as Product) : product
+        )
+      );
+    }
+  };
+
   const value = useMemo(
     () => ({
       products,
@@ -366,6 +394,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       toggleLike,
       toggleSave,
       addProduct,
+      updateProduct,
       loading,
       error,
       reactionError,
@@ -378,6 +407,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       pendingReactions,
       toggleLike,
       toggleSave,
+      updateProduct,
       loading,
       error,
       reactionError,
