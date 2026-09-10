@@ -180,10 +180,6 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         } catch (reactionsError) {
           console.log("Error loading product reactions", reactionsError);
           setReactionError("We couldn't load your likes and saves right now.");
-          likedIdsRef.current = [];
-          savedIdsRef.current = [];
-          setLikedIds([]);
-          setSavedIds([]);
         }
       } else {
         likedIdsRef.current = [];
@@ -364,10 +360,15 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     id: string,
     input: Partial<Omit<Product, "id" | "created_at">>
   ): Promise<void> => {
+    if (!user?.id) {
+      throw new Error("Not signed in");
+    }
+
     const { data, error: updateError } = await supabase
       .from("products")
       .update(input)
       .eq("id", id)
+      .eq("user_id", user.id)
       .select()
       .single();
 
