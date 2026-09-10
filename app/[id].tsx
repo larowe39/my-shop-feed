@@ -110,8 +110,8 @@ export default function ProductDetailsScreen() {
             disabled={likePending}
             onPress={async () => {
               if (!requireAuth()) return;
-              const ok = await toggleLike(product.id);
-              if (!ok) {
+              const result = await toggleLike(product.id);
+              if (result === "error") {
                 Alert.alert("Like failed", "We couldn't update your like just now.");
               }
             }}
@@ -126,8 +126,8 @@ export default function ProductDetailsScreen() {
             disabled={savePending}
             onPress={async () => {
               if (!requireAuth()) return;
-              const ok = await toggleSave(product.id);
-              if (!ok) {
+              const result = await toggleSave(product.id);
+              if (result === "error") {
                 Alert.alert("Save failed", "We couldn't update your save just now.");
               }
             }}

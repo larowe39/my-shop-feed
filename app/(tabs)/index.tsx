@@ -146,8 +146,8 @@ export default function FeedScreen() {
                     onPress={async (event) => {
                       event.stopPropagation();
                       if (!requireAuth()) return;
-                      const ok = await toggleLike(item.id);
-                      if (!ok) {
+                      const result = await toggleLike(item.id);
+                      if (result === "error") {
                         Alert.alert("Like failed", "We couldn't update your like just now.");
                       }
                     }}
@@ -163,8 +163,8 @@ export default function FeedScreen() {
                     onPress={async (event) => {
                       event.stopPropagation();
                       if (!requireAuth()) return;
-                      const ok = await toggleSave(item.id);
-                      if (!ok) {
+                      const result = await toggleSave(item.id);
+                      if (result === "error") {
                         Alert.alert("Save failed", "We couldn't update your save just now.");
                       }
                     }}

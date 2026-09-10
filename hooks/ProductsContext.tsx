@@ -24,6 +24,7 @@ export type Product = {
 };
 
 type ProductReaction = "like" | "save";
+type ToggleReactionResult = "updated" | "pending" | "auth_required" | "error";
 
 type ProductsContextType = {
   products: Product[];
@@ -31,8 +32,8 @@ type ProductsContextType = {
   savedIds: string[];
   isLikePending: (id: string) => boolean;
   isSavePending: (id: string) => boolean;
-  toggleLike: (id: string) => Promise<boolean>;
-  toggleSave: (id: string) => Promise<boolean>;
+  toggleLike: (id: string) => Promise<ToggleReactionResult>;
+  toggleSave: (id: string) => Promise<ToggleReactionResult>;
   addProduct: (input: Omit<Product, "id" | "created_at">) => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -195,14 +196,14 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     async (
       productId: string,
       reaction: ProductReaction
-    ) => {
+    ): Promise<ToggleReactionResult> => {
       if (!user?.id) {
-        return false;
+        return "auth_required";
       }
 
       const key = `${reaction}:${productId}`;
       if (pendingKeysRef.current.has(key)) {
-        return true;
+        return "pending";
       }
 
       const table = reaction === "like" ? "product_likes" : "product_saves";
@@ -232,13 +233,13 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           if (insertError) throw insertError;
         }
 
-        return true;
+        return "updated";
       } catch (mutationError) {
         console.log(`Error toggling ${reaction}`, mutationError);
         updateReactionIds(reaction, (prev) =>
           wasActive ? [...prev, productId] : prev.filter((id) => id !== productId)
         );
-        return false;
+        return "error";
       } finally {
         setPending(key, false);
       }
