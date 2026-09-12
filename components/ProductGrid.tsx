@@ -7,6 +7,8 @@ type ProductGridProps = {
   onPressProduct: (product: Product) => void;
   emptyTitle: string;
   emptyDescription: string;
+  emptyActionLabel?: string;
+  onEmptyAction?: () => void;
 };
 
 function safeImageUri(uri?: string | null) {
@@ -24,12 +26,19 @@ export function ProductGrid({
   onPressProduct,
   emptyTitle,
   emptyDescription,
+  emptyActionLabel,
+  onEmptyAction,
 }: ProductGridProps) {
   if (!products.length) {
     return (
       <View style={styles.emptyCard}>
         <Text style={styles.emptyTitle}>{emptyTitle}</Text>
         <Text style={styles.emptyDescription}>{emptyDescription}</Text>
+        {!!emptyActionLabel && !!onEmptyAction && (
+          <Pressable style={styles.emptyActionButton} onPress={onEmptyAction}>
+            <Text style={styles.emptyActionButtonText}>{emptyActionLabel}</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -135,5 +144,17 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "center",
     lineHeight: 20,
+  },
+  emptyActionButton: {
+    marginTop: 8,
+    backgroundColor: "#111",
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  emptyActionButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });
