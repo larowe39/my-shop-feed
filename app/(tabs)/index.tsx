@@ -1,7 +1,7 @@
 // app/(tabs)/index.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import { ProductFeedCard } from "../../components/ProductFeedCard";
 import { useAuth } from "../../hooks/AuthContext";
 import { type Product, useProducts } from "../../hooks/ProductsContext";
 import { rankForYouFeed } from "../../lib/feedRanking";
+import { createImpressionTracker, trackEvent } from "../../lib/analytics";
 
 type FeedMode = "for_you" | "following";
 
@@ -42,6 +43,7 @@ export default function FeedScreen() {
 
   const [activeFeedMode, setActiveFeedMode] = useState<FeedMode>("for_you");
   const [refreshing, setRefreshing] = useState(false);
+  const impressionTrackerRef = useRef(createImpressionTracker());
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -108,6 +110,16 @@ export default function FeedScreen() {
       const likePending = isLikePending(item.id);
       const savePending = isSavePending(item.id);
 
+      impressionTrackerRef.current(`${activeFeedMode}:${item.id}`, () => {
+        trackEvent({
+          eventType: "product_impression",
+          productId: item.id,
+          sellerId: item.user_id ?? null,
+          category: item.category ?? null,
+          metadata: { source: activeFeedMode },
+        });
+      });
+
       return (
         <ProductFeedCard
           product={item}
@@ -120,16 +132,31 @@ export default function FeedScreen() {
           onSavePress={() => handleSave(item.id)}
           onSellerPress={
             item.user_id
-              ? () => router.push(`/seller/${encodeURIComponent(item.user_id!)}`)
+              ? () => {
+                  trackEvent({
+                    eventType: "seller_open",
+                    sellerId: item.user_id,
+                    metadata: { source: activeFeedMode },
+                  });
+                  router.push(`/seller/${encodeURIComponent(item.user_id!)}`);
+                }
               : undefined
           }
-          onProductPress={() =>
-            router.push(`/${encodeURIComponent(String(item.id))}`)
-          }
+          onProductPress={() => {
+            trackEvent({
+              eventType: "product_open",
+              productId: item.id,
+              sellerId: item.user_id ?? null,
+              category: item.category ?? null,
+              metadata: { source: activeFeedMode },
+            });
+            router.push(`/${encodeURIComponent(String(item.id))}`);
+          }}
         />
       );
     },
     [
+      activeFeedMode,
       sellerProfiles,
       likedIds,
       savedIds,

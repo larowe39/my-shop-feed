@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useRef } from "react";
 import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Product } from "../hooks/ProductsContext";
 
 type ProductGridProps = {
   products: Product[];
   onPressProduct: (product: Product) => void;
+  onImpression?: (product: Product) => void;
   emptyTitle: string;
   emptyDescription: string;
   emptyActionLabel?: string;
@@ -24,11 +25,15 @@ function safeImageUri(uri?: string | null) {
 export function ProductGrid({
   products,
   onPressProduct,
+  onImpression,
   emptyTitle,
   emptyDescription,
   emptyActionLabel,
   onEmptyAction,
 }: ProductGridProps) {
+  // Dedupes impressions per mounted grid so scroll/re-render cycles don't spam analytics.
+  const impressedIdsRef = useRef<Set<string>>(new Set());
+
   if (!products.length) {
     return (
       <View style={styles.emptyCard}>
@@ -53,6 +58,12 @@ export function ProductGrid({
       contentContainerStyle={styles.content}
       renderItem={({ item }) => {
         const imageUri = safeImageUri(item.image_url);
+
+        if (onImpression && !impressedIdsRef.current.has(item.id)) {
+          impressedIdsRef.current.add(item.id);
+          onImpression(item);
+        }
+
         return (
           <Pressable style={styles.card} onPress={() => onPressProduct(item)}>
             {imageUri ? (

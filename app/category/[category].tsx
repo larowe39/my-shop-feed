@@ -19,6 +19,7 @@ import {
   matchProductCategory,
 } from "../../constants/categories";
 import { type Product, useProducts } from "../../hooks/ProductsContext";
+import { trackEvent } from "../../lib/analytics";
 
 export default function CategoryProductsScreen() {
   const router = useRouter();
@@ -181,8 +182,24 @@ export default function CategoryProductsScreen() {
           ) : (
             <ProductGrid
               products={visibleProducts}
-              onPressProduct={(product: Product) =>
-                router.push(`/${encodeURIComponent(String(product.id))}`)
+              onPressProduct={(product: Product) => {
+                trackEvent({
+                  eventType: "product_open",
+                  productId: product.id,
+                  sellerId: product.user_id ?? null,
+                  category: product.category ?? null,
+                  metadata: { source: "category" },
+                });
+                router.push(`/${encodeURIComponent(String(product.id))}`);
+              }}
+              onImpression={(product: Product) =>
+                trackEvent({
+                  eventType: "product_impression",
+                  productId: product.id,
+                  sellerId: product.user_id ?? null,
+                  category: product.category ?? null,
+                  metadata: { source: "category" },
+                })
               }
               emptyTitle={emptyTitle}
               emptyDescription={emptyDescription}
