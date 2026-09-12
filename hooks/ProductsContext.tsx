@@ -40,10 +40,13 @@ type ProductsContextType = {
   sellerProfiles: Record<string, SellerProfile>;
   likedIds: string[];
   savedIds: string[];
+  followingIds: string[];
   isLikePending: (id: string) => boolean;
   isSavePending: (id: string) => boolean;
+  isFollowPending: (sellerId: string) => boolean;
   toggleLike: (id: string) => Promise<ToggleReactionResult>;
   toggleSave: (id: string) => Promise<ToggleReactionResult>;
+  toggleFollow: (sellerId: string) => Promise<ToggleReactionResult>;
   addProduct: (input: Omit<Product, "id" | "created_at">) => Promise<void>;
   updateProduct: (
     id: string,
@@ -53,10 +56,15 @@ type ProductsContextType = {
   error: string | null;
   reactionError: string | null;
   refresh: () => Promise<void>;
+  refreshFollows: () => Promise<void>;
 };
 
 type ProductReactionRow = {
   product_id: string;
+};
+
+type UserFollowRow = {
+  following_id: string;
 };
 
 const ProductsContext = createContext<ProductsContextType | undefined>(undefined);
@@ -88,20 +96,30 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [sellerProfiles, setSellerProfiles] = useState<Record<string, SellerProfile>>({});
   const [likedIds, setLikedIds] = useState<string[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [pendingReactions, setPendingReactions] = useState<PendingReactionSets>(
     makePendingReactionSets
   );
+  const [pendingFollows, setPendingFollows] = useState<Set<string>>(new Set<string>());
+
   // Refs keep rapid toggles and refresh reconciliation in sync with the latest
   // optimistic reaction state before React finishes committing visible updates.
   const pendingReactionsRef = useRef<PendingReactionSets>(makePendingReactionSets());
   const pendingReactionValuesRef = useRef<PendingReactionValues>(
     makePendingReactionValues()
   );
+  const pendingFollowsRef = useRef<Set<string>>(new Set<string>());
+  const pendingFollowValuesRef = useRef<Map<string, boolean>>(new Map<string, boolean>());
+
   const reactionLoadRequestIdRef = useRef(0);
-  // These refs mirror the rendered liked/saved arrays so async mutations and
+  const followLoadRequestIdRef = useRef(0);
+
+  // These refs mirror the rendered arrays so async mutations and
   // refreshes can always read the latest intended reaction state.
   const likedIdsRef = useRef<string[]>([]);
   const savedIdsRef = useRef<string[]>([]);
+  const followingIdsRef = useRef<string[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reactionError, setReactionError] = useState<string | null>(null);
@@ -174,6 +192,38 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const loadUserFollows = useCallback(
+    async (userId: string) => {
+      const requestId = ++followLoadRequestIdRef.current;
+      const { data: followsData, error: followsError } = await supabase
+        .from("user_follows")
+        .select("following_id")
+        .eq("follower_id", userId);
+
+      if (followsError) throw followsError;
+      if (requestId !== followLoadRequestIdRef.current) return;
+
+      const nextFollowingIds = ((followsData as UserFollowRow[] | null) ?? [])
+        .map((row) => row.following_id)
+        .filter(Boolean);
+
+      for (const [sellerId, isActive] of pendingFollowValuesRef.current.entries()) {
+        const hasFollow = nextFollowingIds.includes(sellerId);
+        if (isActive && !hasFollow) {
+          nextFollowingIds.push(sellerId);
+        }
+        if (!isActive && hasFollow) {
+          const idx = nextFollowingIds.indexOf(sellerId);
+          nextFollowingIds.splice(idx, 1);
+        }
+      }
+
+      followingIdsRef.current = nextFollowingIds;
+      setFollowingIds(nextFollowingIds);
+    },
+    []
+  );
+
   const loadSellerProfiles = useCallback(async (rows: Product[]) => {
     const userIds = Array.from(
       new Set(
@@ -223,16 +273,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
       if (user?.id) {
         try {
-          await loadUserReactions(user.id);
+          await Promise.all([
+            loadUserReactions(user.id),
+            loadUserFollows(user.id),
+          ]);
         } catch (reactionsError) {
-          console.log("Error loading product reactions", reactionsError);
-          setReactionError("We couldn't load your likes and saves right now.");
+          console.log("Error loading product reactions or follows", reactionsError);
+          setReactionError("We couldn't load your likes, saves, or follows right now.");
         }
       } else {
         likedIdsRef.current = [];
         savedIdsRef.current = [];
+        followingIdsRef.current = [];
         setLikedIds([]);
         setSavedIds([]);
+        setFollowingIds([]);
         setReactionError(null);
       }
     } catch (refreshError: any) {
@@ -242,7 +297,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [loadProducts, loadSellerProfiles, loadUserReactions, user?.id]);
+  }, [loadProducts, loadSellerProfiles, loadUserReactions, loadUserFollows, user?.id]);
+
+  const refreshFollows = useCallback(async () => {
+    if (user?.id) {
+      try {
+        await loadUserFollows(user.id);
+      } catch (err) {
+        console.log("Error refreshing follows", err);
+      }
+    }
+  }, [loadUserFollows, user?.id]);
 
   useEffect(() => {
     refresh();
@@ -376,6 +441,78 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     [toggleReaction]
   );
 
+  const toggleFollow = useCallback(
+    async (sellerId: string): Promise<ToggleReactionResult> => {
+      if (!user?.id) {
+        return "auth_required";
+      }
+
+      if (!sellerId || user.id === sellerId) {
+        return "error";
+      }
+
+      if (pendingFollowsRef.current.has(sellerId)) {
+        return "pending";
+      }
+
+      const wasFollowing = followingIdsRef.current.includes(sellerId);
+      const nextFollowing = !wasFollowing;
+
+      pendingFollowsRef.current.add(sellerId);
+      setPendingFollows(new Set(pendingFollowsRef.current));
+      pendingFollowValuesRef.current.set(sellerId, nextFollowing);
+
+      const nextFollowingIds = nextFollowing
+        ? [...followingIdsRef.current.filter((id) => id !== sellerId), sellerId]
+        : followingIdsRef.current.filter((id) => id !== sellerId);
+
+      followingIdsRef.current = nextFollowingIds;
+      setFollowingIds(nextFollowingIds);
+
+      try {
+        if (wasFollowing) {
+          const { error: deleteError } = await supabase
+            .from("user_follows")
+            .delete()
+            .eq("follower_id", user.id)
+            .eq("following_id", sellerId);
+
+          if (deleteError) throw deleteError;
+        } else {
+          const { error: insertError } = await supabase
+            .from("user_follows")
+            .insert({
+              follower_id: user.id,
+              following_id: sellerId,
+            });
+
+          if (insertError) throw insertError;
+        }
+
+        return "updated";
+      } catch (mutationError) {
+        console.log("Error toggling follow", mutationError);
+        const rollbackIds = wasFollowing
+          ? [...followingIdsRef.current.filter((id) => id !== sellerId), sellerId]
+          : followingIdsRef.current.filter((id) => id !== sellerId);
+        followingIdsRef.current = rollbackIds;
+        setFollowingIds(rollbackIds);
+        pendingFollowValuesRef.current.set(sellerId, wasFollowing);
+        return "error";
+      } finally {
+        try {
+          await loadUserFollows(user.id);
+        } catch (followsError) {
+          console.log("Error reloading user follows", followsError);
+        }
+        pendingFollowValuesRef.current.delete(sellerId);
+        pendingFollowsRef.current.delete(sellerId);
+        setPendingFollows(new Set(pendingFollowsRef.current));
+      }
+    },
+    [loadUserFollows, user?.id]
+  );
+
   const addProduct = async (
     input: Omit<Product, "id" | "created_at">
   ): Promise<void> => {
@@ -438,30 +575,39 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       sellerProfiles,
       likedIds,
       savedIds,
+      followingIds,
       isLikePending: (id: string) => pendingReactions.like.has(id),
       isSavePending: (id: string) => pendingReactions.save.has(id),
+      isFollowPending: (sellerId: string) => pendingFollows.has(sellerId),
       toggleLike,
       toggleSave,
+      toggleFollow,
       addProduct,
       updateProduct,
       loading,
       error,
       reactionError,
       refresh,
+      refreshFollows,
     }),
     [
       products,
       sellerProfiles,
       likedIds,
       savedIds,
+      followingIds,
       pendingReactions,
+      pendingFollows,
       toggleLike,
       toggleSave,
+      toggleFollow,
+      addProduct,
       updateProduct,
       loading,
       error,
       reactionError,
       refresh,
+      refreshFollows,
     ]
   );
 
