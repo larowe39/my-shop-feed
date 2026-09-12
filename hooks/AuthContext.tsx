@@ -14,6 +14,22 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getDefaultDisplayName(user: User) {
+  const metadata = user.user_metadata ?? {};
+  const fromMetadata =
+    metadata.full_name ??
+    metadata.name ??
+    metadata.preferred_username ??
+    null;
+  if (typeof fromMetadata === "string" && fromMetadata.trim()) {
+    return fromMetadata.trim();
+  }
+  const email = user.email ?? "";
+  const localPart = email.split("@")[0]?.trim();
+  if (localPart) return localPart;
+  return "Seller";
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +47,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const user = session?.user;
+    if (!user?.id) return;
+
+    const ensureUserProfile = async () => {
+      const { error } = await supabase.from("user_profiles").insert({
+        user_id: user.id,
+        display_name: getDefaultDisplayName(user),
+        avatar_url:
+          typeof user.user_metadata?.avatar_url === "string"
+            ? user.user_metadata.avatar_url
+            : null,
+        bio: null,
+      });
+
+      if (error && error.code !== "23505") {
+        console.log("Error ensuring user profile", error);
+      }
+    };
+
+    ensureUserProfile();
+  }, [session?.user]);
 
   const signInWithEmail = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

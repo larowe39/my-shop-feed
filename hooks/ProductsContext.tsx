@@ -23,6 +23,13 @@ export type Product = {
   created_at?: string;
 };
 
+export type SellerProfile = {
+  user_id: string;
+  display_name: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+};
+
 type ProductReaction = "like" | "save";
 type ToggleReactionResult = "updated" | "pending" | "auth_required" | "error";
 type PendingReactionSets = Record<ProductReaction, Set<string>>;
@@ -30,6 +37,7 @@ type PendingReactionValues = Record<ProductReaction, Map<string, boolean>>;
 
 type ProductsContextType = {
   products: Product[];
+  sellerProfiles: Record<string, SellerProfile>;
   likedIds: string[];
   savedIds: string[];
   isLikePending: (id: string) => boolean;
@@ -77,6 +85,7 @@ function makePendingReactionValues(): PendingReactionValues {
 export function ProductsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [sellerProfiles, setSellerProfiles] = useState<Record<string, SellerProfile>>({});
   const [likedIds, setLikedIds] = useState<string[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [pendingReactions, setPendingReactions] = useState<PendingReactionSets>(
@@ -165,6 +174,38 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const loadSellerProfiles = useCallback(async (rows: Product[]) => {
+    const userIds = Array.from(
+      new Set(
+        rows
+          .map((row) => (typeof row.user_id === "string" ? row.user_id : null))
+          .filter((row): row is string => !!row)
+      )
+    );
+
+    if (!userIds.length) {
+      setSellerProfiles({});
+      return;
+    }
+
+    const { data, error: profilesError } = await supabase
+      .from("user_profiles")
+      .select("user_id, display_name, avatar_url, bio")
+      .in("user_id", userIds);
+
+    if (profilesError) {
+      throw profilesError;
+    }
+
+    const nextProfiles: Record<string, SellerProfile> = {};
+    for (const row of (data as SellerProfile[] | null) ?? []) {
+      if (!row.user_id) continue;
+      nextProfiles[row.user_id] = row;
+    }
+
+    setSellerProfiles(nextProfiles);
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -173,6 +214,12 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     try {
       const rows = await loadProducts();
       setProducts(rows);
+      try {
+        await loadSellerProfiles(rows);
+      } catch (profilesError) {
+        console.log("Error loading seller profiles", profilesError);
+        setSellerProfiles({});
+      }
 
       if (user?.id) {
         try {
@@ -195,7 +242,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [loadProducts, loadUserReactions, user?.id]);
+  }, [loadProducts, loadSellerProfiles, loadUserReactions, user?.id]);
 
   useEffect(() => {
     refresh();
@@ -388,6 +435,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       products,
+      sellerProfiles,
       likedIds,
       savedIds,
       isLikePending: (id: string) => pendingReactions.like.has(id),
@@ -403,6 +451,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     }),
     [
       products,
+      sellerProfiles,
       likedIds,
       savedIds,
       pendingReactions,
