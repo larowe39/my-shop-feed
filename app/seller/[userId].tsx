@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { ProductGrid } from "../../components/ProductGrid";
 import { useAuth } from "../../hooks/AuthContext";
-import type { Product } from "../../hooks/ProductsContext";
+import { type Product, useProducts } from "../../hooks/ProductsContext";
 import { supabase } from "../../lib/supabase";
 
 type SellerProfile = {
@@ -38,6 +38,7 @@ function safeImageUri(uri?: string | null) {
 export default function SellerProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { followingIds, toggleFollow, isFollowPending } = useProducts();
   const { userId } = useLocalSearchParams<{ userId?: string | string[] }>();
   const sellerId = useMemo(() => {
     const raw = Array.isArray(userId) ? userId[0] : userId;
@@ -46,13 +47,17 @@ export default function SellerProfileScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [followPending, setFollowPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<SellerProfile | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [isFollowing, setIsFollowing] = useState(false);
+
+  const isFollowing = useMemo(() => {
+    return Boolean(sellerId && followingIds.includes(sellerId));
+  }, [followingIds, sellerId]);
+
+  const followPending = isFollowPending(sellerId);
 
   const isOwnProfile = Boolean(user?.id && sellerId && user.id === sellerId);
 
@@ -116,20 +121,6 @@ export default function SellerProfileScreen() {
         setProducts(typedProducts);
         setFollowerCount(followers ?? 0);
         setFollowingCount(following ?? 0);
-
-        if (user?.id && user.id !== sellerId) {
-          const { data: followData, error: followError } = await supabase
-            .from("user_follows")
-            .select("follower_id")
-            .eq("follower_id", user.id)
-            .eq("following_id", sellerId)
-            .maybeSingle();
-
-          if (followError) throw followError;
-          setIsFollowing(!!followData);
-        } else {
-          setIsFollowing(false);
-        }
       } catch (loadError: any) {
         console.log("Error loading seller profile", loadError);
         setError(loadError?.message ?? "Failed to load seller profile.");
@@ -139,7 +130,7 @@ export default function SellerProfileScreen() {
         setRefreshing(false);
       }
     },
-    [sellerId, user?.id]
+    [sellerId]
   );
 
   useFocusEffect(
@@ -168,34 +159,12 @@ export default function SellerProfileScreen() {
     if (!sellerId || user.id === sellerId || followPending) return;
 
     const wasFollowing = isFollowing;
-    setFollowPending(true);
-    setIsFollowing(!wasFollowing);
     setFollowerCount((prev) => Math.max(0, prev + (wasFollowing ? -1 : 1)));
 
-    try {
-      if (wasFollowing) {
-        const { error: unfollowError } = await supabase
-          .from("user_follows")
-          .delete()
-          .eq("follower_id", user.id)
-          .eq("following_id", sellerId);
-
-        if (unfollowError) throw unfollowError;
-      } else {
-        const { error: followError } = await supabase.from("user_follows").insert({
-          follower_id: user.id,
-          following_id: sellerId,
-        });
-
-        if (followError) throw followError;
-      }
-    } catch (followError) {
-      console.log("Error toggling follow", followError);
-      setIsFollowing(wasFollowing);
+    const result = await toggleFollow(sellerId);
+    if (result === "error") {
       setFollowerCount((prev) => Math.max(0, prev + (wasFollowing ? 1 : -1)));
       Alert.alert("Follow failed", "We couldn't update this follow right now.");
-    } finally {
-      setFollowPending(false);
     }
   };
 
