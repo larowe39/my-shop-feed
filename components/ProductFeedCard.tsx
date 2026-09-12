@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import type { Product, SellerProfile } from "../hooks/ProductsContext";
 import { trackEvent } from "../lib/analytics";
+import { ModeratedProductImage } from "./ModeratedProductImage";
 
 export type ProductFeedCardProps = {
   product: Product;
@@ -142,10 +143,12 @@ export function ProductFeedCard({
         accessibilityLabel={`View details for ${product.title}`}
       >
         {rawImageUri && !imageError ? (
-          <Image
-            source={{ uri: rawImageUri }}
+          <ModeratedProductImage
+            uri={rawImageUri}
             style={styles.productImage}
-            resizeMode="cover"
+            moderation={product.moderation}
+            productId={product.id}
+            sellerId={product.user_id}
             onError={() => setImageError(true)}
           />
         ) : (

@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import type { Product } from "../hooks/ProductsContext";
+import { ModeratedProductImage } from "./ModeratedProductImage";
 
 type ProductGridProps = {
   products: Product[];
@@ -67,7 +68,13 @@ export function ProductGrid({
         return (
           <Pressable style={styles.card} onPress={() => onPressProduct(item)}>
             {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+              <ModeratedProductImage
+                uri={imageUri}
+                style={styles.image}
+                moderation={item.moderation}
+                productId={item.id}
+                sellerId={item.user_id}
+              />
             ) : (
               <View style={[styles.image, styles.imagePlaceholder]}>
                 <Text style={styles.imagePlaceholderText}>No Image</Text>

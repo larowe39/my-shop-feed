@@ -89,7 +89,7 @@ export default function SellerProfileScreen() {
             .maybeSingle(),
           supabase
             .from("products")
-            .select("*")
+            .select("*, product_moderation(product_id, status, is_blurred, is_hidden)")
             .eq("user_id", sellerId)
             .order("created_at", { ascending: false }),
           supabase
@@ -107,7 +107,12 @@ export default function SellerProfileScreen() {
         if (followersError) throw followersError;
         if (followingError) throw followingError;
 
-        const typedProducts = (productData as Product[] | null) ?? [];
+        const typedProducts = ((productData as (Product & { product_moderation?: Product["moderation"] | Product["moderation"][] | null })[] | null) ?? [])
+          .map(({ product_moderation, ...product }) => ({
+            ...product,
+            moderation: Array.isArray(product_moderation) ? product_moderation[0] ?? null : product_moderation ?? null,
+          }))
+          .filter((product) => !product.moderation?.is_hidden || isOwnProfile);
         const fallbackName = typedProducts[0]?.brand?.trim() || "Seller";
         setProfile(
           profileData

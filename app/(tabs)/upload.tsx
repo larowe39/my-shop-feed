@@ -21,6 +21,7 @@ import { CATEGORIES } from "../../constants/categories";
 import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
 import { supabase } from "../../lib/supabase";
+import { createPendingModeration, moderateProductImage } from "../../lib/moderation";
 
 function getExt(uri: string): string {
   const clean = uri.split("?")[0];
@@ -283,11 +284,21 @@ export default function UploadScreen() {
         user_id: session.user.id,
       };
 
-      const { error: insertErr } = await supabase
+      const { data: product, error: insertErr } = await supabase
         .from("products")
-        .insert(payload);
+        .insert(payload)
+        .select("id")
+        .single();
 
       if (insertErr) throw insertErr;
+
+      // Publish first. Moderation is deliberately fire-and-forget so uploads stay immediate.
+      try {
+        await createPendingModeration(product.id);
+      } catch (moderationError) {
+        console.log("Could not create pending moderation row", moderationError);
+      }
+      moderateProductImage({ productId: product.id, imageUrl: publicUrl });
 
       // 3) Synchronize state across all tabs
       await refresh();
