@@ -34,6 +34,7 @@ export default function FeedScreen() {
   const { user } = useAuth();
   const {
     products,
+    sellerProfiles,
     likedIds,
     savedIds,
     isLikePending,
@@ -79,6 +80,9 @@ export default function FeedScreen() {
         contentContainerStyle={{ paddingBottom: 24 }}
         renderItem={({ item }) => {
           const uri = safeImageUri((item as any).image_url);
+          const sellerProfile = item.user_id ? sellerProfiles[item.user_id] : undefined;
+          const sellerName = sellerProfile?.display_name?.trim() || item.brand || "Seller";
+          const sellerAvatarUri = safeImageUri(sellerProfile?.avatar_url);
           const link = (item as any).url?.trim?.() || "";
           const liked = likedIds.includes(item.id);
           const saved = savedIds.includes(item.id);
@@ -86,45 +90,66 @@ export default function FeedScreen() {
           const savePending = isSavePending(item.id);
 
           return (
-            <Pressable
-              style={styles.card}
-              onPress={() => router.push(`/${encodeURIComponent(String(item.id))}`)}
-            >
+            <View style={styles.card}>
               {/* header */}
               <View style={styles.header}>
-                <View style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.brand}>{item.brand || "PENCHANT"}</Text>
-                  <Text style={styles.category}>{item.category}</Text>
-                </View>
+                <Pressable
+                  style={styles.sellerButton}
+                  disabled={!item.user_id}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.user_id ? `View ${sellerName}'s profile` : undefined}
+                  onPress={() => {
+                    if (!item.user_id) return;
+                    router.push(`/seller/${encodeURIComponent(item.user_id)}`);
+                  }}
+                >
+                  {sellerAvatarUri ? (
+                    <Image source={{ uri: sellerAvatarUri }} style={styles.avatarImage} />
+                  ) : (
+                    <View style={styles.avatar} />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.brand}>{sellerName}</Text>
+                    <Text style={styles.category}>{item.category}</Text>
+                  </View>
+                </Pressable>
               </View>
 
               {/* image */}
-              <View style={styles.imageWrap}>
-                {!!uri ? (
-                  <Image
-                    source={{ uri }}
-                    style={styles.image}
-                    resizeMode="cover"
-                    onError={(e) => {
-                      console.log("Image failed:", {
-                        id: String(item.id),
-                        uri,
-                        error: (e as any)?.nativeEvent,
-                      });
-                    }}
-                  />
-                ) : (
-                  <View style={[styles.image, styles.imagePlaceholder]}>
-                    <Text style={styles.muted}>No image</Text>
-                  </View>
-                )}
-              </View>
+              <Pressable
+                onPress={() => router.push(`/${encodeURIComponent(String(item.id))}`)}
+              >
+                <View style={styles.imageWrap}>
+                  {!!uri ? (
+                    <Image
+                      source={{ uri }}
+                      style={styles.image}
+                      resizeMode="cover"
+                      onError={(e) => {
+                        console.log("Image failed:", {
+                          id: String(item.id),
+                          uri,
+                          error: (e as any)?.nativeEvent,
+                        });
+                      }}
+                    />
+                  ) : (
+                    <View style={[styles.image, styles.imagePlaceholder]}>
+                      <Text style={styles.muted}>No image</Text>
+                    </View>
+                  )}
+                </View>
+              </Pressable>
 
               {/* caption */}
               <View style={styles.caption}>
-                <Text style={styles.title}>{item.title}</Text>
-                {!!item.price && <Text style={styles.price}>${item.price}</Text>}
+                <Pressable
+                  onPress={() => router.push(`/${encodeURIComponent(String(item.id))}`)}
+                  style={styles.productBody}
+                >
+                  <Text style={styles.title}>{item.title}</Text>
+                  {!!item.price && <Text style={styles.price}>${item.price}</Text>}
+                </Pressable>
 
                 {!!link ? (
                   <Pressable
@@ -148,8 +173,7 @@ export default function FeedScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={liked ? "Unlike product" : "Like product"}
                     accessibilityState={{ disabled: likePending, selected: liked }}
-                    onPress={async (event) => {
-                      event.stopPropagation();
+                    onPress={async () => {
                       if (!requireAuth()) return;
                       const result = await toggleLike(item.id);
                       if (result === "error") {
@@ -168,8 +192,7 @@ export default function FeedScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={saved ? "Remove saved product" : "Save product"}
                     accessibilityState={{ disabled: savePending, selected: saved }}
-                    onPress={async (event) => {
-                      event.stopPropagation();
+                    onPress={async () => {
                       if (!requireAuth()) return;
                       const result = await toggleSave(item.id);
                       if (result === "error") {
@@ -183,7 +206,7 @@ export default function FeedScreen() {
                   </Pressable>
                 </View>
               </View>
-            </Pressable>
+            </View>
           );
         }}
         ListEmptyComponent={
@@ -211,7 +234,19 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     gap: 10,
   },
+  sellerButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#ddd",
+  },
+  avatarImage: {
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -225,6 +260,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: { alignItems: "center", justifyContent: "center" },
 
   caption: { paddingHorizontal: 14, paddingTop: 10, gap: 4 },
+  productBody: { gap: 4 },
   title: { fontSize: 14, color: "#111" },
   price: { fontSize: 13, color: "#111", fontWeight: "600" },
   url: { fontSize: 12, color: "#0a66c2" },
