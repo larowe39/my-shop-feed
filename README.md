@@ -35,6 +35,32 @@ npm run reset-project
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
+## Demo social network seeder
+
+`scripts/seed-social-demo.js` creates ~10 realistic demo seller accounts for
+local development (follow/unfollow testing, FOR YOU seller diversity, etc.).
+
+It requires a Supabase **service role** key (admin access), which must never
+be used in client code or committed. Add it to a local, gitignored
+`.env.local` file (see `.env.example`):
+
+```
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+```
+
+Commands:
+
+```bash
+npm run seed:social                                  # seed/update demo sellers
+npm run seed:social -- --status                      # report demo data counts
+npm run seed:social -- --clean                       # remove demo sellers/data only
+npm run seed:social -- --follow-demo=you@example.com # optional: your account follows a few demo sellers
+```
+
+Demo accounts sign in with `demo.<name>@penchant.local` and a shared
+dev-only password (`Penchant-Demo-2026!` by default, overridable via
+`DEMO_SELLER_PASSWORD`).
+
 ## Learn more
 
 To learn more about developing your project with Expo, look at the following resources:

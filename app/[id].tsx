@@ -1,6 +1,6 @@
 // app/[id].tsx
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useMemo } from "react";
 import {
   Alert,
   Image,
@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useAuth } from "../hooks/AuthContext";
 import { useProducts } from "../hooks/ProductsContext";
+import { trackEvent } from "../lib/analytics";
 
 export default function ProductDetailsScreen() {
   const router = useRouter();
@@ -32,6 +33,26 @@ export default function ProductDetailsScreen() {
   const product = useMemo(() => {
     return products.find((p: any) => String(p.id) === String(id));
   }, [products, id]);
+
+  // Record a single dwell event with elapsed time when leaving this screen,
+  // rather than pinging the database on an interval.
+  useFocusEffect(
+    useCallback(() => {
+      const openedAt = Date.now();
+      return () => {
+        if (!product) return;
+        const durationMs = Date.now() - openedAt;
+        if (durationMs <= 0) return;
+        trackEvent({
+          eventType: "product_dwell",
+          productId: product.id,
+          sellerId: product.user_id ?? null,
+          category: product.category ?? null,
+          metadata: { duration_ms: durationMs, source: "product_detail" },
+        });
+      };
+    }, [product])
+  );
 
   if (!product) {
     return (
@@ -101,7 +122,17 @@ export default function ProductDetailsScreen() {
           <Pressable
             style={[styles.btn, !product.url && styles.btnDisabled]}
             disabled={!product.url}
-            onPress={() => product.url && Linking.openURL(product.url)}
+            onPress={() => {
+              if (!product.url) return;
+              trackEvent({
+                eventType: "shop_click",
+                productId: product.id,
+                sellerId: product.user_id ?? null,
+                category: product.category ?? null,
+                metadata: { source: "product_detail" },
+              });
+              Linking.openURL(product.url);
+            }}
           >
             <Text style={styles.btnText}>
               {product.url ? "Open Link" : "No Link"}

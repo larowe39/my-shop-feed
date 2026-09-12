@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import type { Product, SellerProfile } from "../hooks/ProductsContext";
+import { trackEvent } from "../lib/analytics";
 
 export type ProductFeedCardProps = {
   product: Product;
@@ -66,6 +67,13 @@ export function ProductFeedCard({
 
   const handleOpenLink = async () => {
     if (!rawUrl) return;
+    trackEvent({
+      eventType: "shop_click",
+      productId: product.id,
+      sellerId: product.user_id ?? null,
+      category: product.category ?? null,
+      metadata: { source: "feed" },
+    });
     try {
       const targetUrl = rawUrl.startsWith("http://") || rawUrl.startsWith("https://") ? rawUrl : `https://${rawUrl}`;
       const ok = await Linking.canOpenURL(targetUrl);

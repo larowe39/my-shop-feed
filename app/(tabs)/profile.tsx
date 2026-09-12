@@ -15,6 +15,7 @@ import {
 import { ProductGrid } from "../../components/ProductGrid";
 import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
+import { trackEvent } from "../../lib/analytics";
 import { supabase } from "../../lib/supabase";
 
 type UserProfile = {
@@ -169,8 +170,24 @@ export default function ProfileScreen() {
         ) : (
           <ProductGrid
             products={savedProducts}
-            onPressProduct={(product) =>
-              router.push(`/${encodeURIComponent(String(product.id))}`)
+            onPressProduct={(product) => {
+              trackEvent({
+                eventType: "product_open",
+                productId: product.id,
+                sellerId: product.user_id ?? null,
+                category: product.category ?? null,
+                metadata: { source: "saved" },
+              });
+              router.push(`/${encodeURIComponent(String(product.id))}`);
+            }}
+            onImpression={(product) =>
+              trackEvent({
+                eventType: "product_impression",
+                productId: product.id,
+                sellerId: product.user_id ?? null,
+                category: product.category ?? null,
+                metadata: { source: "saved" },
+              })
             }
             emptyTitle="No saved products yet"
             emptyDescription="Tap ☆ Save on products in your feed to build your collection."

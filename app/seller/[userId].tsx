@@ -16,6 +16,7 @@ import {
 import { ProductGrid } from "../../components/ProductGrid";
 import { useAuth } from "../../hooks/AuthContext";
 import { type Product, useProducts } from "../../hooks/ProductsContext";
+import { trackEvent } from "../../lib/analytics";
 import { supabase } from "../../lib/supabase";
 
 type SellerProfile = {
@@ -121,6 +122,10 @@ export default function SellerProfileScreen() {
         setProducts(typedProducts);
         setFollowerCount(followers ?? 0);
         setFollowingCount(following ?? 0);
+
+        if (!isOwnProfile) {
+          trackEvent({ eventType: "seller_open", sellerId, metadata: { source: "seller_profile" } });
+        }
       } catch (loadError: any) {
         console.log("Error loading seller profile", loadError);
         setError(loadError?.message ?? "Failed to load seller profile.");
@@ -130,7 +135,7 @@ export default function SellerProfileScreen() {
         setRefreshing(false);
       }
     },
-    [sellerId]
+    [sellerId, isOwnProfile]
   );
 
   useFocusEffect(
@@ -338,8 +343,24 @@ export default function SellerProfileScreen() {
         {/* 2-Column Product Grid */}
         <ProductGrid
           products={products}
-          onPressProduct={(product) =>
-            router.push(`/${encodeURIComponent(String(product.id))}`)
+          onPressProduct={(product) => {
+            trackEvent({
+              eventType: "product_open",
+              productId: product.id,
+              sellerId: product.user_id ?? sellerId,
+              category: product.category ?? null,
+              metadata: { source: "seller_profile" },
+            });
+            router.push(`/${encodeURIComponent(String(product.id))}`);
+          }}
+          onImpression={(product) =>
+            trackEvent({
+              eventType: "product_impression",
+              productId: product.id,
+              sellerId: product.user_id ?? sellerId,
+              category: product.category ?? null,
+              metadata: { source: "seller_profile" },
+            })
           }
           emptyTitle="No products yet"
           emptyDescription="This seller hasn’t uploaded any products yet."
