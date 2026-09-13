@@ -61,6 +61,30 @@ Demo accounts sign in with `demo.<name>@penchant.local` and a shared
 dev-only password (`Penchant-Demo-2026!` by default, overridable via
 `DEMO_SELLER_PASSWORD`).
 
+## AI Image Moderation (Sightengine)
+
+PENCHANT uses automated AI image moderation powered by [Sightengine](https://sightengine.com/) via the `moderate-product-image` Supabase Edge Function.
+
+### Features & Architecture
+- **Instant Publishing**: Product uploads complete and publish immediately with a `pending` moderation state.
+- **Asynchronous Moderation**: The Edge Function evaluates images in the background and sets status to `approved`, `blurred`, `hidden`, or `failed`.
+- **Fail-Open Policy**: If Sightengine is unavailable, times out, or errors, the product defaults to `failed` status and remains visible.
+- **Conservative Thresholds**: Sensitive material (weapons, erotica, suggestive imagery) triggers a sensitive content blur overlay rather than auto-hiding. High-confidence severe content (explicit sexual activity, graphic gore, severe violence, hate symbols, self-harm) is automatically hidden.
+- **Dependency-Free**: The Edge Function uses native `fetch()` with no external bundling dependencies.
+
+### Supabase Edge Function Secrets
+Set the following secrets in your Supabase project (never expose in client code):
+
+```bash
+supabase secrets set SIGHTENGINE_API_USER="your-sightengine-api-user"
+supabase secrets set SIGHTENGINE_API_SECRET="your-sightengine-api-secret"
+```
+
+To enable development bypass mode (allowing `devOutcome` testing in development):
+```bash
+supabase secrets set MODERATION_DEV_MODE="true"
+```
+
 ## Learn more
 
 To learn more about developing your project with Expo, look at the following resources:
