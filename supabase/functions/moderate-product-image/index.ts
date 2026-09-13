@@ -127,6 +127,7 @@ const POLICY_THRESHOLDS = {
 
 /**
  * Helper to safely extract probability scores from Sightengine object or numeric values.
+ * Handles number floats, { prob }, { classes }, { type }, or direct key:score maps.
  */
 function extractScore(val: unknown): number {
   if (typeof val === "number") {
@@ -134,16 +135,28 @@ function extractScore(val: unknown): number {
   }
   if (val && typeof val === "object") {
     const obj = val as Record<string, unknown>;
-    if (typeof obj.prob === "number") {
-      return Number.isFinite(obj.prob) ? Math.max(0, Math.min(1, obj.prob)) : 0;
+    if (typeof obj.prob === "number" && Number.isFinite(obj.prob)) {
+      return Math.max(0, Math.min(1, obj.prob));
     }
-    if (obj.classes && typeof obj.classes === "object") {
-      const vals = Object.values(obj.classes).filter(
-        (v): v is number => typeof v === "number",
-      );
-      if (vals.length > 0) {
-        return Math.max(0, Math.min(1, Math.max(...vals)));
+
+    const candidateScores: number[] = [];
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        candidateScores.push(value);
+      } else if (
+        (key === "classes" || key === "type") &&
+        value &&
+        typeof value === "object"
+      ) {
+        for (const subVal of Object.values(value as Record<string, unknown>)) {
+          if (typeof subVal === "number" && Number.isFinite(subVal)) {
+            candidateScores.push(subVal);
+          }
+        }
       }
+    }
+    if (candidateScores.length > 0) {
+      return Math.max(0, Math.min(1, Math.max(...candidateScores)));
     }
   }
   return 0;
@@ -444,7 +457,7 @@ async function callSightengineModeration(
     const sightengineUrl = new URL("https://api.sightengine.com/1.0/check.json");
     sightengineUrl.searchParams.set(
       "models",
-      "nudity-2.1,weapon,violence,gore,self-harm,offensive",
+      "nudity-2.1,weapon,violence,gore-2.0,self-harm,offensive",
     );
     sightengineUrl.searchParams.set("url", imageUrl);
     sightengineUrl.searchParams.set("api_user", apiUser);
