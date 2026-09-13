@@ -1,6 +1,11 @@
 import { supabase } from "./supabase";
 
-export type ModerationStatus = "pending" | "approved" | "blurred" | "hidden" | "failed";
+export type ModerationStatus =
+  | "pending"
+  | "approved"
+  | "blurred"
+  | "hidden"
+  | "failed";
 
 export type ProductModeration = {
   id?: string;
@@ -16,18 +21,102 @@ export type ProductModeration = {
 };
 
 export async function createPendingModeration(productId: string) {
-  const { error } = await supabase.from("product_moderation").upsert(
-    { product_id: productId, status: "pending" },
-    { onConflict: "product_id" }
-  );
-  if (error) throw error;
+  const { error } = await supabase
+    .from("product_moderation")
+    .upsert(
+      {
+        product_id: productId,
+        status: "pending",
+        is_blurred: false,
+        is_hidden: false,
+      },
+      {
+        onConflict: "product_id",
+      },
+    );
+
+  if (error) {
+    console.error("Failed to create pending moderation row:", error);
+    throw error;
+  }
+
+  if (__DEV__) {
+    console.log("Created pending moderation row for:", productId);
+  }
 }
 
-/** Fire-and-forget client boundary. Provider credentials stay in the Edge Function. */
-export function moderateProductImage({ productId, imageUrl }: { productId: string; imageUrl: string }) {
-  void supabase.functions
-    .invoke("moderate-product-image", { body: { productId, imageUrl } })
-    .catch((error) => {
-      if (__DEV__) console.log("Moderation invocation failed", error);
-    });
+/**
+ * Calls the server-side moderation Edge Function.
+ * Moderation failure must never prevent a product from publishing.
+ */
+export async function moderateProductImage({
+  productId,
+  imageUrl,
+}: {
+  productId: string;
+  imageUrl: string;
+}) {
+  try {
+    if (__DEV__) {
+      console.log("Invoking moderation function:", {
+        productId,
+        imageUrl,
+      });
+    }
+
+    const { data, error } = await supabase.functions.invoke(
+      "moderate-product-image",
+      {
+        body: {
+          productId,
+          imageUrl,
+        },
+      },
+    );
+
+    if (error) {
+      console.error("Moderation Edge Function returned an error:", error);
+
+      const context = (error as any)?.context;
+
+      if (context) {
+        console.error("Moderation error context:", context);
+
+        try {
+          if (typeof context.text === "function") {
+            console.error(
+              "Moderation response body:",
+              await context.text(),
+            );
+          }
+        } catch (responseError) {
+          console.error(
+            "Could not read moderation error response:",
+            responseError,
+          );
+        }
+      }
+
+      return {
+        ok: false,
+        error,
+      };
+    }
+
+    if (__DEV__) {
+      console.log("Moderation Edge Function succeeded:", data);
+    }
+
+    return {
+      ok: true,
+      data,
+    };
+  } catch (error) {
+    console.error("Unexpected moderation invocation failure:", error);
+
+    return {
+      ok: false,
+      error,
+    };
+  }
 }
