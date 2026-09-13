@@ -20,6 +20,8 @@ export type Product = {
   price: string | null;
   url: string | null;
   category: string;
+  catalog_product_id?: string | null;
+  catalog_variant_id?: string | null;
   user_id?: string | null;
   image_url?: string | null;
   created_at?: string;
