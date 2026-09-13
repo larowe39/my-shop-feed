@@ -11,6 +11,7 @@ import React, {
 import { useAuth } from "./AuthContext";
 import { trackEvent } from "../lib/analytics";
 import { supabase } from "../lib/supabase";
+import type { ProductModeration } from "../lib/moderation";
 
 export type Product = {
   id: string;
@@ -22,6 +23,7 @@ export type Product = {
   user_id?: string | null;
   image_url?: string | null;
   created_at?: string;
+  moderation?: ProductModeration | null;
 };
 
 export type SellerProfile = {
@@ -128,14 +130,20 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const loadProducts = useCallback(async (): Promise<Product[]> => {
     const { data, error: productsError } = await supabase
       .from("products")
-      .select("*")
+      .select("*, product_moderation(product_id, status, is_blurred, is_hidden)")
       .order("created_at", { ascending: false });
 
     if (productsError) {
       throw productsError;
     }
 
-    return ((data as Product[]) || []).length ? (data as Product[]) : [DEMO];
+    const rows = ((data as (Product & { product_moderation?: ProductModeration | ProductModeration[] | null })[]) || [])
+      .map(({ product_moderation, ...product }) => ({
+        ...product,
+        moderation: Array.isArray(product_moderation) ? product_moderation[0] ?? null : product_moderation ?? null,
+      }))
+      .filter((product) => !product.moderation?.is_hidden);
+    return rows.length ? rows : [DEMO];
   }, []);
 
   const loadUserReactions = useCallback(

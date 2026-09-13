@@ -20,7 +20,9 @@ export type EventType =
   | "seller_open"
   | "seller_follow"
   | "seller_unfollow"
-  | "product_dwell";
+  | "product_dwell"
+  | "product_report"
+  | "sensitive_content_reveal";
 
 // Where the interaction happened, stored in metadata.source rather than as
 // dedicated columns to keep the schema small.

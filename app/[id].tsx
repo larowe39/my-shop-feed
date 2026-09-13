@@ -3,7 +3,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useMemo } from "react";
 import {
   Alert,
-  Image,
   Linking,
   Pressable,
   SafeAreaView,
@@ -14,6 +13,8 @@ import {
 import { useAuth } from "../hooks/AuthContext";
 import { useProducts } from "../hooks/ProductsContext";
 import { trackEvent } from "../lib/analytics";
+import { ModeratedProductImage } from "../components/ModeratedProductImage";
+import { ReportProductModal } from "../components/ReportProductModal";
 
 export default function ProductDetailsScreen() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function ProductDetailsScreen() {
     toggleSave,
     reactionError,
   } = useProducts();
+  const [reportVisible, setReportVisible] = React.useState(false);
 
   const product = useMemo(() => {
     return products.find((p: any) => String(p.id) === String(id));
@@ -85,7 +87,13 @@ export default function ProductDetailsScreen() {
 
       <View style={styles.imageWrap}>
         {product.image_url ? (
-          <Image source={{ uri: product.image_url }} style={styles.image} />
+          <ModeratedProductImage
+            uri={product.image_url}
+            style={styles.image}
+            moderation={product.moderation}
+            productId={product.id}
+            sellerId={product.user_id}
+          />
         ) : (
           <View style={styles.imagePlaceholder}>
             <Text style={styles.imagePlaceholderText}>No Image</Text>
@@ -109,12 +117,24 @@ export default function ProductDetailsScreen() {
 
         {!!reactionError && <Text style={styles.reactionError}>{reactionError}</Text>}
 
+        {isOwner && (product.moderation?.is_hidden || product.moderation?.is_blurred) ? (
+          <Text style={styles.moderationNotice}>
+            This product is limited due to automated moderation.
+          </Text>
+        ) : null}
+
         {isOwner ? (
           <Pressable
             style={styles.editBtn}
             onPress={() => router.push(`/edit/${encodeURIComponent(String(product.id))}`)}
           >
             <Text style={styles.editBtnText}>Edit Product</Text>
+          </Pressable>
+        ) : null}
+
+        {!isOwner && user ? (
+          <Pressable style={styles.reportBtn} onPress={() => setReportVisible(true)}>
+            <Text style={styles.reportBtnText}>Report</Text>
           </Pressable>
         ) : null}
 
@@ -178,6 +198,7 @@ export default function ProductDetailsScreen() {
           </Pressable>
         </View>
       </View>
+      <ReportProductModal visible={reportVisible} productId={product.id} onClose={() => setReportVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -241,4 +262,7 @@ const styles = StyleSheet.create({
   reactionText: { fontSize: 16, color: "#999", fontWeight: "700" },
   likeTextLiked: { color: "#e0245e" },
   saveTextActive: { color: "#111" },
+  reportBtn: { marginTop: 18, alignSelf: "flex-start", paddingVertical: 6 },
+  reportBtnText: { color: "#b00020", fontWeight: "700" },
+  moderationNotice: { marginTop: 12, color: "#7a3d00", fontSize: 13 },
 });
