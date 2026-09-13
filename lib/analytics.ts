@@ -22,7 +22,9 @@ export type EventType =
   | "seller_unfollow"
   | "product_dwell"
   | "product_report"
-  | "sensitive_content_reveal";
+  | "sensitive_content_reveal"
+  | "search_query"
+  | "search_result_open";
 
 // Where the interaction happened, stored in metadata.source rather than as
 // dedicated columns to keep the schema small.
@@ -32,7 +34,8 @@ export type EventSource =
   | "category"
   | "saved"
   | "seller_profile"
-  | "product_detail";
+  | "product_detail"
+  | "search";
 
 export type TrackEventInput = {
   eventType: EventType;
