@@ -13,6 +13,9 @@ async function main() {
     classifyCandidate,
     sourceFingerprint,
     acquireFromRecords,
+    showCandidate,
+    approveCandidate,
+    rejectCandidate,
   } = mod;
 
   const jsonSource = path.join(__dirname, "__fixtures__", "catalog-acquisition", "sample-products.json");
@@ -67,6 +70,45 @@ async function main() {
   assert.strictEqual(run.summary.new, 1);
   assert.strictEqual(run.summary.exactExisting, 1);
   assert.ok(run.staged.length >= 1);
+
+  const candidatePool = [
+    { id: "candidate-pending", status: "pending", classification: "NEW", productName: "GoPro HERO13", brand: "GoPro", modelNumber: "HERO13", sourceType: "manual import", rawPayload: {} },
+    { id: "candidate-needs-review", status: "needs_review", classification: "LIKELY_EXISTING", productName: "WH1000XM5", brand: "Sony", modelNumber: "WH-1000XM5", sourceType: "manual import", rawPayload: {} },
+    { id: "candidate-invalid", status: "invalid", classification: "INVALID", productName: "", brand: "", modelNumber: null, sourceType: "manual import", rawPayload: {} },
+    { id: "candidate-promoted", status: "promoted", classification: "EXACT_EXISTING", productName: "Sony WH-1000XM5", brand: "Sony", modelNumber: "WH-1000XM5", sourceType: "manual import", rawPayload: {} },
+  ];
+
+  const approvedPending = approveCandidate(candidatePool[0], { dryRun: true, canonicalCatalog: [] });
+  assert.strictEqual(approvedPending.ok, true);
+  assert.strictEqual(approvedPending.candidate.status, "approved");
+
+  const rejectedPending = rejectCandidate(candidatePool[0], { dryRun: true, canonicalCatalog: [] });
+  assert.strictEqual(rejectedPending.ok, true);
+  assert.strictEqual(rejectedPending.candidate.status, "rejected");
+
+  const approvedNeedsReview = approveCandidate(candidatePool[1], { dryRun: true, canonicalCatalog: [] });
+  assert.strictEqual(approvedNeedsReview.ok, true);
+  assert.strictEqual(approvedNeedsReview.candidate.status, "approved");
+
+  const invalidBlocked = approveCandidate(candidatePool[2], { dryRun: true, canonicalCatalog: [] });
+  assert.strictEqual(invalidBlocked.ok, false);
+  assert.strictEqual(invalidBlocked.candidate.status, "invalid");
+
+  const promotedBlocked = approveCandidate(candidatePool[3], { dryRun: true, canonicalCatalog: [] });
+  assert.strictEqual(promotedBlocked.ok, false);
+  assert.strictEqual(promotedBlocked.candidate.status, "promoted");
+
+  const missing = showCandidate("candidate-missing", candidatePool);
+  assert.strictEqual(missing.found, false);
+
+  const canonicalCatalog = [{ brand: "Sony", productName: "Sony WH-1000XM5", modelNumber: "WH-1000XM5" }];
+  const approvedButNoCanonicalWrite = approveCandidate(candidatePool[1], { dryRun: true, canonicalCatalog });
+  assert.strictEqual(approvedButNoCanonicalWrite.ok, true);
+  assert.strictEqual(approvedButNoCanonicalWrite.canonicalWrite, false);
+
+  const rejectedButNoCanonicalWrite = rejectCandidate(candidatePool[0], { dryRun: true, canonicalCatalog });
+  assert.strictEqual(rejectedButNoCanonicalWrite.ok, true);
+  assert.strictEqual(rejectedButNoCanonicalWrite.canonicalWrite, false);
 
   console.log("Catalog acquisition tests passed.");
 }
