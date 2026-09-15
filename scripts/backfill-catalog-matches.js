@@ -176,7 +176,7 @@ async function main() {
   const apply = process.argv.includes("--apply");
   const dryRun = !apply;
 
-  const { normalizeCatalogText, findCatalogMatches, addVariantMatch } = await loadCatalogMatching();
+  const { normalizeCatalogText, findCatalogMatches, hasAmbiguousHighConfidenceMatch, addVariantMatch } = await loadCatalogMatching();
 
   const { data: productRows, error: productsError } = await supabase
     .from("products")
@@ -200,9 +200,7 @@ async function main() {
     const scored = findCatalogMatches(input, candidates);
 
     const highConfidence = scored.filter((m) => m.confidence >= HIGH_CONFIDENCE);
-    const distinctHighProductIds = new Set(highConfidence.map((m) => m.productId));
-
-    if (distinctHighProductIds.size > 1) {
+    if (hasAmbiguousHighConfidenceMatch(scored)) {
       results.ambiguous.push({ product, candidates: highConfidence });
       continue;
     }
