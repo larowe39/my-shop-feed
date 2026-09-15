@@ -111,7 +111,7 @@ export default function ProductDetailsScreen() {
 
         {!!product.catalog_product_id && (
           <View style={styles.catalogBadge}>
-            <Text style={styles.catalogBadgeText}>Verified product</Text>
+            <Text style={styles.catalogBadgeText}>✓ Verified product</Text>
           </View>
         )}
 
