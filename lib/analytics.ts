@@ -24,7 +24,14 @@ export type EventType =
   | "product_report"
   | "sensitive_content_reveal"
   | "search_query"
-  | "search_result_open";
+  | "search_result_open"
+  | "catalog_match_attempt"
+  | "catalog_match_high_confidence"
+  | "catalog_match_suggested"
+  | "catalog_match_accepted"
+  | "catalog_match_rejected"
+  | "catalog_match_none"
+  | "catalog_variant_matched";
 
 // Where the interaction happened, stored in metadata.source rather than as
 // dedicated columns to keep the schema small.

@@ -20,6 +20,8 @@ import {
 import { CATEGORIES } from "../../constants/categories";
 import { useAuth } from "../../hooks/AuthContext";
 import { useProducts } from "../../hooks/ProductsContext";
+import { trackEvent } from "../../lib/analytics";
+import { findCatalogMatch, type ResolvedCatalogMatch } from "../../lib/catalog";
 import { supabase } from "../../lib/supabase";
 import { createPendingModeration, moderateProductImage } from "../../lib/moderation";
 
@@ -85,6 +87,7 @@ export default function UploadScreen() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
+  const [catalogConfirmation, setCatalogConfirmation] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const signedInEmail = useMemo(
@@ -260,6 +263,129 @@ export default function UploadScreen() {
 
     try {
       setSubmitting(true);
+      setCatalogConfirmation(null);
+
+      const effectiveCategory =
+        selectedCategory === "other" ? customCategory.trim() : selectedCategory;
+      const matchInput = {
+        title: title.trim(),
+        brand: brand.trim(),
+        category: effectiveCategory.toLowerCase(),
+      };
+      let catalogProductId: string | null = null;
+      let catalogVariantId: string | null = null;
+      let catalogMatch: ResolvedCatalogMatch | null = null;
+
+      trackEvent({
+        eventType: "catalog_match_attempt",
+        category: matchInput.category,
+        metadata: { confidence: null, match_method: "bounded_catalog_lookup" },
+      });
+
+      setSubmitStatus("Identifying product...");
+      try {
+        catalogMatch = await findCatalogMatch(matchInput);
+      } catch (catalogError) {
+        if (__DEV__) console.warn("Catalog matching failed; continuing upload", catalogError);
+        trackEvent({
+          eventType: "catalog_match_none",
+          category: matchInput.category,
+          metadata: { confidence: 0, match_method: "lookup_error" },
+        });
+      }
+
+      if (catalogMatch && catalogMatch.match.confidence >= 0.9) {
+        catalogProductId = catalogMatch.match.productId;
+        catalogVariantId = catalogMatch.variantId;
+        setCatalogConfirmation(`✓ ${catalogMatch.productName} - Matched to PENCHANT catalog`);
+        trackEvent({
+          eventType: "catalog_match_high_confidence",
+          category: matchInput.category,
+          metadata: {
+            confidence: catalogMatch.match.confidence,
+            match_method: catalogMatch.match.reason,
+            canonical_product_id: catalogProductId,
+            variant_matched: Boolean(catalogVariantId),
+          },
+        });
+        if (catalogVariantId) {
+          trackEvent({
+            eventType: "catalog_variant_matched",
+            category: matchInput.category,
+            metadata: {
+              confidence: catalogMatch.match.confidence,
+              match_method: catalogMatch.match.reason,
+              canonical_product_id: catalogProductId,
+              canonical_variant_id: catalogVariantId,
+            },
+          });
+        }
+      } else if (catalogMatch && catalogMatch.match.confidence >= 0.7) {
+        trackEvent({
+          eventType: "catalog_match_suggested",
+          category: matchInput.category,
+          metadata: {
+            confidence: catalogMatch.match.confidence,
+            match_method: catalogMatch.match.reason,
+            canonical_product_id: catalogMatch.match.productId,
+            variant_matched: Boolean(catalogMatch.variantId),
+          },
+        });
+        const accepted = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Possible catalog match",
+            `We think this is:\n${catalogMatch?.productName}`,
+            [
+              {
+                text: "Not this product",
+                style: "cancel",
+                onPress: () => resolve(false),
+              },
+              {
+                text: "Use this product",
+                onPress: () => resolve(true),
+              },
+            ],
+            { cancelable: false }
+          );
+        });
+
+        if (accepted && catalogMatch) {
+          catalogProductId = catalogMatch.match.productId;
+          catalogVariantId = catalogMatch.variantId;
+          setCatalogConfirmation(`✓ ${catalogMatch.productName} - Matched to PENCHANT catalog`);
+          trackEvent({
+            eventType: "catalog_match_accepted",
+            category: matchInput.category,
+            metadata: {
+              confidence: catalogMatch.match.confidence,
+              match_method: catalogMatch.match.reason,
+              canonical_product_id: catalogProductId,
+              variant_matched: Boolean(catalogVariantId),
+            },
+          });
+        } else {
+          trackEvent({
+            eventType: "catalog_match_rejected",
+            category: matchInput.category,
+            metadata: {
+              confidence: catalogMatch.match.confidence,
+              match_method: catalogMatch.match.reason,
+              canonical_product_id: catalogMatch.match.productId,
+            },
+          });
+        }
+      } else {
+        trackEvent({
+          eventType: "catalog_match_none",
+          category: matchInput.category,
+          metadata: {
+            confidence: catalogMatch?.match.confidence ?? 0,
+            match_method: catalogMatch?.match.reason ?? "no_candidate",
+          },
+        });
+      }
+
       setSubmitStatus("Uploading image to storage...");
 
       // 1) Upload image to Supabase Storage
@@ -268,9 +394,6 @@ export default function UploadScreen() {
       setSubmitStatus("Publishing product listing...");
 
       // 2) Prepare clean payload
-      const effectiveCategory =
-        selectedCategory === "other" ? customCategory.trim() : selectedCategory;
-
       const cleanPrice = price.trim() ? price.replace(/[^\d.]/g, "") : null;
       const cleanUrl = url.trim() ? sanitizeUrl(url) : null;
 
@@ -282,15 +405,21 @@ export default function UploadScreen() {
         category: effectiveCategory.toLowerCase(),
         image_url: publicUrl,
         user_id: session.user.id,
+        catalog_product_id: catalogProductId,
+        catalog_variant_id: catalogVariantId,
       };
 
       const { data: product, error: insertErr } = await supabase
         .from("products")
         .insert(payload)
-        .select("id")
+        .select("id, catalog_product_id, catalog_variant_id")
         .single();
 
       if (insertErr) throw insertErr;
+
+      if (catalogProductId && product.catalog_product_id !== catalogProductId) {
+        throw new Error("The catalog association could not be saved. Please try again.");
+      }
 
       // Publish first. Moderation is deliberately fire-and-forget so uploads stay immediate.
       try {
@@ -311,6 +440,7 @@ export default function UploadScreen() {
       setCustomCategory("");
       setPrice("");
       setUrl("");
+      setCatalogConfirmation(null);
       setFormErrors({});
 
       Alert.alert(
@@ -704,6 +834,12 @@ export default function UploadScreen() {
 
           {/* Submit Button */}
           <View style={styles.submitSection}>
+            {!!catalogConfirmation && (
+              <View style={styles.catalogConfirmation}>
+                <Ionicons name="checkmark-circle" size={16} color="#166534" />
+                <Text style={styles.catalogConfirmationText}>{catalogConfirmation}</Text>
+              </View>
+            )}
             <TouchableOpacity
               onPress={onSubmit}
               disabled={submitting || !session}
@@ -1081,6 +1217,18 @@ const styles = StyleSheet.create({
     marginTop: 6,
     gap: 8,
   },
+  catalogConfirmation: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+  catalogConfirmationText: { flex: 1, color: "#166534", fontSize: 12, fontWeight: "700" },
   submitButton: {
     backgroundColor: "#111827",
     paddingVertical: 16,

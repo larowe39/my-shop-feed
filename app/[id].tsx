@@ -109,6 +109,12 @@ export default function ProductDetailsScreen() {
           <Text style={styles.meta}>Category: {product.category}</Text>
         )}
 
+        {!!product.catalog_product_id && (
+          <View style={styles.catalogBadge}>
+            <Text style={styles.catalogBadgeText}>✓ Verified product</Text>
+          </View>
+        )}
+
         {!!product.price && (
           <Text style={styles.price}>
             {String(product.price)}
@@ -223,6 +229,17 @@ const styles = StyleSheet.create({
   brand: { fontSize: 12, textTransform: "uppercase", color: "#777" },
   title: { fontSize: 26, fontWeight: "800", marginTop: 6, color: "#111" },
   meta: { marginTop: 10, color: "#444", fontSize: 16 },
+  catalogBadge: {
+    alignSelf: "flex-start",
+    marginTop: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+  catalogBadgeText: { color: "#166534", fontSize: 12, fontWeight: "700" },
   price: { marginTop: 10, fontSize: 18, fontWeight: "800", color: "#111" },
   reactionError: { marginTop: 10, color: "#b00020", fontSize: 13 },
   editBtn: {
