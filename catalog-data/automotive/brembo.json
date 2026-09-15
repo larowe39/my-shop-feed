@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "brembo",
+    "name": "Brembo",
+    "websiteUrl": "https://www.brembo.com",
+    "description": "Brembo brake kits"
+  },
+  "families": [
+    {
+      "slug": "gt",
+      "name": "GT",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "brembo-gt-gran-turismo",
+      "name": "GT Gran Turismo",
+      "family": "gt",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "GT Gran Turismo",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Brembo GT Gran Turismo"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "brembo-high-performance-6-piston",
+      "name": "High Performance 6-Piston Kit",
+      "family": "gt",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "6-Piston",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Brembo 6-Piston"
+      ],
+      "variants": []
+    }
+  ]
+}

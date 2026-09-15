@@ -1,0 +1,74 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "seiko",
+    "name": "Seiko",
+    "websiteUrl": "https://www.seikowatches.com",
+    "description": "Seiko watches"
+  },
+  "families": [
+    {
+      "slug": "prospex",
+      "name": "Prospex",
+      "subcategoryPath": [
+        "sport-watches"
+      ]
+    },
+    {
+      "slug": "presage",
+      "name": "Presage",
+      "subcategoryPath": [
+        "dress-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "seiko-prospex-speedtimer",
+      "name": "Prospex Speedtimer Solar Chronograph",
+      "family": "prospex",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "SSC813P1",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Speedtimer Solar"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "seiko-prospex-turtle",
+      "name": "Prospex Turtle",
+      "family": "prospex",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "SRPE93K1",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Turtle"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "seiko-presage-cocktail-time",
+      "name": "Presage Cocktail Time",
+      "family": "presage",
+      "subcategoryPath": [
+        "dress-watches"
+      ],
+      "modelNumber": "SRPE37K1",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "Cocktail Time"
+      ],
+      "variants": []
+    }
+  ]
+}

@@ -5,35 +5,107 @@
   "brand": {
     "slug": "nikon",
     "name": "Nikon",
-    "websiteUrl": "https://www.nikonusa.com"
+    "websiteUrl": "https://www.nikonusa.com",
+    "description": "Nikon cameras"
   },
   "families": [
-    { "slug": "z-series", "name": "Z Series", "subcategoryPath": ["cameras", "mirrorless"] }
+    {
+      "slug": "z-series",
+      "name": "Z Series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "nikon-z6-iii",
       "name": "Z6 III",
       "family": "z-series",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Nikon Z6III", "Nikon Z 6III"]
+      "aliases": [
+        "Nikon Z6III",
+        "Nikon Z 6III"
+      ]
     },
     {
       "slug": "nikon-z8",
       "name": "Z8",
       "family": "z-series",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Nikon Z 8"]
+      "aliases": [
+        "Nikon Z 8"
+      ]
     },
     {
       "slug": "nikon-z9",
       "name": "Z9",
       "family": "z-series",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2021,
-      "aliases": ["Nikon Z 9"]
+      "aliases": [
+        "Nikon Z 9"
+      ]
+    },
+    {
+      "slug": "nikon-z5",
+      "name": "Z5",
+      "family": "z-series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "Z5",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "Nikon Z5"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "nikon-zf",
+      "name": "Zf",
+      "family": "z-series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "Zf",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Nikon Zf"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "nikon-d850",
+      "name": "D850",
+      "family": "z-series",
+      "subcategoryPath": [
+        "cameras",
+        "dslr"
+      ],
+      "modelNumber": "D850",
+      "releaseYear": 2017,
+      "status": "active",
+      "aliases": [
+        "Nikon D850"
+      ],
+      "variants": []
     }
   ]
 }

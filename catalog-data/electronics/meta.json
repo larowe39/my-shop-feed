@@ -1,0 +1,87 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "meta",
+    "name": "Meta",
+    "websiteUrl": "https://www.meta.com",
+    "description": "Meta Quest VR"
+  },
+  "families": [
+    {
+      "slug": "quest",
+      "name": "Quest",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "meta-quest-3",
+      "name": "Quest 3",
+      "family": "quest",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
+      "modelNumber": "Quest 3",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Meta Quest 3"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "meta-quest-3s",
+      "name": "Quest 3S",
+      "family": "quest",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
+      "modelNumber": "Quest 3S",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Meta Quest 3S"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "meta-quest-pro",
+      "name": "Quest Pro",
+      "family": "quest",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
+      "modelNumber": "Quest Pro",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Meta Quest Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "meta-ray-ban-stories",
+      "name": "Ray-Ban Meta",
+      "family": "quest",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "Ray-Ban Meta",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Meta Ray-Ban"
+      ],
+      "variants": []
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "outdoors",
+  "brand": {
+    "slug": "weber",
+    "name": "Weber",
+    "websiteUrl": "https://www.weber.com",
+    "description": "Weber grills and accessories"
+  },
+  "families": [
+    {
+      "slug": "grill",
+      "name": "Grill",
+      "subcategoryPath": [
+        "camping"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "weber-genesis-e-325s",
+      "name": "Genesis E-325S",
+      "family": "grill",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Genesis E-325S",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Weber Genesis E-325S"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "weber-summit-ere315",
+      "name": "Summit E-315",
+      "family": "grill",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Summit E-315",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Weber Summit E-315"
+      ],
+      "variants": []
+    }
+  ]
+}

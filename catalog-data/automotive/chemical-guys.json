@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "chemical-guys",
+    "name": "Chemical Guys",
+    "websiteUrl": "https://www.chemicalguys.com",
+    "description": "Chemical Guys car care"
+  },
+  "families": [
+    {
+      "slug": "car-care",
+      "name": "Car Care",
+      "subcategoryPath": [
+        "car-care"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "chemical-guys-hydro-wash",
+      "name": "HydroSuds Wash",
+      "family": "car-care",
+      "subcategoryPath": [
+        "car-care"
+      ],
+      "modelNumber": "HydroSuds",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Chemical Guys HydroSuds"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "chemical-guys-v7",
+      "name": "V7 Optical Enhancing Polish",
+      "family": "car-care",
+      "subcategoryPath": [
+        "car-care"
+      ],
+      "modelNumber": "V7",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Chemical Guys V7"
+      ],
+      "variants": []
+    }
+  ]
+}

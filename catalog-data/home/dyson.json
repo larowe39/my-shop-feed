@@ -1,0 +1,74 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "home",
+  "brand": {
+    "slug": "dyson",
+    "name": "Dyson",
+    "websiteUrl": "https://www.dyson.com",
+    "description": "Dyson home products"
+  },
+  "families": [
+    {
+      "slug": "purifier",
+      "name": "Purifier",
+      "subcategoryPath": [
+        "kitchen"
+      ]
+    },
+    {
+      "slug": "fan",
+      "name": "Fan",
+      "subcategoryPath": [
+        "kitchen"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "dyson-purifier-hot-cool-hp09",
+      "name": "Purifier Hot+Cool Formaldehyde HP09",
+      "family": "purifier",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "HP09",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Dyson HP09"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "dyson-purifier-cool-tp07",
+      "name": "Purifier Cool TP07",
+      "family": "purifier",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "TP07",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "Dyson TP07"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "dyson-fan-am07",
+      "name": "Cool AM07",
+      "family": "fan",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "AM07",
+      "releaseYear": 2018,
+      "status": "active",
+      "aliases": [
+        "Dyson AM07"
+      ],
+      "variants": []
+    }
+  ]
+}

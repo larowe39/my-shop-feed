@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "thule",
+    "name": "Thule",
+    "websiteUrl": "https://www.thule.com",
+    "description": "Thule car accessories"
+  },
+  "families": [
+    {
+      "slug": "cargo-box",
+      "name": "Cargo Box",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "thule-motion-xt",
+      "name": "Motion XT",
+      "family": "cargo-box",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "Motion XT",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Thule Motion XT"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "thule-force-xl",
+      "name": "Force XL",
+      "family": "cargo-box",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "Force XL",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Thule Force XL"
+      ],
+      "variants": []
+    }
+  ]
+}

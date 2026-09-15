@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "klein-tools",
+    "name": "Klein Tools",
+    "websiteUrl": "https://www.kleintools.com",
+    "description": "Klein Tools hand tools"
+  },
+  "families": [
+    {
+      "slug": "hand-tools",
+      "name": "Hand Tools",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "klein-tools-32500",
+      "name": "32500",
+      "family": "hand-tools",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "32500",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Klein 32500"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "klein-tools-11055",
+      "name": "11055",
+      "family": "hand-tools",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "11055",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Klein 11055"
+      ],
+      "variants": []
+    }
+  ]
+}

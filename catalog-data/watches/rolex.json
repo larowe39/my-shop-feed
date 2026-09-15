@@ -1,0 +1,89 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "rolex",
+    "name": "Rolex",
+    "websiteUrl": "https://www.rolex.com",
+    "description": "Rolex watches"
+  },
+  "families": [
+    {
+      "slug": "submariner",
+      "name": "Submariner",
+      "subcategoryPath": [
+        "luxury-watches"
+      ]
+    },
+    {
+      "slug": "datejust",
+      "name": "Datejust",
+      "subcategoryPath": [
+        "dress-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "rolex-submariner-124060",
+      "name": "Submariner 124060",
+      "family": "submariner",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "124060",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "Submariner No Date"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "rolex-submariner-date-126610ln",
+      "name": "Submariner Date 126610LN",
+      "family": "submariner",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "126610LN",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "Submariner Date"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "rolex-datejust-41-126300",
+      "name": "Datejust 41 126300",
+      "family": "datejust",
+      "subcategoryPath": [
+        "dress-watches"
+      ],
+      "modelNumber": "126300",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "Datejust 41"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "rolex-datejust-36-126234",
+      "name": "Datejust 36 126234",
+      "family": "datejust",
+      "subcategoryPath": [
+        "dress-watches"
+      ],
+      "modelNumber": "126234",
+      "releaseYear": 2019,
+      "status": "active",
+      "aliases": [
+        "Datejust 36"
+      ],
+      "variants": []
+    }
+  ]
+}

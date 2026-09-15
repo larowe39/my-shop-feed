@@ -9,37 +9,68 @@
     "description": "Salomon trail and alpine footwear."
   },
   "families": [
-    { "slug": "xt-6", "name": "XT-6", "subcategoryPath": ["sneakers"] },
-    { "slug": "speedcross", "name": "Speedcross", "subcategoryPath": ["sneakers"] },
-    { "slug": "sense-ride", "name": "Sense Ride", "subcategoryPath": ["sneakers"] }
+    {
+      "slug": "xt-6",
+      "name": "XT-6",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "speedcross",
+      "name": "Speedcross",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "sense-ride",
+      "name": "Sense Ride",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "salomon-xt-6",
       "name": "XT-6",
       "family": "xt-6",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Salomon XT-6", "XT 6", "Salomon XT6"]
+      "aliases": [
+        "Salomon XT-6",
+        "Salomon XT6"
+      ]
     },
     {
       "slug": "salomon-speedcross-6",
       "name": "Speedcross 6",
       "family": "speedcross",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2023,
       "status": "active",
-      "aliases": ["Salomon Speedcross 6", "Speedcross 6"]
+      "aliases": [
+        "Salomon Speedcross 6"
+      ]
     },
     {
       "slug": "salomon-sense-ride-5",
       "name": "Sense Ride 5",
       "family": "sense-ride",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Salomon Sense Ride 5", "Sense Ride 5"]
+      "aliases": [
+        "Salomon Sense Ride 5"
+      ]
     }
   ]
 }

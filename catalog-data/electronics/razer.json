@@ -5,40 +5,147 @@
   "brand": {
     "slug": "razer",
     "name": "Razer",
-    "websiteUrl": "https://www.razer.com"
+    "websiteUrl": "https://www.razer.com",
+    "description": "Razer gaming peripherals"
   },
   "families": [
-    { "slug": "blade", "name": "Blade", "subcategoryPath": ["computers", "laptops"] },
-    { "slug": "peripherals", "name": "Peripherals", "subcategoryPath": ["gaming", "gaming-accessories"] }
+    {
+      "slug": "blade",
+      "name": "Blade",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ]
+    },
+    {
+      "slug": "peripherals",
+      "name": "Peripherals",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ]
+    },
+    {
+      "slug": "keyboard",
+      "name": "Keyboard",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ]
+    },
+    {
+      "slug": "mouse",
+      "name": "Mouse",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "razer-blade-16",
       "name": "Blade 16",
       "family": "blade",
-      "subcategoryPath": ["computers", "laptops"],
-      "aliases": ["Razer Blade 16"]
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "aliases": [
+        "Razer Blade 16"
+      ]
     },
     {
       "slug": "razer-blade-14",
       "name": "Blade 14",
       "family": "blade",
-      "subcategoryPath": ["computers", "laptops"],
-      "aliases": ["Razer Blade 14"]
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "aliases": [
+        "Razer Blade 14"
+      ]
     },
     {
       "slug": "razer-deathadder-v3",
       "name": "DeathAdder V3",
       "family": "peripherals",
-      "subcategoryPath": ["gaming", "gaming-accessories"],
-      "aliases": ["Razer DeathAdder V3"]
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "aliases": [
+        "Razer DeathAdder V3"
+      ]
     },
     {
       "slug": "razer-blackwidow-v4",
       "name": "BlackWidow V4",
       "family": "peripherals",
-      "subcategoryPath": ["gaming", "gaming-accessories"],
-      "aliases": ["Razer BlackWidow V4"]
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "aliases": [
+        "Razer BlackWidow V4"
+      ]
+    },
+    {
+      "slug": "razer-huntsman-mini",
+      "name": "Huntsman Mini",
+      "family": "keyboard",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "Huntsman Mini",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "razer-deathadder-v3-pro",
+      "name": "DeathAdder V3 Pro",
+      "family": "mouse",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "DeathAdder V3 Pro",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "razer-basilisk-v3",
+      "name": "Basilisk V3",
+      "family": "mouse",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "Basilisk V3",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "razer-hammerhead-pro",
+      "name": "Hammerhead Pro",
+      "family": "mouse",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "Hammerhead Pro",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
     }
   ]
 }

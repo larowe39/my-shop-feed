@@ -9,27 +9,47 @@
     "description": "Birkenstock footbed sandals and clogs."
   },
   "families": [
-    { "slug": "arizona", "name": "Arizona", "subcategoryPath": ["sneakers"] },
-    { "slug": "boston", "name": "Boston", "subcategoryPath": ["sneakers"] }
+    {
+      "slug": "arizona",
+      "name": "Arizona",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "boston",
+      "name": "Boston",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "birkenstock-arizona-soft-footbed",
       "name": "Arizona Soft Footbed",
       "family": "arizona",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Birkenstock Arizona Soft Footbed", "Arizona Soft Footbed"]
+      "aliases": [
+        "Birkenstock Arizona Soft Footbed"
+      ]
     },
     {
       "slug": "birkenstock-boston-soft-footbed",
       "name": "Boston Soft Footbed",
       "family": "boston",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Birkenstock Boston Soft Footbed", "Boston Soft Footbed"]
+      "aliases": [
+        "Birkenstock Boston Soft Footbed"
+      ]
     }
   ]
 }

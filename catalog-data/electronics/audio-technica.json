@@ -5,18 +5,96 @@
   "brand": {
     "slug": "audio-technica",
     "name": "Audio-Technica",
-    "websiteUrl": "https://www.audio-technica.com"
+    "websiteUrl": "https://www.audio-technica.com",
+    "description": "Audio-Technica audio gear"
   },
   "families": [
-    { "slug": "ath-m", "name": "ATH-M", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "ath-m",
+      "name": "ATH-M",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "ath-m50",
+      "name": "ATH-M50",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "ath-anc",
+      "name": "ATH-ANC",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "audio-technica-ath-m50x",
       "name": "ATH-M50x",
       "family": "ath-m",
-      "subcategoryPath": ["audio", "headphones"],
-      "aliases": ["AT ATH-M50x", "M50x"]
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "aliases": [
+        "AT ATH-M50x",
+        "M50x"
+      ]
+    },
+    {
+      "slug": "audio-technica-ath-m40x",
+      "name": "ATH-M40x",
+      "family": "ath-m50",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "ATH-M40x",
+      "releaseYear": 2013,
+      "status": "active",
+      "aliases": [
+        "M40x"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "audio-technica-ath-anc900bt",
+      "name": "ATH-ANC900BT",
+      "family": "ath-anc",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "ATH-ANC900BT",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "ANC900BT"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "audio-technica-ath-anc7tw",
+      "name": "ATH-ANC7TW",
+      "family": "ath-anc",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "ATH-ANC7TW",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "ANC7TW"
+      ],
+      "variants": []
     }
   ]
 }

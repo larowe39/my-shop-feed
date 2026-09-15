@@ -5,26 +5,139 @@
   "brand": {
     "slug": "logitech",
     "name": "Logitech",
-    "websiteUrl": "https://www.logitech.com"
+    "websiteUrl": "https://www.logitech.com",
+    "description": "Logitech peripherals"
   },
   "families": [
-    { "slug": "g-series", "name": "G Series", "subcategoryPath": ["gaming", "gaming-accessories"] }
+    {
+      "slug": "g-series",
+      "name": "G Series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ]
+    },
+    {
+      "slug": "mx",
+      "name": "MX",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "logitech-g-pro-x-superlight-2",
       "name": "G Pro X Superlight 2",
       "family": "g-series",
-      "subcategoryPath": ["gaming", "gaming-accessories"],
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Logitech G Pro X Superlight 2", "Pro X Superlight 2"]
+      "aliases": [
+        "Logitech G Pro X Superlight 2",
+        "Pro X Superlight 2"
+      ]
     },
     {
       "slug": "logitech-g915",
       "name": "G915",
       "family": "g-series",
-      "subcategoryPath": ["gaming", "gaming-accessories"],
-      "aliases": ["Logitech G915 TKL"]
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "aliases": [
+        "Logitech G915 TKL"
+      ]
+    },
+    {
+      "slug": "logitech-mx-master-3s",
+      "name": "MX Master 3S",
+      "family": "mx",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "910-005694",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "logitech-mx-keys-mini",
+      "name": "MX Keys Mini",
+      "family": "mx",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "920-010720",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "logitech-g915-tkl",
+      "name": "G915 TKL",
+      "family": "g-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "G915 TKL",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "logitech-g502-x-plus",
+      "name": "G502 X Plus",
+      "family": "g-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "G502 X Plus",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "logitech-pro-x-superlight-2",
+      "name": "PRO X Superlight 2",
+      "family": "g-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "PRO X Superlight 2",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "G Pro X Superlight 2"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "logitech-pop-keys",
+      "name": "POP Keys",
+      "family": "mx",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "920-011241",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
     }
   ]
 }

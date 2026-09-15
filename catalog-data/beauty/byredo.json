@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "beauty",
+  "brand": {
+    "slug": "byredo",
+    "name": "Byredo",
+    "websiteUrl": "https://www.byredo.com",
+    "description": "Byredo fragrances"
+  },
+  "families": [
+    {
+      "slug": "fragrance",
+      "name": "Fragrance",
+      "subcategoryPath": [
+        "fragrance"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "byredo-gypsy-water",
+      "name": "Gypsy Water",
+      "family": "fragrance",
+      "subcategoryPath": [
+        "fragrance"
+      ],
+      "modelNumber": "Gypsy Water",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Byredo Gypsy Water"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "byredo-rose-of-no-man-s-land",
+      "name": "Rose of No Man's Land",
+      "family": "fragrance",
+      "subcategoryPath": [
+        "fragrance"
+      ],
+      "modelNumber": "Rose of No Man's Land",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Byredo Rose of No Man's Land"
+      ],
+      "variants": []
+    }
+  ]
+}

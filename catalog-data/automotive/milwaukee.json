@@ -1,0 +1,67 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "milwaukee",
+    "name": "Milwaukee",
+    "websiteUrl": "https://www.milwaukeetool.com",
+    "description": "Milwaukee tools"
+  },
+  "families": [
+    {
+      "slug": "m18",
+      "name": "M18",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "milwaukee-m18-compact-drill",
+      "name": "M18 Compact Drill",
+      "family": "m18",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "2804-20",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Milwaukee 2804-20"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "milwaukee-m18-impact-driver",
+      "name": "M18 Impact Driver",
+      "family": "m18",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "2853-20",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Milwaukee 2853-20"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "milwaukee-m18-compact-saw",
+      "name": "M18 Compact Circular Saw",
+      "family": "m18",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "2731-20",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Milwaukee 2731-20"
+      ],
+      "variants": []
+    }
+  ]
+}

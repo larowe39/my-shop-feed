@@ -1,0 +1,111 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "keychron",
+    "name": "Keychron",
+    "websiteUrl": "https://www.keychron.com",
+    "description": "Mechanical keyboards"
+  },
+  "families": [
+    {
+      "slug": "q-series",
+      "name": "Q Series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ]
+    },
+    {
+      "slug": "k-series",
+      "name": "K Series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "keychron-q1-pro",
+      "name": "Q1 Pro",
+      "family": "q-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "Q1 Pro",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Keychron Q1 Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "keychron-q2-pro",
+      "name": "Q2 Pro",
+      "family": "q-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "Q2 Pro",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Keychron Q2 Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "keychron-q3-max",
+      "name": "Q3 Max",
+      "family": "q-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "Q3 Max",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Keychron Q3 Max"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "keychron-k2-pro",
+      "name": "K2 Pro",
+      "family": "k-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "K2 Pro",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Keychron K2 Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "keychron-k8-pro",
+      "name": "K8 Pro",
+      "family": "k-series",
+      "subcategoryPath": [
+        "gaming",
+        "gaming-accessories"
+      ],
+      "modelNumber": "K8 Pro",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Keychron K8 Pro"
+      ],
+      "variants": []
+    }
+  ]
+}

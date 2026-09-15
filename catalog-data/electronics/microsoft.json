@@ -5,45 +5,137 @@
   "brand": {
     "slug": "microsoft",
     "name": "Microsoft",
-    "websiteUrl": "https://www.microsoft.com"
+    "websiteUrl": "https://www.microsoft.com/en-us/surface",
+    "description": "Microsoft Surface and gaming hardware"
   },
   "families": [
-    { "slug": "surface-pro", "name": "Surface Pro", "subcategoryPath": ["computers", "tablets"] },
-    { "slug": "surface-laptop", "name": "Surface Laptop", "subcategoryPath": ["computers", "laptops"] },
-    { "slug": "xbox", "name": "Xbox", "subcategoryPath": ["gaming", "consoles"] }
+    {
+      "slug": "surface-pro",
+      "name": "Surface Pro",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ]
+    },
+    {
+      "slug": "surface-laptop",
+      "name": "Surface Laptop",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ]
+    },
+    {
+      "slug": "xbox",
+      "name": "Xbox",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ]
+    },
+    {
+      "slug": "surface",
+      "name": "Surface",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "microsoft-surface-pro-11",
       "name": "Surface Pro 11",
       "family": "surface-pro",
-      "subcategoryPath": ["computers", "tablets"],
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Surface Pro (11th Edition)"]
+      "aliases": [
+        "Surface Pro (11th Edition)"
+      ]
     },
     {
       "slug": "microsoft-surface-laptop-7",
       "name": "Surface Laptop 7",
       "family": "surface-laptop",
-      "subcategoryPath": ["computers", "laptops"],
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Surface Laptop (7th Edition)"]
+      "aliases": [
+        "Surface Laptop (7th Edition)"
+      ]
     },
     {
       "slug": "microsoft-xbox-series-x",
       "name": "Xbox Series X",
       "family": "xbox",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2020,
-      "aliases": ["Xbox SeriesX"]
+      "aliases": [
+        "Xbox SeriesX"
+      ]
     },
     {
       "slug": "microsoft-xbox-series-s",
       "name": "Xbox Series S",
       "family": "xbox",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2020,
-      "aliases": ["Xbox SeriesS"]
+      "aliases": [
+        "Xbox SeriesS"
+      ]
+    },
+    {
+      "slug": "microsoft-surface-laptop-go-4",
+      "name": "Surface Laptop Go 4",
+      "family": "surface",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "Surface Laptop Go 4",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "microsoft-surface-pro-9",
+      "name": "Surface Pro 9",
+      "family": "surface-pro",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "Surface Pro 9",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "microsoft-surface-studio-2-plus",
+      "name": "Surface Studio 2+",
+      "family": "surface",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "Surface Studio 2+",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
     }
   ]
 }

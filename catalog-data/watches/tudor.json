@@ -1,0 +1,61 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "tudor",
+    "name": "Tudor",
+    "websiteUrl": "https://www.tudorwatch.com",
+    "description": "Tudor watches"
+  },
+  "families": [
+    {
+      "slug": "black-bay",
+      "name": "Black Bay",
+      "subcategoryPath": [
+        "dive-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "tudor-black-bay-58",
+      "name": "Black Bay 58",
+      "family": "black-bay",
+      "subcategoryPath": [
+        "dive-watches"
+      ],
+      "modelNumber": "79030N",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "tudor-black-bay-36",
+      "name": "Black Bay 36",
+      "family": "black-bay",
+      "subcategoryPath": [
+        "dive-watches"
+      ],
+      "modelNumber": "79730",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "tudor-hydronaut",
+      "name": "Hydronaut",
+      "family": "black-bay",
+      "subcategoryPath": [
+        "dive-watches"
+      ],
+      "modelNumber": "79220R",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

@@ -5,36 +5,154 @@
   "brand": {
     "slug": "sonos",
     "name": "Sonos",
-    "websiteUrl": "https://www.sonos.com"
+    "websiteUrl": "https://www.sonos.com",
+    "description": "Sonos smart speakers"
   },
   "families": [
-    { "slug": "era", "name": "Era", "subcategoryPath": ["audio", "smart-speakers"] },
-    { "slug": "move", "name": "Move", "subcategoryPath": ["audio", "portable-speakers"] }
+    {
+      "slug": "era",
+      "name": "Era",
+      "subcategoryPath": [
+        "audio",
+        "smart-speakers"
+      ]
+    },
+    {
+      "slug": "move",
+      "name": "Move",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ]
+    },
+    {
+      "slug": "arc",
+      "name": "Arc",
+      "subcategoryPath": [
+        "audio",
+        "home-audio"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "sonos-era-100",
       "name": "Era 100",
       "family": "era",
-      "subcategoryPath": ["audio", "smart-speakers"],
+      "subcategoryPath": [
+        "audio",
+        "smart-speakers"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Sonos Era100"]
+      "aliases": [
+        "Sonos Era100"
+      ]
     },
     {
       "slug": "sonos-era-300",
       "name": "Era 300",
       "family": "era",
-      "subcategoryPath": ["audio", "smart-speakers"],
+      "subcategoryPath": [
+        "audio",
+        "smart-speakers"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Sonos Era300"]
+      "aliases": [
+        "Sonos Era300"
+      ]
     },
     {
       "slug": "sonos-move-2",
       "name": "Move 2",
       "family": "move",
-      "subcategoryPath": ["audio", "portable-speakers"],
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Sonos Move2"]
+      "aliases": [
+        "Sonos Move2"
+      ]
+    },
+    {
+      "slug": "sonos-roam-2",
+      "name": "Roam 2",
+      "family": "move",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
+      "modelNumber": "Roam 2",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Sonos Roam 2"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sonos-arc",
+      "name": "Arc",
+      "family": "arc",
+      "subcategoryPath": [
+        "audio",
+        "home-audio"
+      ],
+      "modelNumber": "Arc",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "Sonos Arc"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sonos-beam-gen-2",
+      "name": "Beam Gen 2",
+      "family": "arc",
+      "subcategoryPath": [
+        "audio",
+        "home-audio"
+      ],
+      "modelNumber": "Beam Gen 2",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "Sonos Beam 2"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sonos-sub-mini",
+      "name": "Sub Mini",
+      "family": "arc",
+      "subcategoryPath": [
+        "audio",
+        "home-audio"
+      ],
+      "modelNumber": "Sub Mini",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Sonos Sub Mini"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sonos-five",
+      "name": "Five",
+      "family": "arc",
+      "subcategoryPath": [
+        "audio",
+        "home-audio"
+      ],
+      "modelNumber": "Five",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Sonos Five"
+      ],
+      "variants": []
     }
   ]
 }

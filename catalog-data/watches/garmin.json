@@ -5,7 +5,8 @@
   "brand": {
     "slug": "garmin",
     "name": "Garmin",
-    "websiteUrl": "https://www.garmin.com"
+    "websiteUrl": "https://www.garmin.com",
+    "description": "Garmin wearables"
   },
   "families": [
     { "slug": "fenix", "name": "Fenix", "subcategoryPath": ["sport-watches"] },

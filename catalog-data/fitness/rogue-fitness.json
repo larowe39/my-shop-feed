@@ -1,0 +1,74 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "fitness",
+  "brand": {
+    "slug": "rogue-fitness",
+    "name": "Rogue Fitness",
+    "websiteUrl": "https://www.roguefitness.com",
+    "description": "Rogue gym equipment"
+  },
+  "families": [
+    {
+      "slug": "kb",
+      "name": "Kettlebell",
+      "subcategoryPath": [
+        "training"
+      ]
+    },
+    {
+      "slug": "barbell",
+      "name": "Barbell",
+      "subcategoryPath": [
+        "training"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "rogue-fitness-kettlebell-24kg",
+      "name": "Cast Iron Kettlebell 24kg",
+      "family": "kb",
+      "subcategoryPath": [
+        "training"
+      ],
+      "modelNumber": "24kg",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Rogue 24kg Kettlebell"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "rogue-fitness-kettlebell-32kg",
+      "name": "Cast Iron Kettlebell 32kg",
+      "family": "kb",
+      "subcategoryPath": [
+        "training"
+      ],
+      "modelNumber": "32kg",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Rogue 32kg Kettlebell"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "rogue-fitness-echo-barbell",
+      "name": "Echo Barbell 45lb",
+      "family": "barbell",
+      "subcategoryPath": [
+        "training"
+      ],
+      "modelNumber": "45lb",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Rogue Echo Bar"
+      ],
+      "variants": []
+    }
+  ]
+}

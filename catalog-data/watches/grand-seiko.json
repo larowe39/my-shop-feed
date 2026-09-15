@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "grand-seiko",
+    "name": "Grand Seiko",
+    "websiteUrl": "https://www.grand-seiko.com",
+    "description": "Grand Seiko watches"
+  },
+  "families": [
+    {
+      "slug": "sbg",
+      "name": "SBG",
+      "subcategoryPath": [
+        "luxury-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "grand-seiko-sbga413",
+      "name": "SBGA413",
+      "family": "sbg",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "SBGA413",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Grand Seiko SBGA413"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "grand-seiko-sbga459",
+      "name": "SBGA459",
+      "family": "sbg",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "SBGA459",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Grand Seiko SBGA459"
+      ],
+      "variants": []
+    }
+  ]
+}

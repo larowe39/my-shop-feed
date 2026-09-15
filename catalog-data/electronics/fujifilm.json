@@ -5,27 +5,95 @@
   "brand": {
     "slug": "fujifilm",
     "name": "Fujifilm",
-    "websiteUrl": "https://www.fujifilm-x.com"
+    "websiteUrl": "https://fujifilm-x.com",
+    "description": "Fujifilm cameras"
   },
   "families": [
-    { "slug": "x-series", "name": "X Series", "subcategoryPath": ["cameras", "mirrorless"] }
+    {
+      "slug": "x-series",
+      "name": "X Series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "fujifilm-x-t5",
       "name": "X-T5",
       "family": "x-series",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2022,
-      "aliases": ["Fuji X-T5", "Fujifilm XT5"]
+      "aliases": [
+        "Fuji X-T5",
+        "Fujifilm XT5"
+      ]
     },
     {
       "slug": "fujifilm-x100vi",
       "name": "X100VI",
       "family": "x-series",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Fuji X100VI", "Fujifilm X100 VI"]
+      "aliases": [
+        "Fuji X100VI",
+        "Fujifilm X100 VI"
+      ]
+    },
+    {
+      "slug": "fujifilm-x-s20",
+      "name": "X-S20",
+      "family": "x-series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "X-S20",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Fuji X-S20"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "fujifilm-x-h2",
+      "name": "X-H2",
+      "family": "x-series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "X-H2",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Fuji X-H2"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "fujifilm-x-h2s",
+      "name": "X-H2S",
+      "family": "x-series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "X-H2S",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Fuji X-H2S"
+      ],
+      "variants": []
     }
   ]
 }

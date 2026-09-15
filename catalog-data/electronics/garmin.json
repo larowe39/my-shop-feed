@@ -1,0 +1,13 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "garmin",
+    "name": "Garmin",
+    "websiteUrl": "https://www.garmin.com",
+    "description": "Garmin wearables"
+  },
+  "families": [],
+  "products": []
+}

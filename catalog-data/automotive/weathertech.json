@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "weathertech",
+    "name": "WeatherTech",
+    "websiteUrl": "https://www.weathertech.com",
+    "description": "WeatherTech vehicle accessories"
+  },
+  "families": [
+    {
+      "slug": "floorliner",
+      "name": "FloorLiner",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "weathertech-floorliner",
+      "name": "FloorLiner",
+      "family": "floorliner",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "FloorLiner",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "WeatherTech FloorLiner"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "weathertech-mat",
+      "name": "Cargo Mat",
+      "family": "floorliner",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "Cargo Mat",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "WeatherTech Cargo Mat"
+      ],
+      "variants": []
+    }
+  ]
+}

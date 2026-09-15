@@ -9,47 +9,89 @@
     "description": "Nike athletic footwear and running shoes."
   },
   "families": [
-    { "slug": "air-max", "name": "Air Max", "subcategoryPath": ["sneakers"] },
-    { "slug": "pegasus", "name": "Pegasus", "subcategoryPath": ["sneakers"] },
-    { "slug": "zoom-vomero", "name": "Zoom Vomero", "subcategoryPath": ["sneakers"] },
-    { "slug": "blazer", "name": "Blazer", "subcategoryPath": ["sneakers"] }
+    {
+      "slug": "air-max",
+      "name": "Air Max",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "pegasus",
+      "name": "Pegasus",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "zoom-vomero",
+      "name": "Zoom Vomero",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "blazer",
+      "name": "Blazer",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "nike-air-max-1",
       "name": "Air Max 1",
       "family": "air-max",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Nike Air Max 1", "Air Max One"]
+      "aliases": [
+        "Nike Air Max 1",
+        "Air Max One"
+      ]
     },
     {
       "slug": "nike-pegasus-41",
       "name": "Pegasus 41",
       "family": "pegasus",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Nike Pegasus 41", "Pegasus 41"]
+      "aliases": [
+        "Nike Pegasus 41"
+      ]
     },
     {
       "slug": "nike-zoom-vomero-5",
       "name": "Zoom Vomero 5",
       "family": "zoom-vomero",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2024,
       "status": "active",
-      "aliases": ["Nike Zoom Vomero 5", "Vomero 5"]
+      "aliases": [
+        "Nike Zoom Vomero 5",
+        "Vomero 5"
+      ]
     },
     {
       "slug": "nike-blazer-low",
       "name": "Blazer Low",
       "family": "blazer",
-      "subcategoryPath": ["sneakers"],
+      "subcategoryPath": [
+        "sneakers"
+      ],
       "releaseYear": 2023,
       "status": "active",
-      "aliases": ["Nike Blazer Low", "Blazer Low"]
+      "aliases": [
+        "Nike Blazer Low"
+      ]
     }
   ]
 }

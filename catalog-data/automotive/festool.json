@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "festool",
+    "name": "Festool",
+    "websiteUrl": "https://www.festool.com",
+    "description": "Festool tools"
+  },
+  "families": [
+    {
+      "slug": "saws",
+      "name": "Saws",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "festool-kapex-75",
+      "name": "KAPEX 75",
+      "family": "saws",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "KAPEX 75",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Festool KAPEX 75"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "festool-ts-55",
+      "name": "TS 55",
+      "family": "saws",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "TS 55",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Festool TS 55"
+      ],
+      "variants": []
+    }
+  ]
+}

@@ -5,36 +5,98 @@
   "brand": {
     "slug": "beats",
     "name": "Beats",
-    "websiteUrl": "https://www.beatsbydre.com"
+    "websiteUrl": "https://www.beatsbydre.com",
+    "description": "Beats audio products"
   },
   "families": [
-    { "slug": "studio", "name": "Studio", "subcategoryPath": ["audio", "headphones"] },
-    { "slug": "fit-pro", "name": "Fit Pro", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "studio",
+      "name": "Studio",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "fit-pro",
+      "name": "Fit Pro",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "solo",
+      "name": "Solo",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "powerbeats",
+      "name": "Powerbeats",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "beats-studio-pro",
       "name": "Studio Pro",
       "family": "studio",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Beats Studio Pro"]
+      "aliases": [
+        "Beats Studio Pro"
+      ]
     },
     {
       "slug": "beats-solo-4",
       "name": "Solo 4",
       "family": "studio",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Beats Solo4"]
+      "aliases": [
+        "Beats Solo4"
+      ]
     },
     {
       "slug": "beats-fit-pro",
       "name": "Fit Pro",
       "family": "fit-pro",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2021,
-      "aliases": ["Beats Fit Pro"]
+      "aliases": [
+        "Beats Fit Pro"
+      ]
+    },
+    {
+      "slug": "beats-powerbeats-pro-2",
+      "name": "Powerbeats Pro 2",
+      "family": "powerbeats",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "Powerbeats Pro 2",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Beats Powerbeats Pro 2"
+      ],
+      "variants": []
     }
   ]
 }

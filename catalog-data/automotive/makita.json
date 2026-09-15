@@ -1,0 +1,67 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "makita",
+    "name": "Makita",
+    "websiteUrl": "https://www.makitatools.com",
+    "description": "Makita tools"
+  },
+  "families": [
+    {
+      "slug": "xgt",
+      "name": "XGT",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "makita-dtd154",
+      "name": "DTD154",
+      "family": "xgt",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "DTD154Z",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Makita DTD154"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "makita-dhr242",
+      "name": "DHR242",
+      "family": "xgt",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "DHR242Z",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Makita DHR242"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "makita-xm4",
+      "name": "XM4",
+      "family": "xgt",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "XM4",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Makita XM4"
+      ],
+      "variants": []
+    }
+  ]
+}

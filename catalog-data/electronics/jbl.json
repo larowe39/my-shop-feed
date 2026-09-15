@@ -5,28 +5,166 @@
   "brand": {
     "slug": "jbl",
     "name": "JBL",
-    "websiteUrl": "https://www.jbl.com"
+    "websiteUrl": "https://www.jbl.com",
+    "description": "JBL audio products"
   },
   "families": [
-    { "slug": "clip", "name": "Clip", "subcategoryPath": ["audio", "portable-speakers"] },
-    { "slug": "tour", "name": "Tour", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "clip",
+      "name": "Clip",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ]
+    },
+    {
+      "slug": "tour",
+      "name": "Tour",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "portable-speaker",
+      "name": "Portable Speaker",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ]
+    },
+    {
+      "slug": "headphones",
+      "name": "Headphones",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "jbl-clip-5",
       "name": "Clip 5",
       "family": "clip",
-      "subcategoryPath": ["audio", "portable-speakers"],
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
       "releaseYear": 2023,
-      "aliases": ["JBL Clip5"]
+      "aliases": [
+        "JBL Clip5"
+      ]
     },
     {
       "slug": "jbl-tour-one-m2",
       "name": "Tour One M2",
       "family": "tour",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2023,
-      "aliases": ["JBL Tour One M2", "Tour One MK2"]
+      "aliases": [
+        "JBL Tour One M2",
+        "Tour One MK2"
+      ]
+    },
+    {
+      "slug": "jbl-flip-6",
+      "name": "Flip 6",
+      "family": "portable-speaker",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
+      "modelNumber": "Flip 6",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "JBL Flip 6"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "jbl-charge-5",
+      "name": "Charge 5",
+      "family": "portable-speaker",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
+      "modelNumber": "Charge 5",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "JBL Charge 5"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "jbl-boombox-3",
+      "name": "Boombox 3",
+      "family": "portable-speaker",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
+      "modelNumber": "Boombox 3",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "JBL Boombox 3"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "jbl-pulse-5",
+      "name": "Pulse 5",
+      "family": "portable-speaker",
+      "subcategoryPath": [
+        "audio",
+        "portable-speakers"
+      ],
+      "modelNumber": "Pulse 5",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "JBL Pulse 5"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "jbl-live-660nc",
+      "name": "Live 660NC",
+      "family": "headphones",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "Live 660NC",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "JBL Live 660NC"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "jbl-tune-flex",
+      "name": "Tune Flex",
+      "family": "headphones",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "Tune Flex",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "JBL Tune Flex"
+      ],
+      "variants": []
     }
   ]
 }

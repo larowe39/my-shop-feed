@@ -1,0 +1,48 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "home",
+  "brand": {
+    "slug": "fellow",
+    "name": "Fellow",
+    "websiteUrl": "https://fellowproducts.com",
+    "description": "Fellow kitchen products"
+  },
+  "families": [
+    {
+      "slug": "stagg",
+      "name": "Stagg",
+      "subcategoryPath": [
+        "kitchen"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "fellow-stagg-ekg",
+      "name": "Stagg EKG",
+      "family": "stagg",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "Stagg EKG",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "fellow-stagg-pro",
+      "name": "Stagg Pro",
+      "family": "stagg",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "Stagg Pro",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

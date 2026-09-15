@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "bosch",
+    "name": "Bosch",
+    "websiteUrl": "https://www.boschtools.com",
+    "description": "Bosch tools"
+  },
+  "families": [
+    {
+      "slug": "bosch-grease",
+      "name": "Bosch Tools",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "bosch-gdr18v-140c",
+      "name": "GDR18V-140C",
+      "family": "bosch-grease",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "GDR18V-140C",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Bosch GDR18V-140C"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "bosch-psb-1800",
+      "name": "PSB 1800",
+      "family": "bosch-grease",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "PSB 1800",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Bosch PSB 1800"
+      ],
+      "variants": []
+    }
+  ]
+}

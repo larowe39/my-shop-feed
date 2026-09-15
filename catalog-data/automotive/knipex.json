@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "knipex",
+    "name": "Knipex",
+    "websiteUrl": "https://www.knipex.com",
+    "description": "Knipex tools"
+  },
+  "families": [
+    {
+      "slug": "pliers",
+      "name": "Pliers",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "knipex-86-01-250",
+      "name": "86 01 250",
+      "family": "pliers",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "86 01 250",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Knipex 86 01 250"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "knipex-87-01-250",
+      "name": "87 01 250",
+      "family": "pliers",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "87 01 250",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Knipex 87 01 250"
+      ],
+      "variants": []
+    }
+  ]
+}

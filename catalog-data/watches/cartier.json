@@ -1,0 +1,48 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "cartier",
+    "name": "Cartier",
+    "websiteUrl": "https://www.cartier.com",
+    "description": "Cartier watches"
+  },
+  "families": [
+    {
+      "slug": "tank",
+      "name": "Tank",
+      "subcategoryPath": [
+        "dress-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "cartier-tank-americaine",
+      "name": "Tank Americaine",
+      "family": "tank",
+      "subcategoryPath": [
+        "dress-watches"
+      ],
+      "modelNumber": "WSTA0090",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "cartier-santos-de-cartier",
+      "name": "Santos de Cartier",
+      "family": "tank",
+      "subcategoryPath": [
+        "dress-watches"
+      ],
+      "modelNumber": "WSSA0034",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

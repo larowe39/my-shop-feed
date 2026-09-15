@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "meguiars",
+    "name": "Meguiar's",
+    "websiteUrl": "https://www.meguiars.com",
+    "description": "Meguiar's car care"
+  },
+  "families": [
+    {
+      "slug": "detailing",
+      "name": "Detailing",
+      "subcategoryPath": [
+        "car-care"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "meguiars-griot-garage-g9",
+      "name": "G9 Compound",
+      "family": "detailing",
+      "subcategoryPath": [
+        "car-care"
+      ],
+      "modelNumber": "G9",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Meguiar's G9"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "meguiars-m205",
+      "name": "M205 Ultra Finishing Polish",
+      "family": "detailing",
+      "subcategoryPath": [
+        "car-care"
+      ],
+      "modelNumber": "M205",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Meguiar's M205"
+      ],
+      "variants": []
+    }
+  ]
+}
