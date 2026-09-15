@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "acne-studios", "name": "Acne Studios", "websiteUrl": "https://www.acnestudios.com", "description": "Acne Studios apparel and accessories" },
+  "families": [{ "slug": "jeans", "name": "Jeans", "subcategoryPath": ["apparel"] }, { "slug": "scarves", "name": "Scarves", "subcategoryPath": ["apparel"] }, { "slug": "outerwear", "name": "Outerwear", "subcategoryPath": ["outerwear"] }],
+  "products": [
+    { "slug": "acne-studios-1991-toj-jeans", "name": "1991 Toj Jeans", "family": "jeans", "subcategoryPath": ["apparel"] },
+    { "slug": "acne-studios-2021m-jeans", "name": "2021M Jeans", "family": "jeans", "subcategoryPath": ["apparel"] },
+    { "slug": "acne-studios-vally-scarf", "name": "Vally Scarf", "family": "scarves", "subcategoryPath": ["apparel"] },
+    { "slug": "acne-studios-canada-scarf", "name": "Canada Scarf", "family": "scarves", "subcategoryPath": ["apparel"] },
+    { "slug": "acne-studios-leather-biker-jacket", "name": "Leather Biker Jacket", "family": "outerwear", "subcategoryPath": ["outerwear"] }
+  ]
+}

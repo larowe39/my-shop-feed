@@ -1,0 +1,37 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "dji", "name": "DJI", "websiteUrl": "https://www.dji.com", "description": "DJI drones, cameras and stabilizers" },
+  "families": [
+    { "slug": "mavic", "name": "Mavic", "subcategoryPath": ["cameras"] },
+    { "slug": "mini", "name": "Mini", "subcategoryPath": ["cameras"] },
+    { "slug": "air", "name": "Air", "subcategoryPath": ["cameras"] },
+    { "slug": "avata", "name": "Avata", "subcategoryPath": ["cameras"] },
+    { "slug": "osmo-action", "name": "Osmo Action", "subcategoryPath": ["cameras", "action-cameras"] },
+    { "slug": "osmo-pocket", "name": "Osmo Pocket", "subcategoryPath": ["cameras"] },
+    { "slug": "ronin", "name": "Ronin", "subcategoryPath": ["cameras"] }
+  ],
+  "products": [
+    { "slug": "dji-mavic-3-pro", "name": "Mavic 3 Pro", "family": "mavic", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["DJI Mavic 3 Pro"] },
+    { "slug": "dji-mavic-3-classic", "name": "Mavic 3 Classic", "family": "mavic", "subcategoryPath": ["cameras"], "releaseYear": 2022, "aliases": ["DJI Mavic 3 Classic"] },
+    { "slug": "dji-mavic-3-cine", "name": "Mavic 3 Cine", "family": "mavic", "subcategoryPath": ["cameras"], "releaseYear": 2021, "aliases": ["DJI Mavic 3 Cine"] },
+    { "slug": "dji-mini-4-pro", "name": "Mini 4 Pro", "family": "mini", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["DJI Mini 4 Pro"] },
+    { "slug": "dji-mini-3-pro", "name": "Mini 3 Pro", "family": "mini", "subcategoryPath": ["cameras"], "releaseYear": 2022, "aliases": ["DJI Mini 3 Pro"] },
+    { "slug": "dji-mini-3", "name": "Mini 3", "family": "mini", "subcategoryPath": ["cameras"], "releaseYear": 2022, "aliases": ["DJI Mini 3"] },
+    { "slug": "dji-mini-2-se", "name": "Mini 2 SE", "family": "mini", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["DJI Mini 2 SE"] },
+    { "slug": "dji-air-3", "name": "Air 3", "family": "air", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["DJI Air 3"] },
+    { "slug": "dji-air-2s", "name": "Air 2S", "family": "air", "subcategoryPath": ["cameras"], "releaseYear": 2021, "aliases": ["DJI Air 2S"] },
+    { "slug": "dji-avata-2", "name": "Avata 2", "family": "avata", "subcategoryPath": ["cameras"], "releaseYear": 2024, "aliases": ["DJI Avata 2"] },
+    { "slug": "dji-avata", "name": "Avata", "family": "avata", "subcategoryPath": ["cameras"], "releaseYear": 2022, "aliases": ["DJI Avata"] },
+    { "slug": "dji-osmo-action-5-pro", "name": "Osmo Action 5 Pro", "family": "osmo-action", "subcategoryPath": ["cameras", "action-cameras"], "releaseYear": 2024, "aliases": ["Action 5 Pro"] },
+    { "slug": "dji-osmo-action-4", "name": "Osmo Action 4", "family": "osmo-action", "subcategoryPath": ["cameras", "action-cameras"], "releaseYear": 2023, "aliases": ["Action 4"] },
+    { "slug": "dji-osmo-action-3", "name": "Osmo Action 3", "family": "osmo-action", "subcategoryPath": ["cameras", "action-cameras"], "releaseYear": 2022, "aliases": ["Action 3"] },
+    { "slug": "dji-osmo-pocket-3", "name": "Osmo Pocket 3", "family": "osmo-pocket", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["Pocket 3"] },
+    { "slug": "dji-osmo-pocket-2", "name": "Pocket 2", "family": "osmo-pocket", "subcategoryPath": ["cameras"], "releaseYear": 2020, "aliases": ["DJI Pocket 2"] },
+    { "slug": "dji-rs-4-pro", "name": "RS 4 Pro", "family": "ronin", "subcategoryPath": ["cameras"], "releaseYear": 2024, "aliases": ["DJI RS4 Pro"] },
+    { "slug": "dji-rs-4", "name": "RS 4", "family": "ronin", "subcategoryPath": ["cameras"], "releaseYear": 2024, "aliases": ["DJI RS4"] },
+    { "slug": "dji-rs-3-pro", "name": "RS 3 Pro", "family": "ronin", "subcategoryPath": ["cameras"], "releaseYear": 2022, "aliases": ["DJI RS3 Pro"] },
+    { "slug": "dji-rs-3-mini", "name": "RS 3 Mini", "family": "ronin", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["DJI RS3 Mini"] }
+  ]
+}

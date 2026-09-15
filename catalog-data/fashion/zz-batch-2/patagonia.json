@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "patagonia", "name": "Patagonia", "websiteUrl": "https://www.patagonia.com" },
+  "families": [{ "slug": "fleece", "name": "Fleece", "subcategoryPath": ["outerwear"] }, { "slug": "shells", "name": "Shells", "subcategoryPath": ["outerwear"] }, { "slug": "bags", "name": "Bags", "subcategoryPath": ["apparel"] }],
+  "products": [
+    { "slug": "patagonia-better-sweater-jacket", "name": "Better Sweater Jacket", "family": "fleece", "subcategoryPath": ["outerwear"] },
+    { "slug": "patagonia-retro-x-jacket", "name": "Classic Retro-X Jacket", "family": "fleece", "subcategoryPath": ["outerwear"] },
+    { "slug": "patagonia-nano-puff-jacket", "name": "Nano Puff Jacket", "family": "shells", "subcategoryPath": ["outerwear"], "modelNumber": "84212", "releaseYear": 2009 },
+    { "slug": "patagonia-torrentshell-3l-jacket", "name": "Torrentshell 3L Jacket", "family": "shells", "subcategoryPath": ["outerwear"] },
+    { "slug": "patagonia-black-hole-duffel-55l", "name": "Black Hole Duffel 55L", "family": "bags", "subcategoryPath": ["apparel"] }
+  ]
+}

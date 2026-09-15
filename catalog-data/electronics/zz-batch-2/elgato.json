@@ -1,0 +1,30 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "elgato", "name": "Elgato", "websiteUrl": "https://www.elgato.com", "description": "Elgato streaming and creator hardware" },
+  "families": [
+    { "slug": "stream-deck", "name": "Stream Deck", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "capture", "name": "Capture", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "camera", "name": "Camera", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "lighting", "name": "Lighting", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "audio", "name": "Audio", "subcategoryPath": ["audio"] }
+  ],
+  "products": [
+    { "slug": "elgato-stream-deck-mk2", "name": "Stream Deck MK.2", "family": "stream-deck", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Stream Deck MK2"] },
+    { "slug": "elgato-stream-deck-plus", "name": "Stream Deck +", "family": "stream-deck", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Stream Deck Plus"] },
+    { "slug": "elgato-stream-deck-xl", "name": "Stream Deck XL", "family": "stream-deck", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato XL"] },
+    { "slug": "elgato-stream-deck-mini", "name": "Stream Deck Mini", "family": "stream-deck", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato Mini"] },
+    { "slug": "elgato-stream-deck-pedal", "name": "Stream Deck Pedal", "family": "stream-deck", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato Pedal"] },
+    { "slug": "elgato-game-capture-4k-x", "name": "Game Capture 4K X", "family": "capture", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["4K X"] },
+    { "slug": "elgato-game-capture-hd60-x", "name": "Game Capture HD60 X", "family": "capture", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["HD60 X"] },
+    { "slug": "elgato-game-capture-4k60-pro-mk2", "name": "Game Capture 4K60 Pro MK.2", "family": "capture", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["4K60 Pro MK2"] },
+    { "slug": "elgato-cam-link-4k", "name": "Cam Link 4K", "family": "capture", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["CamLink 4K"] },
+    { "slug": "elgato-facecam", "name": "Facecam", "family": "camera", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato Facecam"] },
+    { "slug": "elgato-facecam-pro", "name": "Facecam Pro", "family": "camera", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato Facecam Pro"] },
+    { "slug": "elgato-key-light", "name": "Key Light", "family": "lighting", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato Key Light"] },
+    { "slug": "elgato-key-light-air", "name": "Key Light Air", "family": "lighting", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Elgato Key Light Air"] },
+    { "slug": "elgato-wave-3", "name": "Wave:3", "family": "audio", "subcategoryPath": ["audio"], "aliases": ["Wave 3"] },
+    { "slug": "elgato-wave-xlr", "name": "Wave XLR", "family": "audio", "subcategoryPath": ["audio"], "aliases": ["Elgato Wave XLR"] }
+  ]
+}

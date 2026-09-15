@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "accessories",
+  "brand": { "slug": "ray-ban", "name": "Ray-Ban", "websiteUrl": "https://www.ray-ban.com", "description": "Ray-Ban eyewear" },
+  "families": [{ "slug": "aviator", "name": "Aviator", "subcategoryPath": ["eyewear"] }, { "slug": "wayfarer", "name": "Wayfarer", "subcategoryPath": ["eyewear"] }, { "slug": "clubmaster", "name": "Clubmaster", "subcategoryPath": ["eyewear"] }],
+  "products": [
+    { "slug": "ray-ban-aviator-classic-rb3025", "name": "Aviator Classic RB3025", "family": "aviator", "subcategoryPath": ["eyewear"], "modelNumber": "RB3025" },
+    { "slug": "ray-ban-original-wayfarer-rb2140", "name": "Original Wayfarer RB2140", "family": "wayfarer", "subcategoryPath": ["eyewear"], "modelNumber": "RB2140" },
+    { "slug": "ray-ban-new-wayfarer-rb2132", "name": "New Wayfarer RB2132", "family": "wayfarer", "subcategoryPath": ["eyewear"], "modelNumber": "RB2132" },
+    { "slug": "ray-ban-clubmaster-classic-rb3016", "name": "Clubmaster Classic RB3016", "family": "clubmaster", "subcategoryPath": ["eyewear"], "modelNumber": "RB3016" },
+    { "slug": "ray-ban-round-metal-rb3447", "name": "Round Metal RB3447", "family": "aviator", "subcategoryPath": ["eyewear"], "modelNumber": "RB3447" }
+  ]
+}

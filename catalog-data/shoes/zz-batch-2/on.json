@@ -1,0 +1,20 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "on", "name": "On", "websiteUrl": "https://www.on.com", "description": "On running footwear" },
+  "families": [
+    { "slug": "cloudmonster", "name": "Cloudmonster", "subcategoryPath": ["sneakers"] },
+    { "slug": "cloudsurfer", "name": "Cloudsurfer", "subcategoryPath": ["sneakers"] },
+    { "slug": "cloudrunner", "name": "Cloudrunner", "subcategoryPath": ["sneakers"] },
+    { "slug": "cloud", "name": "Cloud", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "on-cloudmonster", "name": "Cloudmonster", "family": "cloudmonster", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloudmonster-2", "name": "Cloudmonster 2", "family": "cloudmonster", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloudmonster-hyper", "name": "Cloudmonster Hyper", "family": "cloudmonster", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloudsurfer", "name": "Cloudsurfer", "family": "cloudsurfer", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloudrunner-2", "name": "Cloudrunner 2", "family": "cloudrunner", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloud-5", "name": "Cloud 5", "family": "cloud", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloudswift-3", "name": "Cloudswift 3", "family": "cloud", "subcategoryPath": ["sneakers"] },
+    { "slug": "on-cloudtilt", "name": "Cloudtilt", "family": "cloud", "subcategoryPath": ["sneakers"] }
+  ]
+}

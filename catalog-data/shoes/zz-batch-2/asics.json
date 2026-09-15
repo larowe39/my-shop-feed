@@ -1,0 +1,20 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "asics", "name": "ASICS", "websiteUrl": "https://www.asics.com", "description": "ASICS running and sport footwear" },
+  "families": [
+    { "slug": "gel-kayano", "name": "Gel-Kayano", "subcategoryPath": ["sneakers"] },
+    { "slug": "gel-nimbus", "name": "Gel-Nimbus", "subcategoryPath": ["sneakers"] },
+    { "slug": "gel-nyc", "name": "Gel-NYC", "subcategoryPath": ["sneakers"] },
+    { "slug": "novablast", "name": "Novablast", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "asics-gel-kayano-31", "name": "Gel-Kayano 31", "family": "gel-kayano", "subcategoryPath": ["sneakers"], "releaseYear": 2024 },
+    { "slug": "asics-gel-kayano-30", "name": "Gel-Kayano 30", "family": "gel-kayano", "subcategoryPath": ["sneakers"], "releaseYear": 2023 },
+    { "slug": "asics-gel-nimbus-26", "name": "Gel-Nimbus 26", "family": "gel-nimbus", "subcategoryPath": ["sneakers"], "releaseYear": 2024 },
+    { "slug": "asics-gel-nimbus-25", "name": "Gel-Nimbus 25", "family": "gel-nimbus", "subcategoryPath": ["sneakers"], "releaseYear": 2023 },
+    { "slug": "asics-gel-nyc", "name": "Gel-NYC", "family": "gel-nyc", "subcategoryPath": ["sneakers"] },
+    { "slug": "asics-gel-1130", "name": "Gel-1130", "family": "gel-nyc", "subcategoryPath": ["sneakers"] },
+    { "slug": "asics-novablast-4", "name": "Novablast 4", "family": "novablast", "subcategoryPath": ["sneakers"], "releaseYear": 2023 },
+    { "slug": "asics-superblast-2", "name": "Superblast 2", "family": "novablast", "subcategoryPath": ["sneakers"], "releaseYear": 2024 }
+  ]
+}

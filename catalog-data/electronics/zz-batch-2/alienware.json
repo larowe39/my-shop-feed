@@ -1,0 +1,26 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "alienware", "name": "Alienware", "websiteUrl": "https://www.dell.com/alienware", "description": "Alienware gaming PCs and monitors" },
+  "families": [
+    { "slug": "m-series", "name": "M Series", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "x-series", "name": "X Series", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "aurora", "name": "Aurora", "subcategoryPath": ["computers"] },
+    { "slug": "monitor", "name": "Monitors", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    { "slug": "alienware-m16-r2", "name": "m16 R2", "family": "m-series", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["Alienware m16 R2"] },
+    { "slug": "alienware-m18-r2", "name": "m18 R2", "family": "m-series", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["Alienware m18 R2"] },
+    { "slug": "alienware-m16-r1", "name": "m16 R1", "family": "m-series", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2023, "aliases": ["Alienware m16 R1"] },
+    { "slug": "alienware-m18-r1", "name": "m18 R1", "family": "m-series", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2023, "aliases": ["Alienware m18 R1"] },
+    { "slug": "alienware-x16-r2", "name": "x16 R2", "family": "x-series", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["Alienware x16 R2"] },
+    { "slug": "alienware-x14-r2", "name": "x14 R2", "family": "x-series", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2023, "aliases": ["Alienware x14 R2"] },
+    { "slug": "alienware-aurora-r16", "name": "Aurora R16", "family": "aurora", "subcategoryPath": ["computers"], "releaseYear": 2023, "aliases": ["Alienware Aurora R16"] },
+    { "slug": "alienware-aurora-r15", "name": "Aurora R15", "family": "aurora", "subcategoryPath": ["computers"], "releaseYear": 2022, "aliases": ["Alienware Aurora R15"] },
+    { "slug": "alienware-aw3423dw", "name": "AW3423DW", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "AW3423DW", "aliases": ["Alienware AW3423DW"] },
+    { "slug": "alienware-aw3423dwf", "name": "AW3423DWF", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "AW3423DWF", "aliases": ["Alienware AW3423DWF"] },
+    { "slug": "alienware-aw3225qf", "name": "AW3225QF", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "AW3225QF", "aliases": ["Alienware AW3225QF"] },
+    { "slug": "alienware-aw2725df", "name": "AW2725DF", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "AW2725DF", "aliases": ["Alienware AW2725DF"] }
+  ]
+}

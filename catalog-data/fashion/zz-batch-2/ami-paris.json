@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "ami-paris", "name": "AMI Paris", "websiteUrl": "https://www.amiparis.com", "description": "AMI Paris apparel" },
+  "families": [{ "slug": "ami-de-coeur", "name": "Ami de Coeur", "subcategoryPath": ["apparel"] }, { "slug": "outerwear", "name": "Outerwear", "subcategoryPath": ["outerwear"] }],
+  "products": [
+    { "slug": "ami-paris-ami-de-coeur-cardigan", "name": "Ami de Coeur Cardigan", "family": "ami-de-coeur", "subcategoryPath": ["apparel"] },
+    { "slug": "ami-paris-ami-de-coeur-sweater", "name": "Ami de Coeur Sweater", "family": "ami-de-coeur", "subcategoryPath": ["apparel"] },
+    { "slug": "ami-paris-ami-de-coeur-hoodie", "name": "Ami de Coeur Hoodie", "family": "ami-de-coeur", "subcategoryPath": ["apparel"] },
+    { "slug": "ami-paris-ami-de-coeur-polo", "name": "Ami de Coeur Polo", "family": "ami-de-coeur", "subcategoryPath": ["apparel"] },
+    { "slug": "ami-paris-bomber-jacket", "name": "Bomber Jacket", "family": "outerwear", "subcategoryPath": ["outerwear"] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "arcteryx", "name": "Arc'teryx", "websiteUrl": "https://arcteryx.com" },
+  "families": [{ "slug": "shells", "name": "Shells", "subcategoryPath": ["outerwear"] }, { "slug": "insulation", "name": "Insulation", "subcategoryPath": ["outerwear"] }, { "slug": "fleece", "name": "Fleece", "subcategoryPath": ["outerwear"] }],
+  "products": [
+    { "slug": "arcteryx-beta-ar-jacket", "name": "Beta AR Jacket", "family": "shells", "subcategoryPath": ["outerwear"] },
+    { "slug": "arcteryx-beta-lt-jacket", "name": "Beta LT Jacket", "family": "shells", "subcategoryPath": ["outerwear"] },
+    { "slug": "arcteryx-alpha-sv-jacket", "name": "Alpha SV Jacket", "family": "shells", "subcategoryPath": ["outerwear"] },
+    { "slug": "arcteryx-atom-hoody", "name": "Atom Hoody", "family": "insulation", "subcategoryPath": ["outerwear"] },
+    { "slug": "arcteryx-cerium-hoody", "name": "Cerium Hoody", "family": "insulation", "subcategoryPath": ["outerwear"] },
+    { "slug": "arcteryx-covert-cardigan", "name": "Covert Cardigan", "family": "fleece", "subcategoryPath": ["outerwear"] }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "saucony", "name": "Saucony", "websiteUrl": "https://www.saucony.com", "description": "Saucony running footwear" },
+  "families": [
+    { "slug": "endorphin", "name": "Endorphin", "subcategoryPath": ["sneakers"] },
+    { "slug": "triumph", "name": "Triumph", "subcategoryPath": ["sneakers"] },
+    { "slug": "ride", "name": "Ride", "subcategoryPath": ["sneakers"] },
+    { "slug": "guide", "name": "Guide", "subcategoryPath": ["sneakers"] },
+    { "slug": "shadow", "name": "Shadow", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "saucony-endorphin-speed-4", "name": "Endorphin Speed 4", "family": "endorphin", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-endorphin-pro-4", "name": "Endorphin Pro 4", "family": "endorphin", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-triumph-22", "name": "Triumph 22", "family": "triumph", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-ride-17", "name": "Ride 17", "family": "ride", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-guide-17", "name": "Guide 17", "family": "guide", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-peregrine-14", "name": "Peregrine 14", "family": "ride", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-shadow-6000", "name": "Shadow 6000", "family": "shadow", "subcategoryPath": ["sneakers"] },
+    { "slug": "saucony-jazz-original", "name": "Jazz Original", "family": "shadow", "subcategoryPath": ["sneakers"] }
+  ]
+}

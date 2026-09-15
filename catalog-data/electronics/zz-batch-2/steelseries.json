@@ -1,0 +1,30 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "steelseries", "name": "SteelSeries", "websiteUrl": "https://steelseries.com", "description": "SteelSeries gaming peripherals" },
+  "families": [
+    { "slug": "apex", "name": "Apex", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "aerox", "name": "Aerox", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "rival", "name": "Rival", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "arctis", "name": "Arctis", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "nova", "name": "Arctis Nova", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    { "slug": "steelseries-apex-pro", "name": "Apex Pro", "family": "apex", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Apex Pro"] },
+    { "slug": "steelseries-apex-pro-tkl", "name": "Apex Pro TKL", "family": "apex", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Apex Pro TKL"] },
+    { "slug": "steelseries-apex-7", "name": "Apex 7", "family": "apex", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Apex 7"] },
+    { "slug": "steelseries-apex-9-tkl", "name": "Apex 9 TKL", "family": "apex", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Apex 9 TKL"] },
+    { "slug": "steelseries-aerox-3-wireless", "name": "Aerox 3 Wireless", "family": "aerox", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Aerox 3 Wireless"] },
+    { "slug": "steelseries-aerox-5-wireless", "name": "Aerox 5 Wireless", "family": "aerox", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Aerox 5 Wireless"] },
+    { "slug": "steelseries-aerox-9-wireless", "name": "Aerox 9 Wireless", "family": "aerox", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Aerox 9 Wireless"] },
+    { "slug": "steelseries-rival-3", "name": "Rival 3", "family": "rival", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Rival 3"] },
+    { "slug": "steelseries-rival-5", "name": "Rival 5", "family": "rival", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Rival 5"] },
+    { "slug": "steelseries-prime-wireless", "name": "Prime Wireless", "family": "rival", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Prime Wireless"] },
+    { "slug": "steelseries-arctis-7", "name": "Arctis 7", "family": "arctis", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Arctis 7"] },
+    { "slug": "steelseries-arctis-9", "name": "Arctis 9", "family": "arctis", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Arctis 9"] },
+    { "slug": "steelseries-arctis-pro-wireless", "name": "Arctis Pro Wireless", "family": "arctis", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["SteelSeries Arctis Pro Wireless"] },
+    { "slug": "steelseries-arctis-nova-pro-wireless", "name": "Arctis Nova Pro Wireless", "family": "nova", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Nova Pro Wireless"] },
+    { "slug": "steelseries-arctis-nova-7", "name": "Arctis Nova 7", "family": "nova", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Nova 7"] }
+  ]
+}

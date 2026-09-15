@@ -1,0 +1,22 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": { "slug": "oris", "name": "Oris", "websiteUrl": "https://www.oris.ch", "description": "Oris watches" },
+  "families": [
+    { "slug": "aquis", "name": "Aquis", "subcategoryPath": ["dive-watches"] },
+    { "slug": "divers-sixty-five", "name": "Divers Sixty-Five", "subcategoryPath": ["dive-watches"] },
+    { "slug": "big-crown", "name": "Big Crown", "subcategoryPath": ["sport-watches"] },
+    { "slug": "propilot", "name": "ProPilot", "subcategoryPath": ["sport-watches"] }
+  ],
+  "products": [
+    { "slug": "oris-aquis-date-calibre-400-01-400-7769-4154", "name": "Aquis Date Calibre 400 01 400 7769 4154", "family": "aquis", "subcategoryPath": ["dive-watches"], "modelNumber": "01 400 7769 4154" },
+    { "slug": "oris-aquis-gmt-date-01-798-7754-4135", "name": "Aquis GMT Date 01 798 7754 4135", "family": "aquis", "subcategoryPath": ["dive-watches"], "modelNumber": "01 798 7754 4135" },
+    { "slug": "oris-aquis-date-01-733-7766-4157", "name": "Aquis Date 01 733 7766 4157", "family": "aquis", "subcategoryPath": ["dive-watches"], "modelNumber": "01 733 7766 4157" },
+    { "slug": "oris-divers-sixty-five-01-733-7720-4055", "name": "Divers Sixty-Five 01 733 7720 4055", "family": "divers-sixty-five", "subcategoryPath": ["dive-watches"], "modelNumber": "01 733 7720 4055" },
+    { "slug": "oris-divers-sixty-five-chronograph-01-771-7744-4354", "name": "Divers Sixty-Five Chronograph 01 771 7744 4354", "family": "divers-sixty-five", "subcategoryPath": ["dive-watches"], "modelNumber": "01 771 7744 4354" },
+    { "slug": "oris-big-crown-pointer-date-01-754-7741-4065", "name": "Big Crown Pointer Date 01 754 7741 4065", "family": "big-crown", "subcategoryPath": ["sport-watches"], "modelNumber": "01 754 7741 4065" },
+    { "slug": "oris-big-crown-propilot-x-calibre-400", "name": "Big Crown ProPilot X Calibre 400", "family": "propilot", "subcategoryPath": ["sport-watches"], "modelNumber": "Calibre 400" },
+    { "slug": "oris-propilot-altimeter-01-793-7775-8734", "name": "ProPilot Altimeter 01 793 7775 8734", "family": "propilot", "subcategoryPath": ["sport-watches"], "modelNumber": "01 793 7775 8734" }
+  ]
+}

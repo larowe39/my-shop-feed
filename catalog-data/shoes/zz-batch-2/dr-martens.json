@@ -1,0 +1,16 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "dr-martens", "name": "Dr. Martens", "websiteUrl": "https://www.drmartens.com", "description": "Dr. Martens boots and shoes" },
+  "families": [
+    { "slug": "originals", "name": "Originals", "subcategoryPath": ["boots"] },
+    { "slug": "chelsea", "name": "Chelsea Boots", "subcategoryPath": ["boots"] }
+  ],
+  "products": [
+    { "slug": "dr-martens-1460", "name": "1460 Boot", "family": "originals", "subcategoryPath": ["boots"], "modelNumber": "1460" },
+    { "slug": "dr-martens-1461", "name": "1461 Shoe", "family": "originals", "subcategoryPath": ["boots"], "modelNumber": "1461" },
+    { "slug": "dr-martens-2976", "name": "2976 Chelsea Boot", "family": "chelsea", "subcategoryPath": ["boots"], "modelNumber": "2976" },
+    { "slug": "dr-martens-jadon", "name": "Jadon Boot", "family": "originals", "subcategoryPath": ["boots"] },
+    { "slug": "dr-martens-penton", "name": "Penton Loafer", "family": "originals", "subcategoryPath": ["boots"] },
+    { "slug": "dr-martens-adrian", "name": "Adrian Loafer", "family": "originals", "subcategoryPath": ["boots"] }
+  ]
+}

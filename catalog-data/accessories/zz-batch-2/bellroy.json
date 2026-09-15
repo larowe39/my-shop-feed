@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "accessories",
+  "brand": { "slug": "bellroy", "name": "Bellroy", "websiteUrl": "https://bellroy.com", "description": "Bellroy bags, wallets and carry goods" },
+  "families": [{ "slug": "bags", "name": "Bags", "subcategoryPath": ["bags"] }, { "slug": "wallets", "name": "Wallets", "subcategoryPath": ["bags"] }],
+  "products": [
+    { "slug": "bellroy-transit-backpack", "name": "Transit Backpack", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "bellroy-transit-workpack", "name": "Transit Workpack", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "bellroy-classic-backpack", "name": "Classic Backpack", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "bellroy-lite-sling", "name": "Lite Sling", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "bellroy-hide-and-seek-wallet", "name": "Hide & Seek Wallet", "family": "wallets", "subcategoryPath": ["bags"] }
+  ]
+}

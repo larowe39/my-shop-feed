@@ -1,0 +1,23 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": { "slug": "longines", "name": "Longines", "websiteUrl": "https://www.longines.com", "description": "Longines watches" },
+  "families": [
+    { "slug": "hydroconquest", "name": "HydroConquest", "subcategoryPath": ["dive-watches"] },
+    { "slug": "spirit", "name": "Spirit", "subcategoryPath": ["sport-watches"] },
+    { "slug": "master-collection", "name": "Master Collection", "subcategoryPath": ["dress-watches"] },
+    { "slug": "legend-diver", "name": "Legend Diver", "subcategoryPath": ["dive-watches"] },
+    { "slug": "dolcevita", "name": "DolceVita", "subcategoryPath": ["dress-watches"] }
+  ],
+  "products": [
+    { "slug": "longines-hydroconquest-41-l3-781-4-56-6", "name": "HydroConquest 41 L3.781.4.56.6", "family": "hydroconquest", "subcategoryPath": ["dive-watches"], "modelNumber": "L3.781.4.56.6" },
+    { "slug": "longines-hydroconquest-gmt-l3-790-4-56-6", "name": "HydroConquest GMT L3.790.4.56.6", "family": "hydroconquest", "subcategoryPath": ["dive-watches"], "modelNumber": "L3.790.4.56.6" },
+    { "slug": "longines-spirit-zulu-time-l3-812-4-63-6", "name": "Spirit Zulu Time L3.812.4.63.6", "family": "spirit", "subcategoryPath": ["sport-watches"], "modelNumber": "L3.812.4.63.6" },
+    { "slug": "longines-spirit-37-l3-410-4-63-6", "name": "Spirit 37 L3.410.4.63.6", "family": "spirit", "subcategoryPath": ["sport-watches"], "modelNumber": "L3.410.4.63.6" },
+    { "slug": "longines-master-moonphase-l2-909-4-78-3", "name": "Master Collection Moonphase L2.909.4.78.3", "family": "master-collection", "subcategoryPath": ["dress-watches"], "modelNumber": "L2.909.4.78.3" },
+    { "slug": "longines-master-190th-l2-793-4-73-2", "name": "Master Collection 190th Anniversary L2.793.4.73.2", "family": "master-collection", "subcategoryPath": ["dress-watches"], "modelNumber": "L2.793.4.73.2" },
+    { "slug": "longines-legend-diver-l3-774-4-50-0", "name": "Legend Diver L3.774.4.50.0", "family": "legend-diver", "subcategoryPath": ["dive-watches"], "modelNumber": "L3.774.4.50.0" },
+    { "slug": "longines-dolcevita-l5-512-4-71-0", "name": "DolceVita L5.512.4.71.0", "family": "dolcevita", "subcategoryPath": ["dress-watches"], "modelNumber": "L5.512.4.71.0" }
+  ]
+}

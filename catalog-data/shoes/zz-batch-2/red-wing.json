@@ -1,0 +1,18 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "red-wing", "name": "Red Wing", "websiteUrl": "https://www.redwingshoes.com", "description": "Red Wing boots" },
+  "families": [
+    { "slug": "heritage", "name": "Heritage", "subcategoryPath": ["boots"] },
+    { "slug": "work", "name": "Work", "subcategoryPath": ["boots"] }
+  ],
+  "products": [
+    { "slug": "red-wing-iron-ranger-8111", "name": "Iron Ranger 8111", "family": "heritage", "subcategoryPath": ["boots"], "modelNumber": "8111" },
+    { "slug": "red-wing-iron-ranger-8085", "name": "Iron Ranger 8085", "family": "heritage", "subcategoryPath": ["boots"], "modelNumber": "8085" },
+    { "slug": "red-wing-classic-moc-875", "name": "Classic Moc 875", "family": "heritage", "subcategoryPath": ["boots"], "modelNumber": "875" },
+    { "slug": "red-wing-classic-moc-1907", "name": "Classic Moc 1907", "family": "heritage", "subcategoryPath": ["boots"], "modelNumber": "1907" },
+    { "slug": "red-wing-blacksmith-3343", "name": "Blacksmith 3343", "family": "heritage", "subcategoryPath": ["boots"], "modelNumber": "3343" },
+    { "slug": "red-wing-beckman-9419", "name": "Beckman 9419", "family": "heritage", "subcategoryPath": ["boots"], "modelNumber": "9419" },
+    { "slug": "red-wing-supersole-2233", "name": "SuperSole 2233", "family": "work", "subcategoryPath": ["boots"], "modelNumber": "2233" },
+    { "slug": "red-wing-tradesman-6617", "name": "Tradesman 6617", "family": "work", "subcategoryPath": ["boots"], "modelNumber": "6617" }
+  ]
+}

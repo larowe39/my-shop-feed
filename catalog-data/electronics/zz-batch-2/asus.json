@@ -1,0 +1,31 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "asus", "name": "ASUS", "websiteUrl": "https://www.asus.com", "description": "ASUS laptops, monitors and gaming hardware" },
+  "families": [
+    { "slug": "rog-zephyrus", "name": "ROG Zephyrus", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "rog-strix", "name": "ROG Strix", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "zenbook", "name": "Zenbook", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "proart", "name": "ProArt", "subcategoryPath": ["computers"] },
+    { "slug": "rog-ally", "name": "ROG Ally", "subcategoryPath": ["gaming", "consoles"] },
+    { "slug": "rog-monitor", "name": "ROG Monitors", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    { "slug": "asus-rog-ally", "name": "ROG Ally", "family": "rog-ally", "subcategoryPath": ["gaming", "consoles"], "releaseYear": 2023, "aliases": ["ASUS ROG Ally"] },
+    { "slug": "asus-rog-ally-x", "name": "ROG Ally X", "family": "rog-ally", "subcategoryPath": ["gaming", "consoles"], "releaseYear": 2024, "aliases": ["ASUS ROG Ally X"] },
+    { "slug": "asus-rog-zephyrus-g14-2024", "name": "ROG Zephyrus G14 (2024)", "family": "rog-zephyrus", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["Zephyrus G14 2024"] },
+    { "slug": "asus-rog-zephyrus-g16-2024", "name": "ROG Zephyrus G16 (2024)", "family": "rog-zephyrus", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["Zephyrus G16 2024"] },
+    { "slug": "asus-rog-zephyrus-m16", "name": "ROG Zephyrus M16", "family": "rog-zephyrus", "subcategoryPath": ["computers", "laptops"], "aliases": ["Zephyrus M16"] },
+    { "slug": "asus-rog-strix-scar-16", "name": "ROG Strix Scar 16", "family": "rog-strix", "subcategoryPath": ["computers", "laptops"], "aliases": ["Strix Scar 16"] },
+    { "slug": "asus-rog-strix-scar-18", "name": "ROG Strix Scar 18", "family": "rog-strix", "subcategoryPath": ["computers", "laptops"], "aliases": ["Strix Scar 18"] },
+    { "slug": "asus-rog-strix-g16", "name": "ROG Strix G16", "family": "rog-strix", "subcategoryPath": ["computers", "laptops"], "aliases": ["Strix G16"] },
+    { "slug": "asus-rog-strix-g18", "name": "ROG Strix G18", "family": "rog-strix", "subcategoryPath": ["computers", "laptops"], "aliases": ["Strix G18"] },
+    { "slug": "asus-zenbook-duo-2024", "name": "Zenbook DUO (2024)", "family": "zenbook", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["ASUS Zenbook Duo 2024"] },
+    { "slug": "asus-zenbook-14-oled", "name": "Zenbook 14 OLED", "family": "zenbook", "subcategoryPath": ["computers", "laptops"], "aliases": ["ASUS Zenbook 14 OLED"] },
+    { "slug": "asus-proart-p16", "name": "ProArt P16", "family": "proart", "subcategoryPath": ["computers", "laptops"], "aliases": ["ASUS ProArt P16"] },
+    { "slug": "asus-proart-px13", "name": "ProArt PX13", "family": "proart", "subcategoryPath": ["computers", "laptops"], "aliases": ["ASUS ProArt PX13"] },
+    { "slug": "asus-rog-swift-oled-pg32ucdm", "name": "ROG Swift OLED PG32UCDM", "family": "rog-monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "PG32UCDM", "aliases": ["PG32UCDM"] },
+    { "slug": "asus-rog-swift-oled-pg27aqdm", "name": "ROG Swift OLED PG27AQDM", "family": "rog-monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "PG27AQDM", "aliases": ["PG27AQDM"] }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "crocs", "name": "Crocs", "websiteUrl": "https://www.crocs.com", "description": "Crocs clogs and sandals" },
+  "families": [
+    { "slug": "classic", "name": "Classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "echo", "name": "Echo", "subcategoryPath": ["sneakers"] },
+    { "slug": "mellow", "name": "Mellow", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "crocs-classic-clog", "name": "Classic Clog", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "crocs-classic-platform-clog", "name": "Classic Platform Clog", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "crocs-classic-crush-clog", "name": "Classic Crush Clog", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "crocs-echo-clog", "name": "Echo Clog", "family": "echo", "subcategoryPath": ["sneakers"] },
+    { "slug": "crocs-mellow-slide", "name": "Mellow Slide", "family": "mellow", "subcategoryPath": ["sneakers"] },
+    { "slug": "crocs-yukon-vista-ii-clog", "name": "Yukon Vista II Clog", "family": "classic", "subcategoryPath": ["sneakers"] }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "stussy", "name": "Stussy", "websiteUrl": "https://www.stussy.com", "description": "Stussy streetwear" },
+  "families": [{ "slug": "apparel", "name": "Apparel", "subcategoryPath": ["apparel"] }, { "slug": "outerwear", "name": "Outerwear", "subcategoryPath": ["outerwear"] }],
+  "products": [
+    { "slug": "stussy-basic-logo-tee", "name": "Basic Logo Tee", "family": "apparel", "subcategoryPath": ["apparel"] },
+    { "slug": "stussy-world-tour-tee", "name": "World Tour Tee", "family": "apparel", "subcategoryPath": ["apparel"] },
+    { "slug": "stussy-8-ball-tee", "name": "8 Ball Tee", "family": "apparel", "subcategoryPath": ["apparel"] },
+    { "slug": "stussy-stock-logo-hoodie", "name": "Stock Logo Hoodie", "family": "apparel", "subcategoryPath": ["apparel"] },
+    { "slug": "stussy-sherpa-reversible-jacket", "name": "Sherpa Reversible Jacket", "family": "outerwear", "subcategoryPath": ["outerwear"] }
+  ]
+}

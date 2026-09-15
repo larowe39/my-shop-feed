@@ -1,0 +1,28 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "panasonic", "name": "Panasonic", "websiteUrl": "https://www.panasonic.com", "description": "Panasonic cameras, lenses and consumer electronics" },
+  "families": [
+    { "slug": "lumix-s", "name": "Lumix S", "subcategoryPath": ["cameras", "mirrorless"] },
+    { "slug": "lumix-g", "name": "Lumix G", "subcategoryPath": ["cameras", "mirrorless"] },
+    { "slug": "lumix-lenses", "name": "Lumix Lenses", "subcategoryPath": ["cameras"] }
+  ],
+  "products": [
+    { "slug": "panasonic-lumix-s5ii", "name": "Lumix S5II", "family": "lumix-s", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-S5M2", "releaseYear": 2023, "aliases": ["S5II", "S5 Mark II", "DC-S5M2"] },
+    { "slug": "panasonic-lumix-s5iix", "name": "Lumix S5IIX", "family": "lumix-s", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-S5M2X", "releaseYear": 2023, "aliases": ["S5IIX", "DC-S5M2X"] },
+    { "slug": "panasonic-lumix-s5", "name": "Lumix S5", "family": "lumix-s", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-S5", "releaseYear": 2020, "aliases": ["DC-S5"] },
+    { "slug": "panasonic-lumix-s1h", "name": "Lumix S1H", "family": "lumix-s", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-S1H", "releaseYear": 2019, "aliases": ["DC-S1H"] },
+    { "slug": "panasonic-lumix-s1r", "name": "Lumix S1R", "family": "lumix-s", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-S1R", "releaseYear": 2019, "aliases": ["DC-S1R"] },
+    { "slug": "panasonic-lumix-s1", "name": "Lumix S1", "family": "lumix-s", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-S1", "releaseYear": 2019, "aliases": ["DC-S1"] },
+    { "slug": "panasonic-lumix-gh7", "name": "Lumix GH7", "family": "lumix-g", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-GH7", "releaseYear": 2024, "aliases": ["GH7", "DC-GH7"] },
+    { "slug": "panasonic-lumix-gh6", "name": "Lumix GH6", "family": "lumix-g", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-GH6", "releaseYear": 2022, "aliases": ["GH6", "DC-GH6"] },
+    { "slug": "panasonic-lumix-gh5-ii", "name": "Lumix GH5 II", "family": "lumix-g", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-GH5M2", "releaseYear": 2021, "aliases": ["GH5 II", "GH5M2", "DC-GH5M2"] },
+    { "slug": "panasonic-lumix-g9ii", "name": "Lumix G9II", "family": "lumix-g", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-G9M2", "releaseYear": 2023, "aliases": ["G9II", "G9 Mark II", "DC-G9M2"] },
+    { "slug": "panasonic-lumix-g100d", "name": "Lumix G100D", "family": "lumix-g", "subcategoryPath": ["cameras", "mirrorless"], "modelNumber": "DC-G100D", "releaseYear": 2024, "aliases": ["DC-G100D"] },
+    { "slug": "panasonic-lumix-s-24-70-f2-8", "name": "Lumix S Pro 24-70mm F2.8", "family": "lumix-lenses", "subcategoryPath": ["cameras"], "modelNumber": "S-E2470", "aliases": ["S-E2470"] },
+    { "slug": "panasonic-lumix-s-70-200-f2-8", "name": "Lumix S Pro 70-200mm F2.8 O.I.S.", "family": "lumix-lenses", "subcategoryPath": ["cameras"], "modelNumber": "S-E70200", "aliases": ["S-E70200"] },
+    { "slug": "panasonic-lumix-s-50-f1-4", "name": "Lumix S Pro 50mm F1.4", "family": "lumix-lenses", "subcategoryPath": ["cameras"], "modelNumber": "S-X50", "aliases": ["S-X50"] },
+    { "slug": "panasonic-lumix-s-20-60", "name": "Lumix S 20-60mm F3.5-5.6", "family": "lumix-lenses", "subcategoryPath": ["cameras"], "modelNumber": "S-R2060", "aliases": ["S-R2060"] }
+  ]
+}
