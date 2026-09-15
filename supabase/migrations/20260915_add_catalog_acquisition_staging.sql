@@ -11,9 +11,12 @@ create table if not exists public.catalog_sources (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+comment on table public.catalog_sources is
+  'Registry of trusted acquisition sources. Sources are deactivated with active=false; deletion is restricted to preserve provenance.';
+
 create table if not exists public.catalog_import_runs (
   id uuid primary key default gen_random_uuid(),
-  source_id uuid references public.catalog_sources(id) on delete set null,
+  source_id uuid not null references public.catalog_sources(id),
   adapter text not null,
   source_path text,
   dry_run boolean not null default true,
@@ -25,6 +28,8 @@ create table if not exists public.catalog_import_runs (
   possible_existing integer not null default 0,
   new_records integer not null default 0,
   conflict_records integer not null default 0,
+  staged integer not null default 0,
+  errors integer not null default 0,
   approved integer not null default 0,
   rejected integer not null default 0,
   promoted integer not null default 0,
@@ -35,7 +40,7 @@ create table if not exists public.catalog_import_runs (
 
 create table if not exists public.catalog_staged_products (
   id uuid primary key default gen_random_uuid(),
-  source_id uuid references public.catalog_sources(id) on delete set null,
+  source_id uuid not null references public.catalog_sources(id),
   source_external_id text,
   fingerprint text not null,
   raw_payload jsonb not null default '{}'::jsonb,
@@ -50,7 +55,7 @@ create table if not exists public.catalog_staged_products (
   acquired_at timestamptz not null default timezone('utc', now()),
   last_verified_at timestamptz,
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'needs_review', 'duplicate', 'invalid', 'promoted')),
-  confidence double precision not null default 0,
+  confidence double precision not null default 0 check (confidence >= 0 and confidence <= 1),
   duplicate_of_catalog_product_id uuid references public.catalog_products(id) on delete set null,
   promoted_catalog_product_id uuid references public.catalog_products(id) on delete set null,
   promoted_at timestamptz,
@@ -96,7 +101,7 @@ comment on column public.catalog_staged_products.promoted_catalog_product_id is
 -- recheck, canonical product insert, alias inserts, and the staged row's
 -- status transition to 'promoted') executes as a single statement from the
 -- caller's perspective, so Postgres commits or rolls back all of it together
--- -- there is no window where a canonical row exists but the staged row still
+-- there is no window where a canonical row exists but the staged row still
 -- says 'approved', or vice versa. Only ever called for status = 'approved'
 -- rows; row is locked FOR UPDATE to avoid a concurrent double-promotion.
 create or replace function public.promote_catalog_staged_product(
@@ -110,12 +115,18 @@ create or replace function public.promote_catalog_staged_product(
   p_description text,
   p_attributes jsonb,
   p_aliases jsonb
-) returns table (catalog_product_id uuid) language plpgsql as $$
+) returns table (catalog_product_id uuid) language plpgsql security invoker as $$
 declare
   v_staged public.catalog_staged_products%rowtype;
   v_product_id uuid;
   v_existing_product_id uuid;
+  v_alias jsonb;
+  v_existing_alias_entity_id uuid;
 begin
+  if p_brand_id is null or p_slug is null or btrim(p_slug) = '' or p_name is null or btrim(p_name) = '' then
+    raise exception 'canonical promotion requires non-empty brand, slug, and product name';
+  end if;
+
   select * into v_staged from public.catalog_staged_products where id = p_staged_id for update;
   if not found then
     raise exception 'staged candidate % not found', p_staged_id;
@@ -137,15 +148,56 @@ begin
     raise exception 'canonical product already exists (id=%) matching slug/model-number; refusing duplicate promotion', v_existing_product_id;
   end if;
 
+  if not exists (select 1 from public.catalog_brands where id = p_brand_id) then
+    raise exception 'canonical brand % does not exist; refusing promotion', p_brand_id;
+  end if;
+
+  if p_subcategory_id is not null and not exists (
+    select 1 from public.catalog_subcategories where id = p_subcategory_id
+  ) then
+    raise exception 'canonical subcategory % does not exist; refusing promotion', p_subcategory_id;
+  end if;
+
+  if p_family_id is not null and not exists (
+    select 1
+    from public.catalog_product_families
+    where id = p_family_id
+      and brand_id = p_brand_id
+      and ((subcategory_id is null and p_subcategory_id is null) or subcategory_id = p_subcategory_id)
+  ) then
+    raise exception 'canonical family % does not belong to brand % and supplied subcategory %; refusing promotion',
+      p_family_id, p_brand_id, p_subcategory_id;
+  end if;
+
+  -- Alias names are globally unique per entity type. A collision with an
+  -- existing product is a review conflict, not an alias to silently discard.
+  for v_alias in
+    select value
+    from jsonb_array_elements(coalesce(p_aliases, '[]'::jsonb))
+    where coalesce(value->>'normalized_alias', '') <> ''
+  loop
+    select entity_id into v_existing_alias_entity_id
+    from public.catalog_aliases
+    where entity_type = 'product'
+      and normalized_alias = v_alias->>'normalized_alias'
+    limit 1;
+
+    if v_existing_alias_entity_id is not null then
+      raise exception 'canonical product alias conflict (normalized_alias=% already belongs to product %)',
+        v_alias->>'normalized_alias', v_existing_alias_entity_id;
+    end if;
+  end loop;
+
   insert into public.catalog_products (brand_id, family_id, subcategory_id, slug, name, model_number, description, attributes)
   values (p_brand_id, p_family_id, p_subcategory_id, p_slug, p_name, p_model_number, p_description, coalesce(p_attributes, '{}'::jsonb))
   returning id into v_product_id;
 
   insert into public.catalog_aliases (entity_type, entity_id, alias, normalized_alias)
-  select 'product', v_product_id, alias_row->>'alias', alias_row->>'normalized_alias'
+  select distinct on (alias_row->>'normalized_alias')
+    'product', v_product_id, alias_row->>'alias', alias_row->>'normalized_alias'
   from jsonb_array_elements(coalesce(p_aliases, '[]'::jsonb)) as alias_row
   where coalesce(alias_row->>'normalized_alias', '') <> ''
-  on conflict (entity_type, normalized_alias) do nothing;
+  order by alias_row->>'normalized_alias';
 
   update public.catalog_staged_products
     set status = 'promoted',
@@ -157,6 +209,11 @@ begin
   return query select v_product_id;
 end;
 $$;
+
+-- This is an administrative RPC. RLS does not control function execution, so
+-- explicitly remove the default PUBLIC/anon/authenticated EXECUTE privilege.
+revoke execute on function public.promote_catalog_staged_product(uuid, uuid, uuid, uuid, text, text, text, text, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.promote_catalog_staged_product(uuid, uuid, uuid, uuid, text, text, text, text, jsonb, jsonb) to service_role;
 
 comment on function public.promote_catalog_staged_product is
   'Atomically promotes one approved staged candidate to the canonical catalog: rechecks duplicates, inserts catalog_products + catalog_aliases, and flips the staged row to promoted, all in one transaction.';

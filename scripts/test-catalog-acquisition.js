@@ -36,6 +36,20 @@ async function main() {
   localStore.reset();
   fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
 
+  const migrationPath = path.join(__dirname, "..", "supabase", "migrations", "20260915_add_catalog_acquisition_staging.sql");
+  const migrationSql = fs.readFileSync(migrationPath, "utf8");
+  assert.match(migrationSql, /security invoker/i, "promotion RPC must remain SECURITY INVOKER");
+  assert.match(migrationSql, /revoke execute on function public\.promote_catalog_staged_product\([^;]+\) from public, anon, authenticated;/i);
+  assert.match(migrationSql, /grant execute on function public\.promote_catalog_staged_product\([^;]+\) to service_role;/i);
+  assert.match(migrationSql, /source_id uuid not null references public\.catalog_sources\(id\)/i);
+  assert.match(migrationSql, /staged integer not null default 0/i);
+  assert.match(migrationSql, /errors integer not null default 0/i);
+  assert.match(migrationSql, /confidence double precision not null default 0 check \(confidence >= 0 and confidence <= 1\)/i);
+  assert.doesNotMatch(migrationSql, /on conflict \(entity_type, normalized_alias\) do nothing/i, "canonical alias conflicts must not be silently discarded");
+  assert.match(migrationSql, /canonical product alias conflict/i);
+  assert.match(migrationSql, /canonical family .* does not belong to brand/i);
+  assert.match(migrationSql, /requires non-empty brand, slug, and product name/i);
+
   // ---------------------------------------------------------------------
   // 1. Pure parsing / normalization / validation / classification / fingerprint
   // ---------------------------------------------------------------------
@@ -140,6 +154,9 @@ async function main() {
   assert.ok(firstRun.persistence.every((entry) => entry.startsWith("local:")));
   const stagedAfterFirstRun = await localStore.listStagedCandidates();
   assert.ok(stagedAfterFirstRun.length >= 1);
+  const localLedger = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
+  assert.strictEqual(localLedger.importRuns[0].staged, firstRun.summary.staged);
+  assert.strictEqual(localLedger.importRuns[0].errors, firstRun.summary.errors);
 
   const secondRun = await acquireFromRecords(
     [
@@ -269,6 +286,29 @@ async function main() {
   assert.strictEqual(unresolvedEntry.ok, false);
   assert.match(unresolvedEntry.message, /Human review required|does not exist/);
 
+  const hierarchyLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.hierarchy-test.json");
+  const hierarchyStore = new LocalStagingStore(hierarchyLedgerPath);
+  hierarchyStore.reset();
+  const hierarchyRun = await acquireFromRecords(
+    [{ sourceExternalId: "wrong-family-brand-1", brand: "JBL", productName: "Charge 6", family: "Portable Speakers", raw: {} }],
+    [],
+    { name: "hierarchy-source", type: "json" },
+    { apply: true, adapter: "json" },
+    hierarchyStore
+  );
+  const hierarchyId = hierarchyRun.staged[0].id;
+  await approveCandidate(hierarchyStore, hierarchyId, { dryRun: false });
+  const hierarchyCanonicalStore = new LocalCanonicalPromotionStore({
+    brands: [{ id: "brand-jbl", slug: "jbl", name: "JBL" }, { id: "brand-bose", slug: "bose", name: "Bose" }],
+    subcategories: [],
+    families: [{ id: "family-bose-portable-speakers", slug: "portable-speakers", brandId: "brand-bose" }],
+    products: [],
+  });
+  const hierarchyPromotion = await promoteApprovedCandidates(hierarchyStore, hierarchyCanonicalStore, { dryRun: false });
+  const hierarchyEntry = hierarchyPromotion.entries.find((entry) => entry.candidateId === hierarchyId);
+  assert.strictEqual(hierarchyEntry.ok, false, "family belonging to another brand must block promotion");
+  assert.strictEqual((await hierarchyStore.getStagedCandidateById(hierarchyId)).status, "approved");
+
   // ---------------------------------------------------------------------
   // 9. Supabase backend: staging-store methods actually invoked (fake client)
   // ---------------------------------------------------------------------
@@ -346,7 +386,7 @@ async function main() {
   assert.strictEqual(explicitLocal.kind, "local");
 
   localStore.reset();
-  for (const p of [conflictLedgerPath, unresolvedLedgerPath]) {
+  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
   console.log("Catalog acquisition tests passed.");

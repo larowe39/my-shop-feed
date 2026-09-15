@@ -374,6 +374,8 @@ export class SupabaseStagingStore implements StagingStore {
         possible_existing: input.possibleExisting,
         new_records: input.newRecords,
         conflict_records: input.conflictRecords,
+        staged: input.staged,
+        errors: input.errors,
         approved: input.approved,
         rejected: input.rejected,
         promoted: input.promoted,
