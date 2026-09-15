@@ -4,9 +4,11 @@ for (let index = 2; index < process.argv.length; index += 1) {
   if (process.argv[index] === "--apply") args.apply = true;
 }
 
-if (args.apply) {
-  console.log("PROMOTION APPLY — WRITING CANONICAL DATA");
-} else {
-  console.log("PROMOTION DRY RUN — NO CANONICAL WRITES");
-  console.log("Approved staged candidates would be eligible for canonical promotion after explicit --apply.");
-}
+(async () => {
+  const { promoteApprovedCandidates } = await import("../lib/catalogAcquisition.ts");
+  const result = promoteApprovedCandidates({ dryRun: !args.apply, apply: args.apply });
+  console.log(result.message);
+  if (result.promoted.length) {
+    console.log(JSON.stringify(result.promoted, null, 2));
+  }
+})();

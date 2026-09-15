@@ -19,19 +19,19 @@ function parseArgs() {
 
 async function main() {
   const args = parseArgs();
-  const { acquireFromRecords, parseJsonAdapterRecords, parseCsvAdapterRecords, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
+  const mod = await import("../lib/catalogAcquisition.ts");
+  const { acquireFromRecords, parseJsonAdapterRecords, parseCsvAdapterRecords, printAcquisitionSummary } = mod;
 
   const sourcePath = args.source || path.join(__dirname, "__fixtures__", "catalog-acquisition", "sample-products.json");
   const raw = fs.readFileSync(sourcePath, "utf8");
-
   const records = args.adapter === "csv" ? parseCsvAdapterRecords(raw) : parseJsonAdapterRecords(raw);
-  const run = acquireFromRecords(records, [], { ...DEFAULT_SOURCE, name: path.basename(sourcePath), type: args.adapter });
+  const run = await acquireFromRecords(records, [], { ...DEFAULT_SOURCE, name: path.basename(sourcePath), type: args.adapter }, { apply: args.apply, adapter: args.adapter, sourcePath: sourcePath, dryRun: !args.apply });
 
   console.log(printAcquisitionSummary(run));
   if (args.apply) {
-    console.log("APPLY — WRITING STAGING DATA");
+    console.log("APPLY — WRITING STAGING DATA (local ledger or Supabase staging if migration is present)");
   } else {
-    console.log("DRY RUN — NO WRITES");
+    console.log("DRY RUN — ZERO staging/canonical writes");
   }
 }
 

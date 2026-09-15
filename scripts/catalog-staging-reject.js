@@ -9,8 +9,12 @@ if (idIndex === -1 || !args[idIndex + 1]) {
 const candidateId = args[idIndex + 1];
 const dryRun = args.includes("--dry-run") || !args.includes("--apply");
 (async () => {
-  const { rejectCandidate } = await import("../lib/catalogAcquisition.ts");
-  const candidate = { id: candidateId, status: "pending", classification: "NEW", productName: "Example staged candidate", brand: "Example Brand", rawPayload: {} };
+  const { rejectCandidate, getStagedCandidateById } = await import("../lib/catalogAcquisition.ts");
+  const candidate = getStagedCandidateById(candidateId);
+  if (!candidate) {
+    console.error(`Candidate ${candidateId} not found.`);
+    process.exit(1);
+  }
   const result = rejectCandidate(candidate, { dryRun });
   if (!result.ok) {
     console.error(result.message);
