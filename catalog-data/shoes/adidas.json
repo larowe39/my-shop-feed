@@ -1,0 +1,54 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "shoes",
+  "brand": {
+    "slug": "adidas",
+    "name": "adidas",
+    "websiteUrl": "https://www.adidas.com/",
+    "description": "adidas performance and lifestyle footwear."
+  },
+  "families": [
+    { "slug": "samba", "name": "Samba", "subcategoryPath": ["sneakers"] },
+    { "slug": "ultraboost", "name": "Ultraboost", "subcategoryPath": ["sneakers"] },
+    { "slug": "gazelle", "name": "Gazelle", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    {
+      "slug": "adidas-samba-og",
+      "name": "Samba OG",
+      "family": "samba",
+      "subcategoryPath": ["sneakers"],
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": ["adidas Samba OG", "Samba"]
+    },
+    {
+      "slug": "adidas-ultraboost-1-0",
+      "name": "Ultraboost 1.0",
+      "family": "ultraboost",
+      "subcategoryPath": ["sneakers"],
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": ["adidas Ultraboost 1.0", "Ultraboost 1.0"]
+    },
+    {
+      "slug": "adidas-gazelle-indoor",
+      "name": "Gazelle Indoor",
+      "family": "gazelle",
+      "subcategoryPath": ["sneakers"],
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": ["adidas Gazelle Indoor", "Gazelle Indoor"]
+    },
+    {
+      "slug": "adidas-stan-smith",
+      "name": "Stan Smith",
+      "family": "gazelle",
+      "subcategoryPath": ["sneakers"],
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": ["adidas Stan Smith", "Stan Smith"]
+    }
+  ]
+}
