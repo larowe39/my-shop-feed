@@ -1,0 +1,17 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "converse", "name": "Converse", "websiteUrl": "https://www.converse.com", "description": "Converse footwear" },
+  "families": [
+    { "slug": "chuck-taylor", "name": "Chuck Taylor", "subcategoryPath": ["sneakers"] },
+    { "slug": "one-star", "name": "One Star", "subcategoryPath": ["sneakers"] },
+    { "slug": "run-star", "name": "Run Star", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "converse-chuck-70-high", "name": "Chuck 70 High", "family": "chuck-taylor", "subcategoryPath": ["sneakers"] },
+    { "slug": "converse-chuck-70-low", "name": "Chuck 70 Low", "family": "chuck-taylor", "subcategoryPath": ["sneakers"] },
+    { "slug": "converse-chuck-taylor-all-star-high", "name": "Chuck Taylor All Star High", "family": "chuck-taylor", "subcategoryPath": ["sneakers"] },
+    { "slug": "converse-chuck-taylor-all-star-low", "name": "Chuck Taylor All Star Low", "family": "chuck-taylor", "subcategoryPath": ["sneakers"] },
+    { "slug": "converse-one-star-pro", "name": "One Star Pro", "family": "one-star", "subcategoryPath": ["sneakers"] },
+    { "slug": "converse-run-star-hike", "name": "Run Star Hike", "family": "run-star", "subcategoryPath": ["sneakers"] }
+  ]
+}

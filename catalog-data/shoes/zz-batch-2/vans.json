@@ -1,0 +1,16 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "vans", "name": "Vans", "websiteUrl": "https://www.vans.com", "description": "Vans skate footwear" },
+  "families": [
+    { "slug": "classic", "name": "Classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "skate", "name": "Skate", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "vans-authentic", "name": "Authentic", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "vans-era", "name": "Era", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "vans-old-skool", "name": "Old Skool", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "vans-sk8-hi", "name": "Sk8-Hi", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "vans-slip-on", "name": "Classic Slip-On", "family": "classic", "subcategoryPath": ["sneakers"] },
+    { "slug": "vans-half-cab", "name": "Half Cab", "family": "skate", "subcategoryPath": ["sneakers"] }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "leica", "name": "Leica", "websiteUrl": "https://leica-camera.com", "description": "Leica cameras and lenses" },
+  "families": [
+    { "slug": "q", "name": "Q", "subcategoryPath": ["cameras"] },
+    { "slug": "m", "name": "M", "subcategoryPath": ["cameras"] },
+    { "slug": "sl", "name": "SL", "subcategoryPath": ["cameras", "mirrorless"] },
+    { "slug": "summilux", "name": "Summilux", "subcategoryPath": ["cameras"] },
+    { "slug": "summicron", "name": "Summicron", "subcategoryPath": ["cameras"] }
+  ],
+  "products": [
+    { "slug": "leica-q3", "name": "Q3", "family": "q", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["Leica Q3"] },
+    { "slug": "leica-q3-43", "name": "Q3 43", "family": "q", "subcategoryPath": ["cameras"], "releaseYear": 2024, "aliases": ["Leica Q3 43"] },
+    { "slug": "leica-q2", "name": "Q2", "family": "q", "subcategoryPath": ["cameras"], "releaseYear": 2019, "aliases": ["Leica Q2"] },
+    { "slug": "leica-m11", "name": "M11", "family": "m", "subcategoryPath": ["cameras"], "releaseYear": 2022, "aliases": ["Leica M11"] },
+    { "slug": "leica-m11-monochrom", "name": "M11 Monochrom", "family": "m", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["Leica M11 Monochrom"] },
+    { "slug": "leica-m11-p", "name": "M11-P", "family": "m", "subcategoryPath": ["cameras"], "releaseYear": 2023, "aliases": ["Leica M11P"] },
+    { "slug": "leica-m10-r", "name": "M10-R", "family": "m", "subcategoryPath": ["cameras"], "releaseYear": 2020, "aliases": ["Leica M10R"] },
+    { "slug": "leica-m10-monochrom", "name": "M10 Monochrom", "family": "m", "subcategoryPath": ["cameras"], "releaseYear": 2020, "aliases": ["Leica M10 Monochrom"] },
+    { "slug": "leica-sl3", "name": "SL3", "family": "sl", "subcategoryPath": ["cameras", "mirrorless"], "releaseYear": 2024, "aliases": ["Leica SL3"] },
+    { "slug": "leica-sl2", "name": "SL2", "family": "sl", "subcategoryPath": ["cameras", "mirrorless"], "releaseYear": 2019, "aliases": ["Leica SL2"] },
+    { "slug": "leica-sl2-s", "name": "SL2-S", "family": "sl", "subcategoryPath": ["cameras", "mirrorless"], "releaseYear": 2020, "aliases": ["Leica SL2S"] },
+    { "slug": "leica-summilux-m-35-f1-4-asph", "name": "Summilux-M 35mm F1.4 ASPH.", "family": "summilux", "subcategoryPath": ["cameras"], "aliases": ["Leica 35mm Summilux-M ASPH"] },
+    { "slug": "leica-summilux-m-50-f1-4-asph", "name": "Summilux-M 50mm F1.4 ASPH.", "family": "summilux", "subcategoryPath": ["cameras"], "aliases": ["Leica 50mm Summilux-M ASPH"] },
+    { "slug": "leica-summicron-m-35-f2-asph", "name": "Summicron-M 35mm F2 ASPH.", "family": "summicron", "subcategoryPath": ["cameras"], "aliases": ["Leica 35mm Summicron-M ASPH"] },
+    { "slug": "leica-summicron-m-50-f2", "name": "Summicron-M 50mm F2", "family": "summicron", "subcategoryPath": ["cameras"], "aliases": ["Leica 50mm Summicron-M"] }
+  ]
+}

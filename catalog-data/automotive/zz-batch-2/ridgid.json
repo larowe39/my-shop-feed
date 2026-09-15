@@ -1,0 +1,29 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": { "slug": "ridgid", "name": "Ridgid", "websiteUrl": "https://www.ridgid.com", "description": "Ridgid power tools and shop equipment" },
+  "families": [
+    { "slug": "18v", "name": "18V", "subcategoryPath": ["tools"] },
+    { "slug": "saws", "name": "Saws", "subcategoryPath": ["tools"] },
+    { "slug": "vacuums", "name": "Vacuums", "subcategoryPath": ["tools"] },
+    { "slug": "plumbing", "name": "Plumbing Tools", "subcategoryPath": ["tools"] }
+  ],
+  "products": [
+    { "slug": "ridgid-r861152", "name": "R861152 18V Brushless Hammer Drill", "family": "18v", "subcategoryPath": ["tools"], "modelNumber": "R861152" },
+    { "slug": "ridgid-r862312", "name": "R862312 18V Brushless Impact Driver", "family": "18v", "subcategoryPath": ["tools"], "modelNumber": "R862312" },
+    { "slug": "ridgid-r86012", "name": "R86012 18V Brushless Drill Driver", "family": "18v", "subcategoryPath": ["tools"], "modelNumber": "R86012" },
+    { "slug": "ridgid-r86011", "name": "R86011 18V Impact Driver", "family": "18v", "subcategoryPath": ["tools"], "modelNumber": "R86011" },
+    { "slug": "ridgid-r8647", "name": "R8647 18V Reciprocating Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "R8647" },
+    { "slug": "ridgid-r8657", "name": "R8657 18V Circular Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "R8657" },
+    { "slug": "ridgid-r4251", "name": "R4251 12-inch Sliding Miter Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "R4251" },
+    { "slug": "ridgid-r4222", "name": "R4222 12-inch Sliding Miter Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "R4222" },
+    { "slug": "ridgid-hd1600", "name": "HD1600 16 Gallon Wet Dry Vac", "family": "vacuums", "subcategoryPath": ["tools"], "modelNumber": "HD1600" },
+    { "slug": "ridgid-hd1200", "name": "HD1200 12 Gallon Wet Dry Vac", "family": "vacuums", "subcategoryPath": ["tools"], "modelNumber": "HD1200" },
+    { "slug": "ridgid-wd4070", "name": "WD4070 4 Gallon Wet Dry Vac", "family": "vacuums", "subcategoryPath": ["tools"], "modelNumber": "WD4070" },
+    { "slug": "ridgid-rt1400", "name": "RT1400 14 Gallon Wet Dry Vac", "family": "vacuums", "subcategoryPath": ["tools"], "modelNumber": "RT1400" },
+    { "slug": "ridgid-300", "name": "300 Pipe Threading Machine", "family": "plumbing", "subcategoryPath": ["tools"], "modelNumber": "300" },
+    { "slug": "ridgid-700", "name": "700 Power Drive", "family": "plumbing", "subcategoryPath": ["tools"], "modelNumber": "700" },
+    { "slug": "ridgid-k-400", "name": "K-400 Drum Machine", "family": "plumbing", "subcategoryPath": ["tools"], "modelNumber": "K-400" }
+  ]
+}

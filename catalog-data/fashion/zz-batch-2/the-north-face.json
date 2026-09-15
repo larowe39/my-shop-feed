@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "the-north-face", "name": "The North Face", "websiteUrl": "https://www.thenorthface.com", "description": "The North Face apparel and outerwear" },
+  "families": [{ "slug": "nuptse", "name": "Nuptse", "subcategoryPath": ["outerwear"] }, { "slug": "denali", "name": "Denali", "subcategoryPath": ["outerwear"] }, { "slug": "mountain", "name": "Mountain", "subcategoryPath": ["outerwear"] }],
+  "products": [
+    { "slug": "the-north-face-1996-retro-nuptse-jacket", "name": "1996 Retro Nuptse Jacket", "family": "nuptse", "subcategoryPath": ["outerwear"] },
+    { "slug": "the-north-face-denali-jacket", "name": "Denali Jacket", "family": "denali", "subcategoryPath": ["outerwear"] },
+    { "slug": "the-north-face-mountain-light-jacket", "name": "Mountain Light Jacket", "family": "mountain", "subcategoryPath": ["outerwear"] },
+    { "slug": "the-north-face-mcmurdo-parka", "name": "McMurdo Parka", "family": "mountain", "subcategoryPath": ["outerwear"] },
+    { "slug": "the-north-face-base-camp-duffel-medium", "name": "Base Camp Duffel Medium", "family": "mountain", "subcategoryPath": ["apparel"] }
+  ]
+}

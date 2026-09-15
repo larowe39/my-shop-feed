@@ -1,0 +1,21 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": { "slug": "panerai", "name": "Panerai", "websiteUrl": "https://www.panerai.com", "description": "Panerai watches" },
+  "families": [
+    { "slug": "luminor", "name": "Luminor", "subcategoryPath": ["sport-watches"] },
+    { "slug": "submersible", "name": "Submersible", "subcategoryPath": ["dive-watches"] },
+    { "slug": "radiomir", "name": "Radiomir", "subcategoryPath": ["dress-watches"] }
+  ],
+  "products": [
+    { "slug": "panerai-luminor-marina-pam01312", "name": "Luminor Marina PAM01312", "family": "luminor", "subcategoryPath": ["sport-watches"], "modelNumber": "PAM01312" },
+    { "slug": "panerai-luminor-logo-pam01084", "name": "Luminor Logo PAM01084", "family": "luminor", "subcategoryPath": ["sport-watches"], "modelNumber": "PAM01084" },
+    { "slug": "panerai-luminor-due-pam01248", "name": "Luminor Due PAM01248", "family": "luminor", "subcategoryPath": ["dress-watches"], "modelNumber": "PAM01248" },
+    { "slug": "panerai-submersible-quarantaquattro-pam01229", "name": "Submersible QuarantaQuattro PAM01229", "family": "submersible", "subcategoryPath": ["dive-watches"], "modelNumber": "PAM01229" },
+    { "slug": "panerai-submersible-pam01305", "name": "Submersible PAM01305", "family": "submersible", "subcategoryPath": ["dive-watches"], "modelNumber": "PAM01305" },
+    { "slug": "panerai-submersible-bronzo-pam00968", "name": "Submersible Bronzo PAM00968", "family": "submersible", "subcategoryPath": ["dive-watches"], "modelNumber": "PAM00968" },
+    { "slug": "panerai-radiomir-quaranta-pam01293", "name": "Radiomir Quaranta PAM01293", "family": "radiomir", "subcategoryPath": ["dress-watches"], "modelNumber": "PAM01293" },
+    { "slug": "panerai-radiomir-otto-giorni-pam01347", "name": "Radiomir Otto Giorni PAM01347", "family": "radiomir", "subcategoryPath": ["dress-watches"], "modelNumber": "PAM01347" }
+  ]
+}

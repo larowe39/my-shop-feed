@@ -1,0 +1,66 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "apple",
+    "name": "Apple",
+    "websiteUrl": "https://www.apple.com",
+    "description": "Apple consumer electronics"
+  },
+  "families": [
+    {
+      "slug": "imac",
+      "name": "iMac",
+      "subcategoryPath": ["computers"]
+    },
+    {
+      "slug": "mac-mini",
+      "name": "Mac mini",
+      "subcategoryPath": ["computers"]
+    },
+    {
+      "slug": "mac-studio",
+      "name": "Mac Studio",
+      "subcategoryPath": ["computers"]
+    },
+    {
+      "slug": "homepod",
+      "name": "HomePod",
+      "subcategoryPath": ["audio", "smart-speakers"]
+    },
+    {
+      "slug": "apple-tv",
+      "name": "Apple TV",
+      "subcategoryPath": ["gaming", "consoles"]
+    }
+  ],
+  "products": [
+    { "slug": "apple-iphone-14", "name": "iPhone 14", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2022, "aliases": ["iPhone14"] },
+    { "slug": "apple-iphone-14-plus", "name": "iPhone 14 Plus", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2022, "aliases": ["iPhone14 Plus"] },
+    { "slug": "apple-iphone-14-pro", "name": "iPhone 14 Pro", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2022, "aliases": ["iPhone14 Pro"] },
+    { "slug": "apple-iphone-14-pro-max", "name": "iPhone 14 Pro Max", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2022, "aliases": ["iPhone14 Pro Max"] },
+    { "slug": "apple-iphone-13", "name": "iPhone 13", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2021, "aliases": ["iPhone13"] },
+    { "slug": "apple-iphone-13-mini", "name": "iPhone 13 mini", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2021, "aliases": ["iPhone13 mini"] },
+    { "slug": "apple-iphone-13-pro", "name": "iPhone 13 Pro", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2021, "aliases": ["iPhone13 Pro"] },
+    { "slug": "apple-iphone-13-pro-max", "name": "iPhone 13 Pro Max", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2021, "aliases": ["iPhone13 Pro Max"] },
+    { "slug": "apple-iphone-se-3", "name": "iPhone SE 3rd Generation", "family": "iphone", "subcategoryPath": ["phones"], "releaseYear": 2022, "aliases": ["iPhone SE 2022", "iPhone SE 3"] },
+    { "slug": "apple-ipad-mini-6", "name": "iPad mini 6", "family": "ipad", "subcategoryPath": ["computers", "tablets"], "releaseYear": 2021, "aliases": ["iPad mini 6th generation"] },
+    { "slug": "apple-ipad-air-5", "name": "iPad Air 5th Generation", "family": "ipad", "subcategoryPath": ["computers", "tablets"], "releaseYear": 2022, "aliases": ["iPad Air 5"] },
+    { "slug": "apple-ipad-pro-11-4", "name": "iPad Pro 11-inch 4th Generation", "family": "ipad", "subcategoryPath": ["computers", "tablets"], "releaseYear": 2022, "aliases": ["iPad Pro 11 4th generation"] },
+    { "slug": "apple-ipad-pro-12-9-6", "name": "iPad Pro 12.9-inch 6th Generation", "family": "ipad", "subcategoryPath": ["computers", "tablets"], "releaseYear": 2022, "aliases": ["iPad Pro 12.9 6th generation"] },
+    { "slug": "apple-macbook-air-15-m3", "name": "MacBook Air 15-inch (M3)", "family": "macbook", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2024, "aliases": ["15-inch MacBook Air M3"] },
+    { "slug": "apple-macbook-pro-14-m3", "name": "MacBook Pro 14-inch (M3)", "family": "macbook", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2023, "aliases": ["14-inch MacBook Pro M3"] },
+    { "slug": "apple-macbook-pro-16-m3", "name": "MacBook Pro 16-inch (M3)", "family": "macbook", "subcategoryPath": ["computers", "laptops"], "releaseYear": 2023, "aliases": ["16-inch MacBook Pro M3"] },
+    { "slug": "apple-imac-24-m3", "name": "iMac 24-inch (M3)", "family": "imac", "subcategoryPath": ["computers"], "releaseYear": 2023, "aliases": ["24-inch iMac M3"] },
+    { "slug": "apple-imac-24-m4", "name": "iMac 24-inch (M4)", "family": "imac", "subcategoryPath": ["computers"], "releaseYear": 2024, "aliases": ["24-inch iMac M4"] },
+    { "slug": "apple-mac-mini-m2", "name": "Mac mini (M2)", "family": "mac-mini", "subcategoryPath": ["computers"], "releaseYear": 2023, "aliases": ["Mac mini M2"] },
+    { "slug": "apple-mac-mini-m4", "name": "Mac mini (M4)", "family": "mac-mini", "subcategoryPath": ["computers"], "releaseYear": 2024, "aliases": ["Mac mini M4"] },
+    { "slug": "apple-mac-studio-m2-max", "name": "Mac Studio (M2 Max)", "family": "mac-studio", "subcategoryPath": ["computers"], "releaseYear": 2023, "aliases": ["Mac Studio M2 Max"] },
+    { "slug": "apple-mac-studio-m2-ultra", "name": "Mac Studio (M2 Ultra)", "family": "mac-studio", "subcategoryPath": ["computers"], "releaseYear": 2023, "aliases": ["Mac Studio M2 Ultra"] },
+    { "slug": "apple-homepod-2", "name": "HomePod 2nd Generation", "family": "homepod", "subcategoryPath": ["audio", "smart-speakers"], "releaseYear": 2023, "aliases": ["HomePod 2"] },
+    { "slug": "apple-homepod-mini", "name": "HomePod mini", "family": "homepod", "subcategoryPath": ["audio", "smart-speakers"], "releaseYear": 2020, "aliases": [] },
+    { "slug": "apple-tv-4k-3", "name": "Apple TV 4K 3rd Generation", "family": "apple-tv", "subcategoryPath": ["gaming", "consoles"], "releaseYear": 2022, "aliases": ["Apple TV 4K 2022"] },
+    { "slug": "apple-airpods-3", "name": "AirPods 3", "family": "airpods", "subcategoryPath": ["audio", "headphones"], "releaseYear": 2021, "aliases": ["AirPods 3rd generation"] }
+  ]
+}

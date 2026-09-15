@@ -1,0 +1,27 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "msi", "name": "MSI", "websiteUrl": "https://www.msi.com", "description": "MSI gaming laptops, handhelds and monitors" },
+  "families": [
+    { "slug": "claw", "name": "Claw", "subcategoryPath": ["gaming", "consoles"] },
+    { "slug": "raider", "name": "Raider", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "stealth", "name": "Stealth", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "titan", "name": "Titan", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "monitor", "name": "Monitors", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    { "slug": "msi-claw-a1m", "name": "Claw A1M", "family": "claw", "subcategoryPath": ["gaming", "consoles"], "releaseYear": 2024, "aliases": ["MSI Claw"] },
+    { "slug": "msi-claw-8-ai-plus", "name": "Claw 8 AI+", "family": "claw", "subcategoryPath": ["gaming", "consoles"], "releaseYear": 2025, "aliases": ["MSI Claw 8 AI Plus"] },
+    { "slug": "msi-raider-ge78-hx", "name": "Raider GE78 HX", "family": "raider", "subcategoryPath": ["computers", "laptops"], "aliases": ["MSI GE78 HX"] },
+    { "slug": "msi-raider-ge68-hx", "name": "Raider GE68 HX", "family": "raider", "subcategoryPath": ["computers", "laptops"], "aliases": ["MSI GE68 HX"] },
+    { "slug": "msi-stealth-16-studio", "name": "Stealth 16 Studio", "family": "stealth", "subcategoryPath": ["computers", "laptops"], "aliases": ["MSI Stealth 16"] },
+    { "slug": "msi-stealth-14-studio", "name": "Stealth 14 Studio", "family": "stealth", "subcategoryPath": ["computers", "laptops"], "aliases": ["MSI Stealth 14"] },
+    { "slug": "msi-titan-18-hx", "name": "Titan 18 HX", "family": "titan", "subcategoryPath": ["computers", "laptops"], "aliases": ["MSI Titan 18"] },
+    { "slug": "msi-titan-gt77-hx", "name": "Titan GT77 HX", "family": "titan", "subcategoryPath": ["computers", "laptops"], "aliases": ["MSI GT77 HX"] },
+    { "slug": "msi-mpg-321urx-qd-oled", "name": "MPG 321URX QD-OLED", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "321URX", "aliases": ["MSI 321URX"] },
+    { "slug": "msi-mpg-271qrx-qd-oled", "name": "MPG 271QRX QD-OLED", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "271QRX", "aliases": ["MSI 271QRX"] },
+    { "slug": "msi-meg-342c-qd-oled", "name": "MEG 342C QD-OLED", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "342C", "aliases": ["MSI 342C"] },
+    { "slug": "msi-optix-mag274qrf-qd", "name": "Optix MAG274QRF-QD", "family": "monitor", "subcategoryPath": ["gaming", "gaming-accessories"], "modelNumber": "MAG274QRF-QD", "aliases": ["MAG274QRF QD"] }
+  ]
+}

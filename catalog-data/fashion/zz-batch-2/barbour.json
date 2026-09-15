@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "barbour", "name": "Barbour", "websiteUrl": "https://www.barbour.com", "description": "Barbour outerwear" },
+  "families": [{ "slug": "waxed", "name": "Waxed Jackets", "subcategoryPath": ["outerwear"] }, { "slug": "quilted", "name": "Quilted Jackets", "subcategoryPath": ["outerwear"] }],
+  "products": [
+    { "slug": "barbour-bedale-waxed-jacket", "name": "Bedale Waxed Jacket", "family": "waxed", "subcategoryPath": ["outerwear"] },
+    { "slug": "barbour-beaufort-waxed-jacket", "name": "Beaufort Waxed Jacket", "family": "waxed", "subcategoryPath": ["outerwear"] },
+    { "slug": "barbour-ashby-waxed-jacket", "name": "Ashby Waxed Jacket", "family": "waxed", "subcategoryPath": ["outerwear"] },
+    { "slug": "barbour-liddesdale-quilted-jacket", "name": "Liddesdale Quilted Jacket", "family": "quilted", "subcategoryPath": ["outerwear"] },
+    { "slug": "barbour-international-original-waxed-jacket", "name": "International Original Waxed Jacket", "family": "waxed", "subcategoryPath": ["outerwear"] }
+  ]
+}

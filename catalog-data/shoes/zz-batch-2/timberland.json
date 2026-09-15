@@ -1,0 +1,16 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "timberland", "name": "Timberland", "websiteUrl": "https://www.timberland.com", "description": "Timberland footwear" },
+  "families": [
+    { "slug": "premium", "name": "Premium", "subcategoryPath": ["boots"] },
+    { "slug": "field", "name": "Field Boot", "subcategoryPath": ["boots"] },
+    { "slug": "boat", "name": "Boat Shoes", "subcategoryPath": ["boots"] }
+  ],
+  "products": [
+    { "slug": "timberland-6-inch-premium-waterproof-boot", "name": "6-Inch Premium Waterproof Boot", "family": "premium", "subcategoryPath": ["boots"] },
+    { "slug": "timberland-6-inch-field-boot", "name": "6-Inch Field Boot", "family": "field", "subcategoryPath": ["boots"] },
+    { "slug": "timberland-3-eye-lug-handsewn-boat-shoe", "name": "3-Eye Lug Handsewn Boat Shoe", "family": "boat", "subcategoryPath": ["boots"] },
+    { "slug": "timberland-euro-hiker", "name": "Euro Hiker", "family": "field", "subcategoryPath": ["boots"] },
+    { "slug": "timberland-white-ledge-mid", "name": "White Ledge Mid", "family": "field", "subcategoryPath": ["boots"] }
+  ]
+}

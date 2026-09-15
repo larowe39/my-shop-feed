@@ -1,0 +1,30 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "corsair", "name": "Corsair", "websiteUrl": "https://www.corsair.com", "description": "Corsair gaming peripherals and PC hardware" },
+  "families": [
+    { "slug": "k", "name": "K Series Keyboards", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "mice", "name": "Gaming Mice", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "virtuoso", "name": "Virtuoso", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "void", "name": "Void", "subcategoryPath": ["gaming", "gaming-accessories"] },
+    { "slug": "stream-deck", "name": "Stream Deck", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    { "slug": "corsair-k100-rgb", "name": "K100 RGB", "family": "k", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair K100"] },
+    { "slug": "corsair-k95-rgb-platinum-xt", "name": "K95 RGB Platinum XT", "family": "k", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair K95 Platinum XT"] },
+    { "slug": "corsair-k70-rgb-pro", "name": "K70 RGB Pro", "family": "k", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair K70 Pro"] },
+    { "slug": "corsair-k70-pro-mini-wireless", "name": "K70 Pro Mini Wireless", "family": "k", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair K70 Mini Wireless"] },
+    { "slug": "corsair-k65-rgb-mini", "name": "K65 RGB Mini", "family": "k", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair K65 Mini"] },
+    { "slug": "corsair-m65-rgb-ultra", "name": "M65 RGB Ultra", "family": "mice", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair M65 Ultra"] },
+    { "slug": "corsair-dark-core-rgb-pro", "name": "Dark Core RGB Pro", "family": "mice", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair Dark Core Pro"] },
+    { "slug": "corsair-sabre-rgb-pro", "name": "Sabre RGB Pro", "family": "mice", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair Sabre Pro"] },
+    { "slug": "corsair-harpoon-rgb-wireless", "name": "Harpoon RGB Wireless", "family": "mice", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair Harpoon Wireless"] },
+    { "slug": "corsair-scimitar-rgb-elite", "name": "Scimitar RGB Elite", "family": "mice", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair Scimitar Elite"] },
+    { "slug": "corsair-virtuoso-rgb-wireless-xt", "name": "Virtuoso RGB Wireless XT", "family": "virtuoso", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Virtuoso XT"] },
+    { "slug": "corsair-virtuoso-rgb-wireless-se", "name": "Virtuoso RGB Wireless SE", "family": "virtuoso", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Virtuoso SE"] },
+    { "slug": "corsair-void-rgb-elite-wireless", "name": "Void RGB Elite Wireless", "family": "void", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Void Elite Wireless"] },
+    { "slug": "corsair-hs80-rgb-wireless", "name": "HS80 RGB Wireless", "family": "void", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair HS80 Wireless"] },
+    { "slug": "corsair-hs65-surround", "name": "HS65 Surround", "family": "void", "subcategoryPath": ["gaming", "gaming-accessories"], "aliases": ["Corsair HS65"] }
+  ]
+}

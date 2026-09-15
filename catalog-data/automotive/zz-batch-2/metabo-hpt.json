@@ -1,0 +1,29 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": { "slug": "metabo-hpt", "name": "Metabo HPT", "websiteUrl": "https://www.metabo-hpt.com", "description": "Metabo HPT power tools" },
+  "families": [
+    { "slug": "multi-volt", "name": "MultiVolt", "subcategoryPath": ["tools"] },
+    { "slug": "nailers", "name": "Nailers", "subcategoryPath": ["tools"] },
+    { "slug": "saws", "name": "Saws", "subcategoryPath": ["tools"] },
+    { "slug": "drills", "name": "Drills", "subcategoryPath": ["tools"] }
+  ],
+  "products": [
+    { "slug": "metabo-hpt-dv36daq4", "name": "DV36DAQ4 MultiVolt Hammer Drill", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "DV36DAQ4" },
+    { "slug": "metabo-hpt-wh36dcq4", "name": "WH36DCQ4 MultiVolt Impact Driver", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "WH36DCQ4" },
+    { "slug": "metabo-hpt-wr36dfq4", "name": "WR36DFQ4 MultiVolt Impact Wrench", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "WR36DFQ4" },
+    { "slug": "metabo-hpt-c3607daq4", "name": "C3607DAQ4 MultiVolt Circular Saw", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "C3607DAQ4" },
+    { "slug": "metabo-hpt-c3607dwaq4", "name": "C3607DWAQ4 MultiVolt Circular Saw", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "C3607DWAQ4" },
+    { "slug": "metabo-hpt-cr36daq4", "name": "CR36DAQ4 MultiVolt Reciprocating Saw", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "CR36DAQ4" },
+    { "slug": "metabo-hpt-g3613daq4", "name": "G3613DAQ4 MultiVolt Grinder", "family": "multi-volt", "subcategoryPath": ["tools"], "modelNumber": "G3613DAQ4" },
+    { "slug": "metabo-hpt-nr1890drsq7", "name": "NR1890DRSQ7 Cordless Framing Nailer", "family": "nailers", "subcategoryPath": ["tools"], "modelNumber": "NR1890DRSQ7" },
+    { "slug": "metabo-hpt-nt1865dmsq7", "name": "NT1865DMSQ7 Cordless Finish Nailer", "family": "nailers", "subcategoryPath": ["tools"], "modelNumber": "NT1865DMSQ7" },
+    { "slug": "metabo-hpt-nt1850dfq4", "name": "NT1850DFQ4 Cordless Brad Nailer", "family": "nailers", "subcategoryPath": ["tools"], "modelNumber": "NT1850DFQ4" },
+    { "slug": "metabo-hpt-c10fch2", "name": "C10FCH2 Compound Miter Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "C10FCH2" },
+    { "slug": "metabo-hpt-c12rsh2", "name": "C12RSH2 Sliding Compound Miter Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "C12RSH2" },
+    { "slug": "metabo-hpt-ds18ddx", "name": "DS18DDX Cordless Drill", "family": "drills", "subcategoryPath": ["tools"], "modelNumber": "DS18DDX" },
+    { "slug": "metabo-hpt-dv18dex", "name": "DV18DEX Hammer Drill", "family": "drills", "subcategoryPath": ["tools"], "modelNumber": "DV18DEX" },
+    { "slug": "metabo-hpt-wh18dex", "name": "WH18DEX Impact Driver", "family": "drills", "subcategoryPath": ["tools"], "modelNumber": "WH18DEX" }
+  ]
+}

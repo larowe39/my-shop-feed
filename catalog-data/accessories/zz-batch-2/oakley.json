@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "accessories",
+  "brand": { "slug": "oakley", "name": "Oakley", "websiteUrl": "https://www.oakley.com", "description": "Oakley eyewear" },
+  "families": [{ "slug": "sunglasses", "name": "Sunglasses", "subcategoryPath": ["eyewear"] }, { "slug": "goggles", "name": "Goggles", "subcategoryPath": ["eyewear"] }],
+  "products": [
+    { "slug": "oakley-radar-ev-path", "name": "Radar EV Path", "family": "sunglasses", "subcategoryPath": ["eyewear"] },
+    { "slug": "oakley-sutro", "name": "Sutro", "family": "sunglasses", "subcategoryPath": ["eyewear"] },
+    { "slug": "oakley-sutro-lite", "name": "Sutro Lite", "family": "sunglasses", "subcategoryPath": ["eyewear"] },
+    { "slug": "oakley-holbrook", "name": "Holbrook", "family": "sunglasses", "subcategoryPath": ["eyewear"] },
+    { "slug": "oakley-flight-deck", "name": "Flight Deck", "family": "goggles", "subcategoryPath": ["eyewear"] }
+  ]
+}

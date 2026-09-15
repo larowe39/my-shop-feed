@@ -1,0 +1,20 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "brooks", "name": "Brooks", "websiteUrl": "https://www.brooksrunning.com", "description": "Brooks running footwear" },
+  "families": [
+    { "slug": "ghost", "name": "Ghost", "subcategoryPath": ["sneakers"] },
+    { "slug": "glycerin", "name": "Glycerin", "subcategoryPath": ["sneakers"] },
+    { "slug": "adrenaline", "name": "Adrenaline", "subcategoryPath": ["sneakers"] },
+    { "slug": "cascadia", "name": "Cascadia", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "brooks-ghost-16", "name": "Ghost 16", "family": "ghost", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-ghost-15", "name": "Ghost 15", "family": "ghost", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-glycerin-21", "name": "Glycerin 21", "family": "glycerin", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-glycerin-gts-21", "name": "Glycerin GTS 21", "family": "glycerin", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-adrenaline-gts-23", "name": "Adrenaline GTS 23", "family": "adrenaline", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-adrenaline-gts-24", "name": "Adrenaline GTS 24", "family": "adrenaline", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-cascadia-17", "name": "Cascadia 17", "family": "cascadia", "subcategoryPath": ["sneakers"] },
+    { "slug": "brooks-hyperion-max-2", "name": "Hyperion Max 2", "family": "ghost", "subcategoryPath": ["sneakers"] }
+  ]
+}

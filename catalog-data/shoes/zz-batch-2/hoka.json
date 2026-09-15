@@ -1,0 +1,20 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "hoka", "name": "Hoka", "websiteUrl": "https://www.hoka.com", "description": "Hoka running footwear" },
+  "families": [
+    { "slug": "clifton", "name": "Clifton", "subcategoryPath": ["sneakers"] },
+    { "slug": "bondi", "name": "Bondi", "subcategoryPath": ["sneakers"] },
+    { "slug": "speedgoat", "name": "Speedgoat", "subcategoryPath": ["sneakers"] },
+    { "slug": "mafate", "name": "Mafate", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "hoka-clifton-9", "name": "Clifton 9", "family": "clifton", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-clifton-8", "name": "Clifton 8", "family": "clifton", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-bondi-8", "name": "Bondi 8", "family": "bondi", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-bondi-sr", "name": "Bondi SR", "family": "bondi", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-speedgoat-6", "name": "Speedgoat 6", "family": "speedgoat", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-speedgoat-5", "name": "Speedgoat 5", "family": "speedgoat", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-mafate-speed-4", "name": "Mafate Speed 4", "family": "mafate", "subcategoryPath": ["sneakers"] },
+    { "slug": "hoka-cielo-x1", "name": "Cielo X1", "family": "clifton", "subcategoryPath": ["sneakers"] }
+  ]
+}

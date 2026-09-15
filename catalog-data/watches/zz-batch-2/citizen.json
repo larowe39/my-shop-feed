@@ -1,0 +1,24 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": { "slug": "citizen", "name": "Citizen", "websiteUrl": "https://www.citizenwatch.com", "description": "Citizen watches" },
+  "families": [
+    { "slug": "promaster", "name": "Promaster", "subcategoryPath": ["sport-watches"] },
+    { "slug": "tsuyosa", "name": "Tsuyosa", "subcategoryPath": ["sport-watches"] },
+    { "slug": "forza", "name": "Forza", "subcategoryPath": ["sport-watches"] },
+    { "slug": "series-8", "name": "Series 8", "subcategoryPath": ["dress-watches"] },
+    { "slug": "ana-digi-temp", "name": "Ana-Digi Temp", "subcategoryPath": ["sport-watches"] }
+  ],
+  "products": [
+    { "slug": "citizen-promaster-dive-ny0040-09e", "name": "Promaster Dive NY0040-09E", "family": "promaster", "subcategoryPath": ["dive-watches"], "modelNumber": "NY0040-09E" },
+    { "slug": "citizen-promaster-diver-bn0150-28e", "name": "Promaster Diver BN0150-28E", "family": "promaster", "subcategoryPath": ["dive-watches"], "modelNumber": "BN0150-28E" },
+    { "slug": "citizen-promaster-tough-bn0211-50e", "name": "Promaster Tough BN0211-50E", "family": "promaster", "subcategoryPath": ["sport-watches"], "modelNumber": "BN0211-50E" },
+    { "slug": "citizen-promaster-skyhawk-jy8078-52l", "name": "Promaster Skyhawk JY8078-52L", "family": "promaster", "subcategoryPath": ["sport-watches"], "modelNumber": "JY8078-52L" },
+    { "slug": "citizen-tsuyosa-nj0150-56e", "name": "Tsuyosa NJ0150-56E", "family": "tsuyosa", "subcategoryPath": ["sport-watches"], "modelNumber": "NJ0150-56E" },
+    { "slug": "citizen-tsuyosa-small-second-nk5010-51l", "name": "Tsuyosa Small Second NK5010-51L", "family": "tsuyosa", "subcategoryPath": ["sport-watches"], "modelNumber": "NK5010-51L" },
+    { "slug": "citizen-forza-nj0180-80x", "name": "Forza NJ0180-80X", "family": "forza", "subcategoryPath": ["sport-watches"], "modelNumber": "NJ0180-80X" },
+    { "slug": "citizen-series-8-na1010-84x", "name": "Series 8 NA1010-84X", "family": "series-8", "subcategoryPath": ["dress-watches"], "modelNumber": "NA1010-84X" },
+    { "slug": "citizen-ana-digi-temp-jg2101-78e", "name": "Ana-Digi Temp JG2101-78E", "family": "ana-digi-temp", "subcategoryPath": ["sport-watches"], "modelNumber": "JG2101-78E" }
+  ]
+}

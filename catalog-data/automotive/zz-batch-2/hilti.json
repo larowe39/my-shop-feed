@@ -1,0 +1,29 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": { "slug": "hilti", "name": "Hilti", "websiteUrl": "https://www.hilti.com", "description": "Hilti professional power tools" },
+  "families": [
+    { "slug": "nuron", "name": "Nuron", "subcategoryPath": ["tools"] },
+    { "slug": "rotary-hammers", "name": "Rotary Hammers", "subcategoryPath": ["tools"] },
+    { "slug": "saws", "name": "Saws", "subcategoryPath": ["tools"] },
+    { "slug": "grinders", "name": "Grinders", "subcategoryPath": ["tools"] }
+  ],
+  "products": [
+    { "slug": "hilti-sf-6h-22", "name": "SF 6H-22 Cordless Hammer Drill Driver", "family": "nuron", "subcategoryPath": ["tools"], "modelNumber": "SF 6H-22" },
+    { "slug": "hilti-sid-6-22", "name": "SID 6-22 Cordless Impact Driver", "family": "nuron", "subcategoryPath": ["tools"], "modelNumber": "SID 6-22" },
+    { "slug": "hilti-siw-6at-22", "name": "SIW 6AT-22 Cordless Impact Wrench", "family": "nuron", "subcategoryPath": ["tools"], "modelNumber": "SIW 6AT-22" },
+    { "slug": "hilti-siw-8-22", "name": "SIW 8-22 Cordless Impact Wrench", "family": "nuron", "subcategoryPath": ["tools"], "modelNumber": "SIW 8-22" },
+    { "slug": "hilti-sf-4-22", "name": "SF 4-22 Cordless Drill Driver", "family": "nuron", "subcategoryPath": ["tools"], "modelNumber": "SF 4-22" },
+    { "slug": "hilti-te-4-22", "name": "TE 4-22 Cordless Rotary Hammer", "family": "rotary-hammers", "subcategoryPath": ["tools"], "modelNumber": "TE 4-22" },
+    { "slug": "hilti-te-6-22", "name": "TE 6-22 Cordless Rotary Hammer", "family": "rotary-hammers", "subcategoryPath": ["tools"], "modelNumber": "TE 6-22" },
+    { "slug": "hilti-te-30-a36", "name": "TE 30-A36 Cordless Rotary Hammer", "family": "rotary-hammers", "subcategoryPath": ["tools"], "modelNumber": "TE 30-A36" },
+    { "slug": "hilti-scn-60-22", "name": "SCN 60-22 Cordless Circular Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "SCN 60-22" },
+    { "slug": "hilti-sr-6-22", "name": "SR 6-22 Cordless Reciprocating Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "SR 6-22" },
+    { "slug": "hilti-sc-30wr-22", "name": "SC 30WR-22 Cordless Circular Saw", "family": "saws", "subcategoryPath": ["tools"], "modelNumber": "SC 30WR-22" },
+    { "slug": "hilti-ag-4s-22", "name": "AG 4S-22 Cordless Angle Grinder", "family": "grinders", "subcategoryPath": ["tools"], "modelNumber": "AG 4S-22" },
+    { "slug": "hilti-ag-6d-22", "name": "AG 6D-22 Cordless Angle Grinder", "family": "grinders", "subcategoryPath": ["tools"], "modelNumber": "AG 6D-22" },
+    { "slug": "hilti-dch-150-sl", "name": "DCH 150-SL Wall Chaser", "family": "grinders", "subcategoryPath": ["tools"], "modelNumber": "DCH 150-SL" },
+    { "slug": "hilti-pd-i", "name": "PD-I Laser Meter", "family": "nuron", "subcategoryPath": ["tools"], "modelNumber": "PD-I" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "accessories",
+  "brand": { "slug": "filson", "name": "Filson", "websiteUrl": "https://www.filson.com", "description": "Filson bags and apparel" },
+  "families": [{ "slug": "bags", "name": "Bags", "subcategoryPath": ["bags"] }, { "slug": "outerwear", "name": "Outerwear", "subcategoryPath": ["bags"] }],
+  "products": [
+    { "slug": "filson-rugged-twill-original-briefcase", "name": "Rugged Twill Original Briefcase", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "filson-rugged-twill-duffle-bag", "name": "Rugged Twill Duffle Bag", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "filson-24-hour-tin-cloth-briefcase", "name": "24-Hour Tin Cloth Briefcase", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "filson-medium-field-bag", "name": "Medium Field Bag", "family": "bags", "subcategoryPath": ["bags"] },
+    { "slug": "filson-mackinaw-wool-cruiser", "name": "Mackinaw Wool Cruiser", "family": "outerwear", "subcategoryPath": ["bags"] }
+  ]
+}

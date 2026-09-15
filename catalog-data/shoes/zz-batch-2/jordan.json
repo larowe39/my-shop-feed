@@ -1,0 +1,19 @@
+{
+  "kind": "catalog", "version": 1, "category": "shoes",
+  "brand": { "slug": "jordan", "name": "Jordan", "websiteUrl": "https://www.nike.com/jordan", "description": "Jordan Brand footwear" },
+  "families": [
+    { "slug": "air-jordan", "name": "Air Jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-luka", "name": "Luka", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-tatum", "name": "Tatum", "subcategoryPath": ["sneakers"] }
+  ],
+  "products": [
+    { "slug": "jordan-air-jordan-1-high-og", "name": "Air Jordan 1 High OG", "family": "air-jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-air-jordan-1-low-og", "name": "Air Jordan 1 Low OG", "family": "air-jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-air-jordan-3-retro", "name": "Air Jordan 3 Retro", "family": "air-jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-air-jordan-4-retro", "name": "Air Jordan 4 Retro", "family": "air-jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-air-jordan-5-retro", "name": "Air Jordan 5 Retro", "family": "air-jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-air-jordan-11-retro", "name": "Air Jordan 11 Retro", "family": "air-jordan", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-luka-3", "name": "Luka 3", "family": "jordan-luka", "subcategoryPath": ["sneakers"] },
+    { "slug": "jordan-tatum-2", "name": "Tatum 2", "family": "jordan-tatum", "subcategoryPath": ["sneakers"] }
+  ]
+}

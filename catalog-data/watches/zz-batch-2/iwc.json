@@ -1,0 +1,23 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": { "slug": "iwc", "name": "IWC", "websiteUrl": "https://www.iwc.com", "description": "IWC Schaffhausen watches" },
+  "families": [
+    { "slug": "pilot", "name": "Pilot's Watches", "subcategoryPath": ["sport-watches"] },
+    { "slug": "portugieser", "name": "Portugieser", "subcategoryPath": ["dress-watches"] },
+    { "slug": "portofino", "name": "Portofino", "subcategoryPath": ["dress-watches"] },
+    { "slug": "ingenieur", "name": "Ingenieur", "subcategoryPath": ["sport-watches"] },
+    { "slug": "aquatimer", "name": "Aquatimer", "subcategoryPath": ["dive-watches"] }
+  ],
+  "products": [
+    { "slug": "iwc-pilot-mark-xx-iw328201", "name": "Pilot's Watch Mark XX IW328201", "family": "pilot", "subcategoryPath": ["sport-watches"], "modelNumber": "IW328201" },
+    { "slug": "iwc-pilot-chronograph-41-iw388102", "name": "Pilot's Watch Chronograph 41 IW388102", "family": "pilot", "subcategoryPath": ["sport-watches"], "modelNumber": "IW388102" },
+    { "slug": "iwc-big-pilot-43-iw329301", "name": "Big Pilot's Watch 43 IW329301", "family": "pilot", "subcategoryPath": ["sport-watches"], "modelNumber": "IW329301" },
+    { "slug": "iwc-portugieser-chronograph-iw371606", "name": "Portugieser Chronograph IW371606", "family": "portugieser", "subcategoryPath": ["dress-watches"], "modelNumber": "IW371606" },
+    { "slug": "iwc-portugieser-automatic-40-iw358303", "name": "Portugieser Automatic 40 IW358303", "family": "portugieser", "subcategoryPath": ["dress-watches"], "modelNumber": "IW358303" },
+    { "slug": "iwc-portofino-automatic-iw356501", "name": "Portofino Automatic IW356501", "family": "portofino", "subcategoryPath": ["dress-watches"], "modelNumber": "IW356501" },
+    { "slug": "iwc-ingenieur-automatic-40-iw328901", "name": "Ingenieur Automatic 40 IW328901", "family": "ingenieur", "subcategoryPath": ["sport-watches"], "modelNumber": "IW328901" },
+    { "slug": "iwc-aquatimer-automatic-iw328802", "name": "Aquatimer Automatic IW328802", "family": "aquatimer", "subcategoryPath": ["dive-watches"], "modelNumber": "IW328802" }
+  ]
+}

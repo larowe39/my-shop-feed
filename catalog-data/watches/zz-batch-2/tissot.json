@@ -1,0 +1,22 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": { "slug": "tissot", "name": "Tissot", "websiteUrl": "https://www.tissotwatches.com", "description": "Tissot watches" },
+  "families": [
+    { "slug": "prx", "name": "PRX", "subcategoryPath": ["sport-watches"] },
+    { "slug": "seastar", "name": "Seastar", "subcategoryPath": ["dive-watches"] },
+    { "slug": "gentleman", "name": "Gentleman", "subcategoryPath": ["dress-watches"] },
+    { "slug": "heritage", "name": "Heritage", "subcategoryPath": ["dress-watches"] }
+  ],
+  "products": [
+    { "slug": "tissot-prx-powermatic-80-t137-407-11-041-00", "name": "PRX Powermatic 80 T137.407.11.041.00", "family": "prx", "subcategoryPath": ["sport-watches"], "modelNumber": "T137.407.11.041.00" },
+    { "slug": "tissot-prx-quartz-t137-410-11-041-00", "name": "PRX Quartz T137.410.11.041.00", "family": "prx", "subcategoryPath": ["sport-watches"], "modelNumber": "T137.410.11.041.00" },
+    { "slug": "tissot-prx-35-powermatic-80-t137-207-11-111-00", "name": "PRX 35 Powermatic 80 T137.207.11.111.00", "family": "prx", "subcategoryPath": ["sport-watches"], "modelNumber": "T137.207.11.111.00" },
+    { "slug": "tissot-seastar-1000-powermatic-80-t120-407-11-041-03", "name": "Seastar 1000 Powermatic 80 T120.407.11.041.03", "family": "seastar", "subcategoryPath": ["dive-watches"], "modelNumber": "T120.407.11.041.03" },
+    { "slug": "tissot-seastar-2000-professional-t120-607-11-041-00", "name": "Seastar 2000 Professional T120.607.11.041.00", "family": "seastar", "subcategoryPath": ["dive-watches"], "modelNumber": "T120.607.11.041.00" },
+    { "slug": "tissot-gentleman-powermatic-80-t127-407-11-041-00", "name": "Gentleman Powermatic 80 T127.407.11.041.00", "family": "gentleman", "subcategoryPath": ["dress-watches"], "modelNumber": "T127.407.11.041.00" },
+    { "slug": "tissot-heritage-1938-t142-464-16-332-00", "name": "Heritage 1938 T142.464.16.332.00", "family": "heritage", "subcategoryPath": ["dress-watches"], "modelNumber": "T142.464.16.332.00" },
+    { "slug": "tissot-chemin-des-tourelles-t139-807-11-048-00", "name": "Chemin des Tourelles T139.807.11.048.00", "family": "heritage", "subcategoryPath": ["dress-watches"], "modelNumber": "T139.807.11.048.00" }
+  ]
+}

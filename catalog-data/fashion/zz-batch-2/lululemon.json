@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "fashion",
+  "brand": { "slug": "lululemon", "name": "Lululemon", "websiteUrl": "https://shop.lululemon.com" },
+  "families": [{ "slug": "pants", "name": "Pants", "subcategoryPath": ["apparel"] }, { "slug": "jackets", "name": "Jackets", "subcategoryPath": ["outerwear"] }, { "slug": "bags", "name": "Bags", "subcategoryPath": ["apparel"] }],
+  "products": [
+    { "slug": "lululemon-align-pant", "name": "Align Pant", "family": "pants", "subcategoryPath": ["apparel"], "modelNumber": "W26900", "releaseYear": 2015 },
+    { "slug": "lululemon-abc-pant", "name": "ABC Pant", "family": "pants", "subcategoryPath": ["apparel"] },
+    { "slug": "lululemon-pace-breaker-short", "name": "Pace Breaker Short", "family": "pants", "subcategoryPath": ["apparel"] },
+    { "slug": "lululemon-define-jacket", "name": "Define Jacket", "family": "jackets", "subcategoryPath": ["outerwear"] },
+    { "slug": "lululemon-everywhere-belt-bag", "name": "Everywhere Belt Bag", "family": "bags", "subcategoryPath": ["apparel"] }
+  ]
+}

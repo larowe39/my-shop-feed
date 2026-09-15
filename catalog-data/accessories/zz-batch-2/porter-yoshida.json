@@ -1,0 +1,12 @@
+{
+  "kind": "catalog", "version": 1, "category": "accessories",
+  "brand": { "slug": "porter-yoshida", "name": "Porter-Yoshida", "websiteUrl": "https://www.yoshidakaban.com", "description": "Porter-Yoshida bags" },
+  "families": [{ "slug": "tanker", "name": "Tanker", "subcategoryPath": ["bags"] }, { "slug": "heat", "name": "Heat", "subcategoryPath": ["bags"] }, { "slug": "smoky", "name": "Smoky", "subcategoryPath": ["bags"] }],
+  "products": [
+    { "slug": "porter-yoshida-tanker-shoulder-bag", "name": "Tanker Shoulder Bag", "family": "tanker", "subcategoryPath": ["bags"] },
+    { "slug": "porter-yoshida-tanker-2way-briefcase", "name": "Tanker 2Way Briefcase", "family": "tanker", "subcategoryPath": ["bags"] },
+    { "slug": "porter-yoshida-tanker-daypack", "name": "Tanker Daypack", "family": "tanker", "subcategoryPath": ["bags"] },
+    { "slug": "porter-yoshida-heat-shoulder-bag", "name": "Heat Shoulder Bag", "family": "heat", "subcategoryPath": ["bags"] },
+    { "slug": "porter-yoshida-smoky-wallet", "name": "Smoky Wallet", "family": "smoky", "subcategoryPath": ["bags"] }
+  ]
+}
