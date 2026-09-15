@@ -1,107 +1,36 @@
+// lib/catalogAcquisition.ts
+//
+// Pure parsing/validation/classification helpers plus the orchestration
+// functions for the ACQUIRE -> STAGE -> REVIEW -> APPROVE/REJECT -> PROMOTE
+// pipeline. Storage is fully delegated to the StagingStore /
+// CanonicalPromotionStore abstractions in ./stagingStore and
+// ./catalogPromotion -- this file never touches a JSON file or a Supabase
+// client directly, so backend selection always goes through one chokepoint.
+//
+// lib/catalogMatching.ts (Matcher V2) is imported read-only and never modified
+// by this file.
 import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { createClient } from "@supabase/supabase-js";
 import { findCatalogMatches } from "./catalogMatching.ts";
+import type {
+  CandidateClassification,
+  CanonicalCatalogEntry,
+  CatalogCandidateInput,
+  ReviewStatus,
+  StagedCatalogCandidate,
+} from "./catalogStagingTypes.ts";
+import type { CreateImportRunInput, StagingStore } from "./stagingStore.ts";
+import type { AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
+import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 
-export type CandidateClassification =
-  | "EXACT_EXISTING"
-  | "LIKELY_EXISTING"
-  | "POSSIBLE_EXISTING"
-  | "NEW"
-  | "CONFLICT"
-  | "INVALID";
-
-export type ReviewStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "needs_review"
-  | "duplicate"
-  | "invalid"
-  | "promoted";
-
-export type ReviewCommandOptions = {
-  dryRun?: boolean;
-  canonicalCatalog?: CanonicalCatalogEntry[];
-  apply?: boolean;
-};
-
-export type SourceRegistryEntry = {
-  id?: string;
-  name: string;
-  type: string;
-  baseUrl?: string | null;
-  trustClassification?: string;
-  active?: boolean;
-  notes?: string | null;
-  metadata?: Record<string, unknown>;
-};
-
-export type CatalogCandidateInput = {
-  sourceExternalId?: string | null;
-  sourceId?: string | null;
-  brand: string;
-  productName: string;
-  modelNumber?: string | null;
-  family?: string | null;
-  category?: string | null;
-  subcategory?: string | null;
-  aliases?: string[];
-  sourceUrl?: string | null;
-  sourceType?: string | null;
-  raw: Record<string, unknown>;
-};
-
-export type CanonicalCatalogEntry = {
-  brand: string;
-  productName: string;
-  modelNumber?: string | null;
-  family?: string | null;
-  category?: string | null;
-  subcategory?: string | null;
-  aliases?: string[];
-};
-
-export type StagedCatalogCandidate = {
-  id: string;
-  sourceId?: string | null;
-  sourceExternalId?: string | null;
-  fingerprint: string;
-  status: ReviewStatus;
-  classification: CandidateClassification;
-  brand: string;
-  productName: string;
-  modelNumber?: string | null;
-  family?: string | null;
-  category?: string | null;
-  subcategory?: string | null;
-  aliases: string[];
-  sourceUrl?: string | null;
-  sourceType?: string | null;
-  rawPayload: Record<string, unknown>;
-  normalizedBrand?: string;
-  normalizedName?: string;
-  normalizedModel?: string;
-  confidence: number;
-  duplicateOfCatalogProductId?: string | null;
-  reviewNotes?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type AcquisitionSummary = {
-  processed: number;
-  valid: number;
-  invalid: number;
-  exactExisting: number;
-  likelyExisting: number;
-  possibleExisting: number;
-  new: number;
-  conflict: number;
-  staged: number;
-  errors: number;
-};
+export type {
+  CandidateClassification,
+  ReviewStatus,
+  SourceRegistryEntry,
+  CatalogCandidateInput,
+  CanonicalCatalogEntry,
+  StagedCatalogCandidate,
+  AcquisitionSummary,
+} from "./catalogStagingTypes.ts";
 
 export type AcquisitionRunResult = {
   source?: SourceRegistryEntry;
@@ -115,35 +44,6 @@ export type AcquisitionRunResult = {
   }>;
   summary: AcquisitionSummary;
   persistence: string[];
-};
-
-export type StagingLedger = {
-  sourceRegistry: SourceRegistryEntry[];
-  importRuns: Array<{
-    id: string;
-    sourceId?: string | null;
-    adapter: string;
-    sourcePath?: string | null;
-    dryRun: boolean;
-    processed: number;
-    valid: number;
-    invalid: number;
-    exactExisting: number;
-    likelyExisting: number;
-    possibleExisting: number;
-    newRecords: number;
-    conflictRecords: number;
-    approved: number;
-    rejected: number;
-    promoted: number;
-    staged: number;
-    errors: number;
-    status: string;
-    summary: Record<string, unknown>;
-    createdAt: string;
-  }>;
-  stagedProducts: StagedCatalogCandidate[];
-  stagedAliases: Array<{ id: string; stagedProductId: string; alias: string; normalizedAlias: string; createdAt: string }>;
 };
 
 function normalizeText(value: string | null | undefined): string {
@@ -411,287 +311,28 @@ export function parseCsvAdapterRecords(raw: string): CatalogCandidateInput[] {
   return rows;
 }
 
-function getStagingLedgerPath(): string {
-  const configured = process.env.CATALOG_STAGING_LEDGER_PATH;
-  if (configured) return configured;
-  return path.join(process.cwd(), ".catalog-staging", "catalog-staging-ledger.json");
-}
-
-function ensureStagingLedgerDir(targetPath: string): void {
-  const dir = path.dirname(targetPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-export function resetStagingLedger(): void {
-  const targetPath = getStagingLedgerPath();
-  ensureStagingLedgerDir(targetPath);
-  fs.writeFileSync(targetPath, JSON.stringify({ sourceRegistry: [], importRuns: [], stagedProducts: [], stagedAliases: [] }, null, 2));
-}
-
-export function readStagingLedger(): StagingLedger {
-  const targetPath = getStagingLedgerPath();
-  ensureStagingLedgerDir(targetPath);
-  if (!fs.existsSync(targetPath)) {
-    const defaultLedger: StagingLedger = { sourceRegistry: [], importRuns: [], stagedProducts: [], stagedAliases: [] };
-    fs.writeFileSync(targetPath, JSON.stringify(defaultLedger, null, 2));
-    return defaultLedger;
-  }
-  try {
-    const raw = fs.readFileSync(targetPath, "utf8");
-    const parsed = JSON.parse(raw || "{}") as Partial<StagingLedger>;
-    return {
-      sourceRegistry: Array.isArray(parsed.sourceRegistry) ? parsed.sourceRegistry : [],
-      importRuns: Array.isArray(parsed.importRuns) ? parsed.importRuns : [],
-      stagedProducts: Array.isArray(parsed.stagedProducts) ? parsed.stagedProducts : [],
-      stagedAliases: Array.isArray(parsed.stagedAliases) ? parsed.stagedAliases : [],
-    };
-  } catch {
-    resetStagingLedger();
-    return { sourceRegistry: [], importRuns: [], stagedProducts: [], stagedAliases: [] };
-  }
-}
-
-function writeStagingLedger(ledger: StagingLedger): void {
-  const targetPath = getStagingLedgerPath();
-  ensureStagingLedgerDir(targetPath);
-  fs.writeFileSync(targetPath, JSON.stringify(ledger, null, 2));
-}
-
 function makeId(prefix: string): string {
   return `${prefix}_${createHash("sha1").update(`${Date.now()}-${Math.random()}-${prefix}`).digest("hex").slice(0, 12)}`;
 }
 
-export function listStagedCandidates(): StagedCatalogCandidate[] {
-  return readStagingLedger().stagedProducts;
-}
-
-export function getStagedCandidateById(candidateId: string): StagedCatalogCandidate | null {
-  const staged = listStagedCandidates();
-  return staged.find((candidate) => candidate.id === candidateId) ?? null;
-}
-
-function insertAliasRowsForCandidate(candidate: StagedCatalogCandidate): void {
-  const ledger = readStagingLedger();
-  const seen = new Set<string>();
-  const aliases = [...new Set([...(candidate.aliases ?? []), candidate.brand, candidate.productName, candidate.modelNumber ?? ""])].filter(Boolean);
-  for (const alias of aliases) {
-    const normalizedAlias = normalizeAcquisitionText(alias);
-    if (!normalizedAlias || seen.has(`${candidate.id}:${normalizedAlias}`)) continue;
-    seen.add(`${candidate.id}:${normalizedAlias}`);
-    const row = {
-      id: makeId("alias"),
-      stagedProductId: candidate.id,
-      alias,
-      normalizedAlias,
-      createdAt: new Date().toISOString(),
-    };
-    if (!ledger.stagedAliases.some((existing) => existing.stagedProductId === candidate.id && existing.normalizedAlias === normalizedAlias)) {
-      ledger.stagedAliases.push(row);
-    }
-  }
-  writeStagingLedger(ledger);
-}
-
-async function persistToSupabaseIfAvailable(payload: { source: SourceRegistryEntry; run: Record<string, unknown>; candidates: StagedCatalogCandidate[] }): Promise<string[] | null> {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) return null;
-
-  try {
-    const supabase = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const sourceUpsert = await supabase
-      .from("catalog_sources")
-      .upsert(
-        {
-          name: payload.source.name,
-          type: payload.source.type,
-          base_url: payload.source.baseUrl ?? null,
-          trust_classification: payload.source.trustClassification ?? "staged",
-          active: payload.source.active ?? true,
-          notes: payload.source.notes ?? "",
-          metadata: payload.source.metadata ?? {},
-        },
-        { onConflict: "name" }
-      )
-      .select("id")
-      .single();
-    if (sourceUpsert.error) throw new Error(sourceUpsert.error.message);
-    const sourceId = sourceUpsert.data.id as string;
-
-    const runInsert = await supabase
-      .from("catalog_import_runs")
-      .insert({
-        source_id: sourceId,
-        adapter: payload.run.adapter,
-        source_path: payload.run.sourcePath ?? null,
-        dry_run: Boolean(payload.run.dryRun),
-        processed: Number(payload.run.processed ?? 0),
-        valid: Number(payload.run.valid ?? 0),
-        invalid: Number(payload.run.invalid ?? 0),
-        exact_existing: Number(payload.run.exactExisting ?? 0),
-        likely_existing: Number(payload.run.likelyExisting ?? 0),
-        possible_existing: Number(payload.run.possibleExisting ?? 0),
-        new_records: Number(payload.run.newRecords ?? 0),
-        conflict_records: Number(payload.run.conflictRecords ?? 0),
-        approved: Number(payload.run.approved ?? 0),
-        rejected: Number(payload.run.rejected ?? 0),
-        promoted: Number(payload.run.promoted ?? 0),
-        staged: Number(payload.run.staged ?? 0),
-        status: "completed",
-        summary: payload.run.summary ?? {},
-      })
-      .select("id")
-      .single();
-    if (runInsert.error) throw new Error(runInsert.error.message);
-    const runId = runInsert.data.id as string;
-
-    for (const candidate of payload.candidates) {
-      const stagedInsert = await supabase
-        .from("catalog_staged_products")
-        .upsert(
-          {
-            id: candidate.id,
-            source_id: sourceId,
-            source_external_id: candidate.sourceExternalId ?? null,
-            fingerprint: candidate.fingerprint,
-            raw_payload: candidate.rawPayload,
-            normalized_brand: candidate.normalizedBrand ?? candidate.brand,
-            normalized_name: candidate.normalizedName ?? candidate.productName,
-            normalized_model: candidate.normalizedModel ?? candidate.modelNumber ?? null,
-            proposed_category: candidate.category ?? null,
-            proposed_subcategory: candidate.subcategory ?? null,
-            proposed_family: candidate.family ?? null,
-            source_url: candidate.sourceUrl ?? null,
-            source_type: candidate.sourceType ?? null,
-            status: candidate.status,
-            confidence: candidate.confidence,
-            duplicate_of_catalog_product_id: candidate.duplicateOfCatalogProductId ?? null,
-            review_notes: candidate.reviewNotes ?? null,
-          },
-          { onConflict: "id" }
-        )
-        .select("id")
-        .single();
-      if (stagedInsert.error) throw new Error(stagedInsert.error.message);
-
-      const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.brand, candidate.productName, candidate.modelNumber ?? ""]))
-        .filter(Boolean)
-        .map((alias) => ({
-          staged_product_id: candidate.id,
-          alias,
-          normalized_alias: normalizeAcquisitionText(alias),
-        }));
-      if (aliasValues.length) {
-        const aliasUpsert = await supabase.from("catalog_staged_aliases").upsert(aliasValues, {
-          onConflict: "staged_product_id,normalized_alias",
-          ignoreDuplicates: false,
-        });
-        if (aliasUpsert.error) throw new Error(aliasUpsert.error.message);
-      }
-    }
-    return ["supabase" + runId];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown staging write error";
-    if (message.includes("does not exist") || message.includes("relation") || message.includes("catalog_staged")) {
-      return null;
-    }
-    return null;
-  }
-}
-
-function upsertLocalLedgerCandidate(candidate: StagedCatalogCandidate): StagedCatalogCandidate {
-  const ledger = readStagingLedger();
-  const existingIndex = ledger.stagedProducts.findIndex((item) => item.fingerprint === candidate.fingerprint && (item.sourceExternalId ?? "") === (candidate.sourceExternalId ?? ""));
-  if (existingIndex >= 0) {
-    const existing = ledger.stagedProducts[existingIndex];
-    ledger.stagedProducts[existingIndex] = { ...existing, ...candidate, updatedAt: new Date().toISOString() };
-    writeStagingLedger(ledger);
-    return ledger.stagedProducts[existingIndex];
-  }
-  ledger.stagedProducts.push(candidate);
-  writeStagingLedger(ledger);
-  insertAliasRowsForCandidate(candidate);
-  return candidate;
-}
-
-function upsertLocalSource(sourceInfo: SourceRegistryEntry): SourceRegistryEntry {
-  const ledger = readStagingLedger();
-  const normalizedName = sourceInfo.name.trim();
-  const existing = ledger.sourceRegistry.find((entry) => entry.name === normalizedName || entry.id === sourceInfo.id);
-  if (existing) {
-    const merged = { ...existing, ...sourceInfo, id: existing.id ?? sourceInfo.id ?? makeId("source"), name: normalizedName };
-    Object.assign(existing, merged);
-    writeStagingLedger(ledger);
-    return merged;
-  }
-  const created: SourceRegistryEntry = {
-    id: sourceInfo.id ?? makeId("source"),
-    name: normalizedName,
-    type: sourceInfo.type,
-    baseUrl: sourceInfo.baseUrl ?? null,
-    trustClassification: sourceInfo.trustClassification ?? "staged",
-    active: sourceInfo.active ?? true,
-    notes: sourceInfo.notes ?? null,
-    metadata: sourceInfo.metadata ?? {},
-  };
-  ledger.sourceRegistry.push(created);
-  writeStagingLedger(ledger);
-  return created;
-}
-
-function createImportRunForSource(sourceInfo: SourceRegistryEntry, payload: Record<string, unknown>): Record<string, unknown> {
-  const ledger = readStagingLedger();
-  const run = {
-    id: makeId("run"),
-    sourceId: sourceInfo.id ?? null,
-    adapter: String(payload.adapter ?? "json"),
-    sourcePath: payload.sourcePath ?? null,
-    dryRun: Boolean(payload.dryRun),
-    processed: Number(payload.processed ?? 0),
-    valid: Number(payload.valid ?? 0),
-    invalid: Number(payload.invalid ?? 0),
-    exactExisting: Number(payload.exactExisting ?? 0),
-    likelyExisting: Number(payload.likelyExisting ?? 0),
-    possibleExisting: Number(payload.possibleExisting ?? 0),
-    newRecords: Number(payload.newRecords ?? 0),
-    conflictRecords: Number(payload.conflictRecords ?? 0),
-    approved: Number(payload.approved ?? 0),
-    rejected: Number(payload.rejected ?? 0),
-    promoted: Number(payload.promoted ?? 0),
-    staged: Number(payload.staged ?? 0),
-    errors: Number(payload.errors ?? 0),
-    status: "completed",
-    summary: payload.summary ?? {},
-    createdAt: new Date().toISOString(),
-  };
-  ledger.importRuns.push(run as any);
-  writeStagingLedger(ledger);
-  return run;
-}
-
+/**
+ * ACQUIRE step. Classifies every record and, when `options.apply` is true,
+ * persists staged candidates through the supplied StagingStore (required in
+ * apply mode -- the caller chooses the backend via resolveStagingStore()).
+ * Dry-run performs zero store calls: nothing is read or written anywhere.
+ */
 export async function acquireFromRecords(
   records: Partial<CatalogCandidateInput>[],
   canonicalCatalog: CanonicalCatalogEntry[] = [],
   sourceInfo: Partial<SourceRegistryEntry> = {},
-  options: { apply?: boolean; adapter?: string; sourcePath?: string | null; dryRun?: boolean } = {}
+  options: { apply?: boolean; adapter?: string; sourcePath?: string | null } = {},
+  store?: StagingStore
 ): Promise<AcquisitionRunResult> {
   const apply = options.apply ?? false;
-  const source = upsertLocalSource({
-    id: sourceInfo.id ?? makeId("source"),
-    name: sourceInfo.name ?? "fixture-source",
-    type: sourceInfo.type ?? "manual import",
-    baseUrl: sourceInfo.baseUrl ?? null,
-    trustClassification: sourceInfo.trustClassification ?? "staged",
-    active: sourceInfo.active ?? true,
-    notes: sourceInfo.notes ?? null,
-    metadata: sourceInfo.metadata ?? {},
-  });
+  if (apply && !store) {
+    throw new Error("acquireFromRecords: a StagingStore is required when apply=true. Resolve one via resolveStagingStore().");
+  }
 
-  const sourcePath = options.sourcePath ?? null;
   const summary: AcquisitionSummary = {
     processed: records.length,
     valid: 0,
@@ -704,20 +345,17 @@ export async function acquireFromRecords(
     staged: 0,
     errors: 0,
   };
-  const staged: StagedCatalogCandidate[] = [];
+  const candidates: StagedCatalogCandidate[] = [];
   const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
 
+  const sourceType = sourceInfo.type ?? "manual import";
   for (let index = 0; index < records.length; index += 1) {
     const rawRecord = records[index] ?? {};
     const validation = validateCatalogCandidate(rawRecord as CatalogCandidateInput);
     if (!validation.valid) {
       summary.invalid += 1;
       summary.errors += 1;
-      invalidRecords.push({
-        candidate: rawRecord,
-        errors: validation.errors,
-        classification: "INVALID",
-      });
+      invalidRecords.push({ candidate: rawRecord, errors: validation.errors, classification: "INVALID" });
       continue;
     }
 
@@ -728,19 +366,15 @@ export async function acquireFromRecords(
       summary.exactExisting += 1;
       continue;
     }
-    if (classification === "LIKELY_EXISTING") {
-      summary.likelyExisting += 1;
-    } else if (classification === "POSSIBLE_EXISTING") {
-      summary.possibleExisting += 1;
-    } else if (classification === "NEW") {
-      summary.new += 1;
-    } else if (classification === "CONFLICT") {
-      summary.conflict += 1;
-    }
+    if (classification === "LIKELY_EXISTING") summary.likelyExisting += 1;
+    else if (classification === "POSSIBLE_EXISTING") summary.possibleExisting += 1;
+    else if (classification === "NEW") summary.new += 1;
+    else if (classification === "CONFLICT") summary.conflict += 1;
 
-    const status: ReviewStatus = classification === "LIKELY_EXISTING" || classification === "POSSIBLE_EXISTING" || classification === "CONFLICT" ? "needs_review" : "pending";
+    const status: ReviewStatus =
+      classification === "LIKELY_EXISTING" || classification === "POSSIBLE_EXISTING" || classification === "CONFLICT" ? "needs_review" : "pending";
     const fingerprint = sourceFingerprint({
-      sourceId: source.id ?? rawRecord.sourceId ?? null,
+      sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
       sourceExternalId: rawRecord.sourceExternalId ?? null,
       brand: rawRecord.brand,
       productName: rawRecord.productName,
@@ -750,9 +384,9 @@ export async function acquireFromRecords(
       sourceUrl: rawRecord.sourceUrl ?? null,
     });
 
-    const candidate: StagedCatalogCandidate = {
+    candidates.push({
       id: makeId("candidate"),
-      sourceId: source.id ?? rawRecord.sourceId ?? null,
+      sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
       sourceExternalId: rawRecord.sourceExternalId ?? null,
       fingerprint,
       status,
@@ -765,7 +399,7 @@ export async function acquireFromRecords(
       subcategory: rawRecord.subcategory ?? null,
       aliases: [...new Set(normalizeAliasList(rawRecord.aliases ?? []))],
       sourceUrl: rawRecord.sourceUrl ?? null,
-      sourceType: rawRecord.sourceType ?? source.type ?? null,
+      sourceType: rawRecord.sourceType ?? sourceType,
       rawPayload: rawRecord.raw ?? {},
       normalizedBrand: validation.normalized.brand,
       normalizedName: validation.normalized.productName,
@@ -775,19 +409,33 @@ export async function acquireFromRecords(
       reviewNotes: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
-
-    const persistedCandidate = apply ? upsertLocalLedgerCandidate(candidate) : candidate;
-    staged.push(persistedCandidate);
+    });
     summary.staged += 1;
   }
 
   const persistenceMessages: string[] = [];
-  let createdRunId: string | undefined;
-  if (apply) {
-    const runRecord = createImportRunForSource(source, {
+  let source: SourceRegistryEntry | undefined;
+  let runId: string | undefined;
+  let stagedResult = candidates;
+
+  if (apply && store) {
+    source = await store.upsertSource({
+      id: sourceInfo.id,
+      name: sourceInfo.name ?? "fixture-source",
+      type: sourceType,
+      baseUrl: sourceInfo.baseUrl ?? null,
+      trustClassification: sourceInfo.trustClassification ?? "staged",
+      active: sourceInfo.active ?? true,
+      notes: sourceInfo.notes ?? null,
+      metadata: sourceInfo.metadata ?? {},
+    });
+    for (const candidate of candidates) candidate.sourceId = source.id ?? candidate.sourceId;
+
+    stagedResult = await store.upsertStagedCandidates(candidates);
+
+    const runInput: CreateImportRunInput = {
       adapter: options.adapter ?? "json",
-      sourcePath,
+      sourcePath: options.sourcePath ?? null,
       dryRun: false,
       processed: summary.processed,
       valid: summary.valid,
@@ -803,25 +451,17 @@ export async function acquireFromRecords(
       staged: summary.staged,
       errors: summary.errors,
       summary,
-    });
-    createdRunId = runRecord.id as string;
-    const supabaseResult = await persistToSupabaseIfAvailable({
-      source,
-      run: runRecord,
-      candidates: staged,
-    });
-    if (supabaseResult) {
-      persistenceMessages.push("supabase:catalog_staged_products");
-    } else {
-      persistenceMessages.push(`local-ledger:${getStagingLedgerPath()}`);
-    }
+    };
+    const run = await store.createImportRun(source, runInput);
+    runId = run.id;
+    persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
 
   return {
     source,
-    sourceId: source.id,
-    runId: createdRunId,
-    staged,
+    sourceId: source?.id,
+    runId,
+    staged: stagedResult,
     invalidRecords,
     summary,
     persistence: persistenceMessages,
@@ -839,143 +479,148 @@ export function printAcquisitionSummary(run: AcquisitionRunResult): string {
     `NEW: ${run.summary.new}`,
     `CONFLICT: ${run.summary.conflict}`,
     `STAGED: ${run.summary.staged}`,
-    `PERSISTENCE: ${run.persistence.join(", ") || "dry-run"}`,
+    `PERSISTENCE: ${run.persistence.join(", ") || "dry-run (zero writes)"}`,
   ];
   return lines.join("\n");
 }
 
-export function showCandidate(candidateId: string, candidates: Partial<StagedCatalogCandidate>[]): {
-  found: boolean;
-  message: string;
-  candidate?: Partial<StagedCatalogCandidate>;
-} {
-  const candidate = candidates.find((row) => row.id === candidateId);
-  if (!candidate) {
-    return { found: false, message: `Candidate ${candidateId} not found.` };
-  }
-  return {
-    found: true,
-    message: `Candidate ${candidateId} found.`,
-    candidate,
-  };
+export async function showCandidate(store: StagingStore, candidateId: string): Promise<{ found: boolean; message: string; candidate?: StagedCatalogCandidate }> {
+  const candidate = await store.getStagedCandidateById(candidateId);
+  if (!candidate) return { found: false, message: `Candidate ${candidateId} not found in ${store.kind} staging backend.` };
+  return { found: true, message: `Candidate ${candidateId} found in ${store.kind} staging backend.`, candidate };
 }
 
-export function approveCandidate(
-  candidate: Partial<StagedCatalogCandidate>,
-  options: ReviewCommandOptions = {}
-): {
-  ok: boolean;
-  candidate: Partial<StagedCatalogCandidate>;
-  canonicalWrite: boolean;
-  message: string;
-} {
+const TERMINAL_STATUSES: ReviewStatus[] = ["invalid", "promoted"];
+const APPROVABLE_STATUSES: ReviewStatus[] = ["pending", "needs_review", "duplicate"];
+
+export async function approveCandidate(
+  store: StagingStore,
+  candidateId: string,
+  options: { dryRun?: boolean } = {}
+): Promise<{ ok: boolean; candidate?: StagedCatalogCandidate; message: string }> {
   const dryRun = options.dryRun ?? true;
-  if (candidate.status === "invalid" || candidate.status === "promoted") {
-    return {
-      ok: false,
-      candidate,
-      canonicalWrite: false,
-      message: `Candidate ${candidate.id ?? "unknown"} is in a terminal status and cannot be approved.`,
-    };
+  const candidate = await store.getStagedCandidateById(candidateId);
+  if (!candidate) return { ok: false, message: `Candidate ${candidateId} not found in ${store.kind} staging backend.` };
+  if (TERMINAL_STATUSES.includes(candidate.status)) {
+    return { ok: false, candidate, message: `Candidate ${candidateId} is in a terminal status (${candidate.status}) and cannot be approved.` };
   }
-
-  if (candidate.status === "pending" || candidate.status === "needs_review" || candidate.status === "duplicate") {
-    const updated: Partial<StagedCatalogCandidate> = {
-      ...candidate,
-      status: "approved",
-      reviewNotes: `${candidate.reviewNotes ?? "approved"} | reviewed by CLI`,
-      updatedAt: new Date().toISOString(),
-    };
-    const ledger = readStagingLedger();
-    if (candidate.id) {
-      const index = ledger.stagedProducts.findIndex((row) => row.id === candidate.id);
-      if (index >= 0) {
-        ledger.stagedProducts[index] = { ...ledger.stagedProducts[index], ...updated, status: "approved" };
-        writeStagingLedger(ledger);
-      }
-    }
-    return {
-      ok: true,
-      candidate: updated,
-      canonicalWrite: false,
-      message: dryRun ? `DRY RUN — approved candidate ${candidate.id}; no canonical writes.` : `Approved candidate ${candidate.id}.`,
-    };
+  if (!APPROVABLE_STATUSES.includes(candidate.status) && candidate.status !== "approved") {
+    return { ok: false, candidate, message: `Candidate ${candidateId} is not approvable in its current status (${candidate.status}).` };
   }
-
-  return {
-    ok: false,
-    candidate,
-    canonicalWrite: false,
-    message: `Candidate ${candidate.id ?? "unknown"} is not approvable in its current status (${candidate.status ?? "unknown"}).`,
-  };
-}
-
-export function rejectCandidate(
-  candidate: Partial<StagedCatalogCandidate>,
-  options: ReviewCommandOptions = {}
-): {
-  ok: boolean;
-  candidate: Partial<StagedCatalogCandidate>;
-  canonicalWrite: boolean;
-  message: string;
-} {
-  const dryRun = options.dryRun ?? true;
-  if (candidate.status === "promoted") {
-    return {
-      ok: false,
-      candidate,
-      canonicalWrite: false,
-      message: `Candidate ${candidate.id ?? "unknown"} has already been promoted and cannot be rejected.`,
-    };
-  }
-
-  const updated: Partial<StagedCatalogCandidate> = {
-    ...candidate,
-    status: "rejected",
-    reviewNotes: `${candidate.reviewNotes ?? "rejected"} | reviewed by CLI`,
-    updatedAt: new Date().toISOString(),
-  };
-  const ledger = readStagingLedger();
-  if (candidate.id) {
-    const index = ledger.stagedProducts.findIndex((row) => row.id === candidate.id);
-    if (index >= 0) {
-      ledger.stagedProducts[index] = { ...ledger.stagedProducts[index], ...updated, status: "rejected" };
-      writeStagingLedger(ledger);
-    }
-  }
-  return {
-    ok: true,
-    candidate: updated,
-    canonicalWrite: false,
-    message: dryRun ? `DRY RUN — rejected candidate ${candidate.id}; no canonical writes.` : `Rejected candidate ${candidate.id}.`,
-  };
-}
-
-export function promoteApprovedCandidates(options: { dryRun?: boolean; apply?: boolean } = {}): {
-  ok: boolean;
-  promoted: StagedCatalogCandidate[];
-  canonicalWrite: boolean;
-  message: string;
-} {
-  const dryRun = options.dryRun ?? true;
-  const approved = listStagedCandidates().filter((candidate) => candidate.status === "approved");
-  if (!approved.length) {
-    return { ok: true, promoted: [], canonicalWrite: false, message: "No approved staged candidates found." };
-  }
-
   if (dryRun) {
-    return {
-      ok: true,
-      promoted: approved,
-      canonicalWrite: false,
-      message: `DRY RUN — ${approved.length} approved staged candidate(s) would be eligible for canonical promotion; no canonical writes performed.`,
-    };
+    return { ok: true, candidate: { ...candidate, status: "approved" }, message: `DRY RUN -- would approve candidate ${candidateId} in ${store.kind}; no writes performed.` };
+  }
+  const updated = await store.updateCandidateStatus(candidateId, "approved", `${candidate.reviewNotes ?? "approved"} | reviewed by CLI`);
+  return { ok: true, candidate: updated ?? candidate, message: `Approved candidate ${candidateId} in ${store.kind} staging backend.` };
+}
+
+export async function rejectCandidate(
+  store: StagingStore,
+  candidateId: string,
+  options: { dryRun?: boolean } = {}
+): Promise<{ ok: boolean; candidate?: StagedCatalogCandidate; message: string }> {
+  const dryRun = options.dryRun ?? true;
+  const candidate = await store.getStagedCandidateById(candidateId);
+  if (!candidate) return { ok: false, message: `Candidate ${candidateId} not found in ${store.kind} staging backend.` };
+  if (candidate.status === "promoted") {
+    return { ok: false, candidate, message: `Candidate ${candidateId} has already been promoted and cannot be rejected.` };
+  }
+  if (dryRun) {
+    return { ok: true, candidate: { ...candidate, status: "rejected" }, message: `DRY RUN -- would reject candidate ${candidateId} in ${store.kind}; no writes performed.` };
+  }
+  const updated = await store.updateCandidateStatus(candidateId, "rejected", `${candidate.reviewNotes ?? "rejected"} | reviewed by CLI`);
+  return { ok: true, candidate: updated ?? candidate, message: `Rejected candidate ${candidateId} in ${store.kind} staging backend.` };
+}
+
+export type PromotionReportEntry = {
+  candidateId: string;
+  ok: boolean;
+  dryRun: boolean;
+  canonicalProductId?: string;
+  message: string;
+};
+
+export type PromotionRunResult = {
+  ok: boolean;
+  entries: PromotionReportEntry[];
+  message: string;
+};
+
+const NEVER_PROMOTE_STATUSES: ReviewStatus[] = ["pending", "needs_review", "rejected", "invalid", "promoted", "duplicate"];
+
+/**
+ * PROMOTE step. Reads status='approved' rows from `stagingStore`, revalidates
+ * them, rechecks canonical duplicates/conflicts via `canonicalStore`
+ * immediately before writing, and -- only when `dryRun` is false -- performs
+ * the canonical write through `canonicalStore.promote()` (a single atomic
+ * Postgres RPC in production; see lib/catalogPromotion.ts). A staged row is
+ * only ever marked "promoted" after its canonical write succeeded.
+ */
+export async function promoteApprovedCandidates(
+  stagingStore: StagingStore,
+  canonicalStore: CanonicalPromotionStore,
+  options: { dryRun?: boolean } = {}
+): Promise<PromotionRunResult> {
+  const dryRun = options.dryRun ?? true;
+  const allStaged = await stagingStore.listStagedCandidates();
+  const approved = allStaged.filter((candidate) => candidate.status === "approved" && !NEVER_PROMOTE_STATUSES.includes(candidate.status));
+
+  if (!approved.length) {
+    return { ok: true, entries: [], message: "No approved staged candidates found. Nothing to promote." };
   }
 
-  return {
-    ok: true,
-    promoted: approved,
-    canonicalWrite: false,
-    message: `Promotion is intentionally dry-run only in this repo. ${approved.length} approved candidate(s) were reviewed but no canonical rows were written.`,
-  };
+  const entries: PromotionReportEntry[] = [];
+  for (const candidate of approved) {
+    const revalidation = validateCatalogCandidate({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      aliases: candidate.aliases,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    });
+    if (!revalidation.valid) {
+      entries.push({ candidateId: candidate.id, ok: false, dryRun, message: `Revalidation failed: ${revalidation.errors.join(", ")}. Skipped.` });
+      continue;
+    }
+
+    const eligibility = await canonicalStore.checkEligibility(candidate);
+    if (!eligibility.eligible) {
+      entries.push({ candidateId: candidate.id, ok: false, dryRun, message: eligibility.reason });
+      continue;
+    }
+
+    if (dryRun) {
+      entries.push({
+        candidateId: candidate.id,
+        ok: true,
+        dryRun: true,
+        message: `DRY RUN -- would promote ${candidate.id} (brand=${eligibility.resolution.brandSlug}, slug=${eligibility.resolution.slug}); zero canonical writes performed.`,
+      });
+      continue;
+    }
+
+    const outcome = await canonicalStore.promote(candidate, eligibility.resolution);
+    if (!outcome.ok) {
+      entries.push({ candidateId: candidate.id, ok: false, dryRun: false, message: outcome.message });
+      continue;
+    }
+    // Supabase's RPC transitions the staged row to 'promoted' atomically as
+    // part of the same write; only the local/test mock needs a second call.
+    if (canonicalStore.kind === "local") {
+      await stagingStore.markPromoted(candidate.id, outcome.canonicalProductId!);
+    }
+    entries.push({ candidateId: candidate.id, ok: true, dryRun: false, canonicalProductId: outcome.canonicalProductId, message: outcome.message });
+  }
+
+  const promotedCount = entries.filter((entry) => entry.ok && !entry.dryRun).length;
+  const eligibleCount = entries.filter((entry) => entry.ok).length;
+  const message = dryRun
+    ? `DRY RUN -- ${eligibleCount}/${approved.length} approved candidate(s) are eligible for promotion; zero canonical writes performed.`
+    : `${promotedCount}/${approved.length} approved candidate(s) promoted to the canonical catalog.`;
+  return { ok: true, entries, message };
 }

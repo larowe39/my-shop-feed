@@ -1,41 +1,56 @@
 #!/usr/bin/env node
+// PRODUCTION default backend: Supabase (catalog_sources/catalog_import_runs/
+// catalog_staged_products/catalog_staged_aliases). Pass --backend=local (or
+// set CATALOG_STAGING_BACKEND=local) to use the gitignored local JSON ledger
+// for tests/dev only. There is NO silent fallback: if the Supabase backend
+// is selected (explicitly or by default) and credentials are missing, this
+// fails closed with an error instead of writing to the local ledger.
+require("dotenv").config();
+require("dotenv").config({ path: ".env.local", override: true });
+
 const fs = require("fs");
 const path = require("path");
-
-const DEFAULT_SOURCE = { name: "fixture-source", type: "manual import" };
+const { getFlagValue } = require("./lib/cliArgs");
 
 function parseArgs() {
-  const args = { apply: false, dryRun: true, adapter: "json", source: null };
-  for (let index = 2; index < process.argv.length; index += 1) {
-    const value = process.argv[index];
-    if (value === "--apply") args.apply = true;
-    if (value === "--dry-run") args.dryRun = true;
-    if (value === "--adapter") args.adapter = process.argv[++index] || "json";
-    if (value === "--source") args.source = process.argv[++index] || null;
-  }
-  args.dryRun = !args.apply;
-  return args;
+  const raw = process.argv.slice(2);
+  return {
+    apply: raw.includes("--apply"),
+    adapter: getFlagValue(raw, "--adapter") || "json",
+    source: getFlagValue(raw, "--source"),
+    backend: getFlagValue(raw, "--backend") || process.env.CATALOG_STAGING_BACKEND || null,
+  };
 }
 
 async function main() {
   const args = parseArgs();
-  const mod = await import("../lib/catalogAcquisition.ts");
-  const { acquireFromRecords, parseJsonAdapterRecords, parseCsvAdapterRecords, printAcquisitionSummary } = mod;
+  const acquisition = await import("../lib/catalogAcquisition.ts");
+  const { acquireFromRecords, parseJsonAdapterRecords, parseCsvAdapterRecords, printAcquisitionSummary } = acquisition;
 
   const sourcePath = args.source || path.join(__dirname, "__fixtures__", "catalog-acquisition", "sample-products.json");
   const raw = fs.readFileSync(sourcePath, "utf8");
   const records = args.adapter === "csv" ? parseCsvAdapterRecords(raw) : parseJsonAdapterRecords(raw);
-  const run = await acquireFromRecords(records, [], { ...DEFAULT_SOURCE, name: path.basename(sourcePath), type: args.adapter }, { apply: args.apply, adapter: args.adapter, sourcePath: sourcePath, dryRun: !args.apply });
+
+  let store;
+  if (args.apply) {
+    const { resolveStagingStore } = await import("../lib/stagingStore.ts");
+    store = resolveStagingStore({ backend: args.backend ?? undefined });
+    console.log(`STAGING BACKEND: ${store.kind}${args.backend ? " (explicit)" : " (default)"}`);
+  }
+
+  const run = await acquireFromRecords(
+    records,
+    [],
+    { name: path.basename(sourcePath), type: args.adapter },
+    { apply: args.apply, adapter: args.adapter, sourcePath },
+    store
+  );
 
   console.log(printAcquisitionSummary(run));
-  if (args.apply) {
-    console.log("APPLY — WRITING STAGING DATA (local ledger or Supabase staging if migration is present)");
-  } else {
-    console.log("DRY RUN — ZERO staging/canonical writes");
-  }
+  console.log(args.apply ? "APPLY -- staging data written to the selected backend above." : "DRY RUN -- ZERO staging/canonical writes");
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error(error.message || error);
   process.exit(1);
 });
