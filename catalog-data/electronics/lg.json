@@ -1,0 +1,31 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "lg",
+    "name": "LG",
+    "websiteUrl": "https://www.lg.com"
+  },
+  "families": [
+    { "slug": "oled", "name": "OLED", "subcategoryPath": ["televisions"] }
+  ],
+  "products": [
+    {
+      "slug": "lg-oled-c4",
+      "name": "OLED C4",
+      "family": "oled",
+      "subcategoryPath": ["televisions"],
+      "releaseYear": 2024,
+      "aliases": ["LG C4", "LG OLED evo C4"]
+    },
+    {
+      "slug": "lg-oled-g4",
+      "name": "OLED G4",
+      "family": "oled",
+      "subcategoryPath": ["televisions"],
+      "releaseYear": 2024,
+      "aliases": ["LG G4", "LG OLED evo G4"]
+    }
+  ]
+}

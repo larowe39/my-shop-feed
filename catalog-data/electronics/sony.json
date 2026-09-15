@@ -1,0 +1,69 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "sony",
+    "name": "Sony",
+    "websiteUrl": "https://www.sony.com"
+  },
+  "families": [
+    { "slug": "alpha", "name": "Alpha", "subcategoryPath": ["cameras", "mirrorless"] },
+    { "slug": "playstation", "name": "PlayStation", "subcategoryPath": ["gaming", "consoles"] },
+    { "slug": "wf-1000x", "name": "WF-1000X", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "sony-alpha-7-iv",
+      "name": "Alpha 7 IV",
+      "family": "alpha",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2021,
+      "aliases": ["Sony A7 IV", "Sony a7IV"]
+    },
+    {
+      "slug": "sony-alpha-7r-v",
+      "name": "Alpha 7R V",
+      "family": "alpha",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2022,
+      "aliases": ["Sony A7R V"]
+    },
+    {
+      "slug": "sony-alpha-9-iii",
+      "name": "Alpha 9 III",
+      "family": "alpha",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2023,
+      "aliases": ["Sony A9 III"]
+    },
+    {
+      "slug": "sony-playstation-5",
+      "name": "PlayStation 5",
+      "family": "playstation",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2020,
+      "aliases": ["PS5", "Sony PS5"],
+      "variants": [
+        { "slug": "disc", "name": "Disc Edition" },
+        { "slug": "digital", "name": "Digital Edition" }
+      ]
+    },
+    {
+      "slug": "sony-playstation-5-pro",
+      "name": "PlayStation 5 Pro",
+      "family": "playstation",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2024,
+      "aliases": ["PS5 Pro"]
+    },
+    {
+      "slug": "sony-wf-1000xm5",
+      "name": "WF-1000XM5",
+      "family": "wf-1000x",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["Sony WF1000XM5", "Sony XM5 earbuds"]
+    }
+  ]
+}

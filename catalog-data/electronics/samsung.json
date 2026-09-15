@@ -1,0 +1,66 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "samsung",
+    "name": "Samsung",
+    "websiteUrl": "https://www.samsung.com"
+  },
+  "families": [
+    { "slug": "galaxy-s", "name": "Galaxy S", "subcategoryPath": ["phones"] },
+    { "slug": "galaxy-z", "name": "Galaxy Z", "subcategoryPath": ["phones"] },
+    { "slug": "galaxy-tab", "name": "Galaxy Tab", "subcategoryPath": ["computers", "tablets"] },
+    { "slug": "galaxy-buds", "name": "Galaxy Buds", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "samsung-galaxy-s24",
+      "name": "Galaxy S24",
+      "family": "galaxy-s",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Samsung S24"]
+    },
+    {
+      "slug": "samsung-galaxy-s24-ultra",
+      "name": "Galaxy S24 Ultra",
+      "family": "galaxy-s",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Samsung S24 Ultra"]
+    },
+    {
+      "slug": "samsung-galaxy-z-fold6",
+      "name": "Galaxy Z Fold6",
+      "family": "galaxy-z",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Galaxy Z Fold 6"]
+    },
+    {
+      "slug": "samsung-galaxy-z-flip6",
+      "name": "Galaxy Z Flip6",
+      "family": "galaxy-z",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Galaxy Z Flip 6"]
+    },
+    {
+      "slug": "samsung-galaxy-tab-s9",
+      "name": "Galaxy Tab S9",
+      "family": "galaxy-tab",
+      "subcategoryPath": ["computers", "tablets"],
+      "releaseYear": 2023,
+      "aliases": ["Galaxy Tab S9"]
+    },
+    {
+      "slug": "samsung-galaxy-buds3-pro",
+      "name": "Galaxy Buds3 Pro",
+      "family": "galaxy-buds",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2024,
+      "aliases": ["Galaxy Buds 3 Pro"]
+    }
+  ]
+}

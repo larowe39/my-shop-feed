@@ -1,0 +1,88 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "apple",
+    "name": "Apple",
+    "websiteUrl": "https://www.apple.com"
+  },
+  "families": [
+    { "slug": "iphone", "name": "iPhone", "subcategoryPath": ["phones"] },
+    { "slug": "ipad", "name": "iPad", "subcategoryPath": ["computers", "tablets"] },
+    { "slug": "macbook", "name": "MacBook", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "airpods", "name": "AirPods", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "apple-iphone-16",
+      "name": "iPhone 16",
+      "family": "iphone",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["iPhone16"]
+    },
+    {
+      "slug": "apple-iphone-16-pro-max",
+      "name": "iPhone 16 Pro Max",
+      "family": "iphone",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["iPhone16 Pro Max"]
+    },
+    {
+      "slug": "apple-ipad-pro",
+      "name": "iPad Pro",
+      "family": "ipad",
+      "subcategoryPath": ["computers", "tablets"],
+      "aliases": ["Apple iPad Pro"]
+    },
+    {
+      "slug": "apple-ipad-air",
+      "name": "iPad Air",
+      "family": "ipad",
+      "subcategoryPath": ["computers", "tablets"],
+      "aliases": ["Apple iPad Air"]
+    },
+    {
+      "slug": "apple-macbook-air",
+      "name": "MacBook Air",
+      "family": "macbook",
+      "subcategoryPath": ["computers", "laptops"],
+      "aliases": ["Apple MacBook Air"]
+    },
+    {
+      "slug": "apple-macbook-pro",
+      "name": "MacBook Pro",
+      "family": "macbook",
+      "subcategoryPath": ["computers", "laptops"],
+      "aliases": ["Apple MacBook Pro"]
+    },
+    {
+      "slug": "apple-airpods-pro-2",
+      "name": "AirPods Pro 2",
+      "family": "airpods",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["AirPods Pro (2nd generation)", "AirPods Pro2"],
+      "variants": [
+        { "slug": "usb-c", "name": "USB-C Charging Case" }
+      ]
+    },
+    {
+      "slug": "apple-airpods-4",
+      "name": "AirPods 4",
+      "family": "airpods",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2024,
+      "aliases": ["AirPods (4th generation)"]
+    },
+    {
+      "slug": "apple-airpods-max",
+      "name": "AirPods Max",
+      "family": "airpods",
+      "subcategoryPath": ["audio", "headphones"],
+      "aliases": ["Apple AirPods Max"]
+    }
+  ]
+}

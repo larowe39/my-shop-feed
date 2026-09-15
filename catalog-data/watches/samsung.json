@@ -1,0 +1,31 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "samsung",
+    "name": "Samsung",
+    "websiteUrl": "https://www.samsung.com"
+  },
+  "families": [
+    { "slug": "galaxy-watch", "name": "Galaxy Watch", "subcategoryPath": ["smartwatches"] }
+  ],
+  "products": [
+    {
+      "slug": "samsung-galaxy-watch7",
+      "name": "Galaxy Watch7",
+      "family": "galaxy-watch",
+      "subcategoryPath": ["smartwatches"],
+      "releaseYear": 2024,
+      "aliases": ["Galaxy Watch 7"]
+    },
+    {
+      "slug": "samsung-galaxy-watch-ultra",
+      "name": "Galaxy Watch Ultra",
+      "family": "galaxy-watch",
+      "subcategoryPath": ["smartwatches"],
+      "releaseYear": 2024,
+      "aliases": ["Galaxy Watch Ultra"]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "sennheiser",
+    "name": "Sennheiser",
+    "websiteUrl": "https://www.sennheiser.com"
+  },
+  "families": [
+    { "slug": "momentum", "name": "Momentum", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "sennheiser-momentum-4-wireless",
+      "name": "Momentum 4 Wireless",
+      "family": "momentum",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2022,
+      "aliases": ["Momentum4 Wireless"]
+    },
+    {
+      "slug": "sennheiser-momentum-true-wireless-3",
+      "name": "Momentum True Wireless 3",
+      "family": "momentum",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2022,
+      "aliases": ["Momentum True Wireless3", "MTW3"]
+    }
+  ]
+}

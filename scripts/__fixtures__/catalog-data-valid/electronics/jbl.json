@@ -1,0 +1,22 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": { "slug": "jbl", "name": "JBL", "websiteUrl": "https://www.jbl.com", "aliases": ["J.B.L."] },
+  "families": [
+    { "slug": "boombox", "name": "Boombox", "subcategoryPath": ["audio", "portable-speakers"] }
+  ],
+  "products": [
+    {
+      "slug": "jbl-boombox-3",
+      "name": "Boombox 3",
+      "family": "boombox",
+      "subcategoryPath": ["audio", "portable-speakers"],
+      "aliases": ["Boom Box 3", "JBL BoomBox3"],
+      "variants": [
+        { "slug": "black", "name": "Black", "color": "Black" },
+        { "slug": "squad", "name": "Squad", "color": "Squad" }
+      ]
+    }
+  ]
+}

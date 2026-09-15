@@ -1,0 +1,22 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "audio-technica",
+    "name": "Audio-Technica",
+    "websiteUrl": "https://www.audio-technica.com"
+  },
+  "families": [
+    { "slug": "ath-m", "name": "ATH-M", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "audio-technica-ath-m50x",
+      "name": "ATH-M50x",
+      "family": "ath-m",
+      "subcategoryPath": ["audio", "headphones"],
+      "aliases": ["AT ATH-M50x", "M50x"]
+    }
+  ]
+}
