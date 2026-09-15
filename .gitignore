@@ -18,6 +18,9 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# Catalog acquisition local staging ledger (never committed; local-only proof of writes)
+.catalog-staging/
+
 # Metro
 .metro-health-check*
 
