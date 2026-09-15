@@ -412,10 +412,14 @@ export default function UploadScreen() {
       const { data: product, error: insertErr } = await supabase
         .from("products")
         .insert(payload)
-        .select("id")
+        .select("id, catalog_product_id, catalog_variant_id")
         .single();
 
       if (insertErr) throw insertErr;
+
+      if (catalogProductId && product.catalog_product_id !== catalogProductId) {
+        throw new Error("The catalog association could not be saved. Please try again.");
+      }
 
       // Publish first. Moderation is deliberately fire-and-forget so uploads stay immediate.
       try {

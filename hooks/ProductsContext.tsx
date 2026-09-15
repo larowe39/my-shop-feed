@@ -22,6 +22,7 @@ export type Product = {
   category: string;
   catalog_product_id?: string | null;
   catalog_variant_id?: string | null;
+  catalog_search_terms?: string[];
   user_id?: string | null;
   image_url?: string | null;
   created_at?: string;
@@ -132,7 +133,9 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const loadProducts = useCallback(async (): Promise<Product[]> => {
     const { data, error: productsError } = await supabase
       .from("products")
-      .select("*, product_moderation(product_id, status, is_blurred, is_hidden)")
+      .select(
+        "id, title, brand, price, url, category, image_url, user_id, created_at, catalog_product_id, catalog_variant_id, product_moderation(product_id, status, is_blurred, is_hidden)"
+      )
       .order("created_at", { ascending: false });
 
     if (productsError) {
@@ -142,10 +145,52 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     const rows = ((data as (Product & { product_moderation?: ProductModeration | ProductModeration[] | null })[]) || [])
       .map(({ product_moderation, ...product }) => ({
         ...product,
+        catalog_product_id: product.catalog_product_id ?? null,
+        catalog_variant_id: product.catalog_variant_id ?? null,
         moderation: Array.isArray(product_moderation) ? product_moderation[0] ?? null : product_moderation ?? null,
       }))
       .filter((product) => !product.moderation?.is_hidden);
-    return rows.length ? rows : [DEMO];
+    if (!rows.length) return [DEMO];
+
+    const catalogProductIds = Array.from(
+      new Set(rows.map((product) => product.catalog_product_id).filter(Boolean))
+    ) as string[];
+    if (!catalogProductIds.length) return rows;
+
+    const [{ data: catalogProducts, error: catalogProductsError }, { data: catalogAliases, error: catalogAliasesError }] = await Promise.all([
+      supabase
+        .from("catalog_products")
+        .select("id, name, model_number")
+        .in("id", catalogProductIds),
+      supabase
+        .from("catalog_aliases")
+        .select("entity_id, alias")
+        .eq("entity_type", "product")
+        .in("entity_id", catalogProductIds),
+    ]);
+
+    if (catalogProductsError || catalogAliasesError) {
+      if (__DEV__) console.warn("Could not load canonical search terms", catalogProductsError ?? catalogAliasesError);
+      return rows;
+    }
+
+    const termsByProduct = new Map<string, string[]>();
+    for (const product of (catalogProducts as { id: string; name: string; model_number: string | null }[] | null) ?? []) {
+      termsByProduct.set(product.id, [product.name, product.model_number ?? ""]);
+    }
+    for (const alias of (catalogAliases as { entity_id: string; alias: string }[] | null) ?? []) {
+      termsByProduct.set(alias.entity_id, [
+        ...(termsByProduct.get(alias.entity_id) ?? []),
+        alias.alias,
+      ]);
+    }
+
+    return rows.map((product) => ({
+      ...product,
+      catalog_search_terms: product.catalog_product_id
+        ? termsByProduct.get(product.catalog_product_id) ?? []
+        : [],
+    }));
   }, []);
 
   const loadUserReactions = useCallback(
