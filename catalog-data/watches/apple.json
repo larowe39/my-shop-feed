@@ -1,0 +1,38 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "apple",
+    "name": "Apple",
+    "websiteUrl": "https://www.apple.com"
+  },
+  "families": [
+    { "slug": "apple-watch", "name": "Apple Watch", "subcategoryPath": ["smartwatches"] }
+  ],
+  "products": [
+    {
+      "slug": "apple-watch-series-10",
+      "name": "Apple Watch Series 10",
+      "family": "apple-watch",
+      "subcategoryPath": ["smartwatches"],
+      "releaseYear": 2024,
+      "aliases": ["Apple Watch Series X", "Watch Series 10"]
+    },
+    {
+      "slug": "apple-watch-ultra-2",
+      "name": "Apple Watch Ultra 2",
+      "family": "apple-watch",
+      "subcategoryPath": ["smartwatches"],
+      "releaseYear": 2023,
+      "aliases": ["Watch Ultra 2"]
+    },
+    {
+      "slug": "apple-watch-se",
+      "name": "Apple Watch SE",
+      "family": "apple-watch",
+      "subcategoryPath": ["smartwatches"],
+      "aliases": ["Watch SE"]
+    }
+  ]
+}

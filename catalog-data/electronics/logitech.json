@@ -1,0 +1,30 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "logitech",
+    "name": "Logitech",
+    "websiteUrl": "https://www.logitech.com"
+  },
+  "families": [
+    { "slug": "g-series", "name": "G Series", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    {
+      "slug": "logitech-g-pro-x-superlight-2",
+      "name": "G Pro X Superlight 2",
+      "family": "g-series",
+      "subcategoryPath": ["gaming", "gaming-accessories"],
+      "releaseYear": 2023,
+      "aliases": ["Logitech G Pro X Superlight 2", "Pro X Superlight 2"]
+    },
+    {
+      "slug": "logitech-g915",
+      "name": "G915",
+      "family": "g-series",
+      "subcategoryPath": ["gaming", "gaming-accessories"],
+      "aliases": ["Logitech G915 TKL"]
+    }
+  ]
+}

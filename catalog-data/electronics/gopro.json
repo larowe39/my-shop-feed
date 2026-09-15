@@ -1,0 +1,31 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "gopro",
+    "name": "GoPro",
+    "websiteUrl": "https://www.gopro.com"
+  },
+  "families": [
+    { "slug": "hero", "name": "HERO", "subcategoryPath": ["cameras", "action-cameras"] }
+  ],
+  "products": [
+    {
+      "slug": "gopro-hero12-black",
+      "name": "HERO12 Black",
+      "family": "hero",
+      "subcategoryPath": ["cameras", "action-cameras"],
+      "releaseYear": 2023,
+      "aliases": ["GoPro Hero 12", "GoPro HERO12"]
+    },
+    {
+      "slug": "gopro-hero13-black",
+      "name": "HERO13 Black",
+      "family": "hero",
+      "subcategoryPath": ["cameras", "action-cameras"],
+      "releaseYear": 2024,
+      "aliases": ["GoPro Hero 13", "GoPro HERO13"]
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "beats",
+    "name": "Beats",
+    "websiteUrl": "https://www.beatsbydre.com"
+  },
+  "families": [
+    { "slug": "studio", "name": "Studio", "subcategoryPath": ["audio", "headphones"] },
+    { "slug": "fit-pro", "name": "Fit Pro", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "beats-studio-pro",
+      "name": "Studio Pro",
+      "family": "studio",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["Beats Studio Pro"]
+    },
+    {
+      "slug": "beats-solo-4",
+      "name": "Solo 4",
+      "family": "studio",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["Beats Solo4"]
+    },
+    {
+      "slug": "beats-fit-pro",
+      "name": "Fit Pro",
+      "family": "fit-pro",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2021,
+      "aliases": ["Beats Fit Pro"]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "kind": "taxonomy",
+  "version": 1,
+  "categories": [
+    {
+      "slug": "electronics",
+      "name": "Electronics",
+      "sortOrder": 10,
+      "subcategories": [
+        {
+          "slug": "audio",
+          "name": "Audio",
+          "sortOrder": 10,
+          "subcategories": [
+            { "slug": "portable-speakers", "name": "Portable Speakers", "sortOrder": 11 }
+          ]
+        }
+      ]
+    }
+  ]
+}

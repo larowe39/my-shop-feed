@@ -1,0 +1,56 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "google",
+    "name": "Google",
+    "websiteUrl": "https://store.google.com"
+  },
+  "families": [
+    { "slug": "pixel", "name": "Pixel", "subcategoryPath": ["phones"] },
+    { "slug": "pixel-buds", "name": "Pixel Buds", "subcategoryPath": ["audio", "headphones"] },
+    { "slug": "nest", "name": "Nest", "subcategoryPath": ["audio", "smart-speakers"] }
+  ],
+  "products": [
+    {
+      "slug": "google-pixel-9",
+      "name": "Pixel 9",
+      "family": "pixel",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Google Pixel9"]
+    },
+    {
+      "slug": "google-pixel-9-pro",
+      "name": "Pixel 9 Pro",
+      "family": "pixel",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Google Pixel9 Pro"]
+    },
+    {
+      "slug": "google-pixel-9-pro-fold",
+      "name": "Pixel 9 Pro Fold",
+      "family": "pixel",
+      "subcategoryPath": ["phones"],
+      "releaseYear": 2024,
+      "aliases": ["Pixel Fold 2"]
+    },
+    {
+      "slug": "google-pixel-buds-pro-2",
+      "name": "Pixel Buds Pro 2",
+      "family": "pixel-buds",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2024,
+      "aliases": ["Pixel Buds Pro2"]
+    },
+    {
+      "slug": "google-nest-audio",
+      "name": "Nest Audio",
+      "family": "nest",
+      "subcategoryPath": ["audio", "smart-speakers"],
+      "aliases": ["Google Nest Audio"]
+    }
+  ]
+}

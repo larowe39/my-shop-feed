@@ -1,0 +1,39 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "canon",
+    "name": "Canon",
+    "websiteUrl": "https://www.usa.canon.com"
+  },
+  "families": [
+    { "slug": "eos-r", "name": "EOS R", "subcategoryPath": ["cameras", "mirrorless"] }
+  ],
+  "products": [
+    {
+      "slug": "canon-eos-r6-mark-ii",
+      "name": "EOS R6 Mark II",
+      "family": "eos-r",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2022,
+      "aliases": ["Canon R6 II", "EOS R6 II"]
+    },
+    {
+      "slug": "canon-eos-r8",
+      "name": "EOS R8",
+      "family": "eos-r",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2023,
+      "aliases": ["Canon R8"]
+    },
+    {
+      "slug": "canon-eos-r50",
+      "name": "EOS R50",
+      "family": "eos-r",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2023,
+      "aliases": ["Canon R50"]
+    }
+  ]
+}

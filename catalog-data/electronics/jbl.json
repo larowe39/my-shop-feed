@@ -1,0 +1,32 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "jbl",
+    "name": "JBL",
+    "websiteUrl": "https://www.jbl.com"
+  },
+  "families": [
+    { "slug": "clip", "name": "Clip", "subcategoryPath": ["audio", "portable-speakers"] },
+    { "slug": "tour", "name": "Tour", "subcategoryPath": ["audio", "headphones"] }
+  ],
+  "products": [
+    {
+      "slug": "jbl-clip-5",
+      "name": "Clip 5",
+      "family": "clip",
+      "subcategoryPath": ["audio", "portable-speakers"],
+      "releaseYear": 2023,
+      "aliases": ["JBL Clip5"]
+    },
+    {
+      "slug": "jbl-tour-one-m2",
+      "name": "Tour One M2",
+      "family": "tour",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["JBL Tour One M2", "Tour One MK2"]
+    }
+  ]
+}

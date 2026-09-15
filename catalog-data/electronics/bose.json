@@ -1,0 +1,47 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "bose",
+    "name": "Bose",
+    "websiteUrl": "https://www.bose.com"
+  },
+  "families": [
+    { "slug": "quietcomfort", "name": "QuietComfort", "subcategoryPath": ["audio", "headphones"] },
+    { "slug": "soundlink", "name": "SoundLink", "subcategoryPath": ["audio", "portable-speakers"] }
+  ],
+  "products": [
+    {
+      "slug": "bose-quietcomfort-ultra-headphones",
+      "name": "QuietComfort Ultra Headphones",
+      "family": "quietcomfort",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["Bose QC Ultra Headphones", "QC Ultra Headphones"]
+    },
+    {
+      "slug": "bose-quietcomfort-ultra-earbuds",
+      "name": "QuietComfort Ultra Earbuds",
+      "family": "quietcomfort",
+      "subcategoryPath": ["audio", "headphones"],
+      "releaseYear": 2023,
+      "aliases": ["Bose QC Ultra Earbuds", "QC Ultra Earbuds"]
+    },
+    {
+      "slug": "bose-soundlink-flex",
+      "name": "SoundLink Flex",
+      "family": "soundlink",
+      "subcategoryPath": ["audio", "portable-speakers"],
+      "aliases": ["Bose SoundLink Flex"]
+    },
+    {
+      "slug": "bose-soundlink-max",
+      "name": "SoundLink Max",
+      "family": "soundlink",
+      "subcategoryPath": ["audio", "portable-speakers"],
+      "releaseYear": 2024,
+      "aliases": ["Bose SoundLink Max"]
+    }
+  ]
+}

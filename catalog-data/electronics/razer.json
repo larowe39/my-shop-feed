@@ -1,0 +1,44 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "razer",
+    "name": "Razer",
+    "websiteUrl": "https://www.razer.com"
+  },
+  "families": [
+    { "slug": "blade", "name": "Blade", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "peripherals", "name": "Peripherals", "subcategoryPath": ["gaming", "gaming-accessories"] }
+  ],
+  "products": [
+    {
+      "slug": "razer-blade-16",
+      "name": "Blade 16",
+      "family": "blade",
+      "subcategoryPath": ["computers", "laptops"],
+      "aliases": ["Razer Blade 16"]
+    },
+    {
+      "slug": "razer-blade-14",
+      "name": "Blade 14",
+      "family": "blade",
+      "subcategoryPath": ["computers", "laptops"],
+      "aliases": ["Razer Blade 14"]
+    },
+    {
+      "slug": "razer-deathadder-v3",
+      "name": "DeathAdder V3",
+      "family": "peripherals",
+      "subcategoryPath": ["gaming", "gaming-accessories"],
+      "aliases": ["Razer DeathAdder V3"]
+    },
+    {
+      "slug": "razer-blackwidow-v4",
+      "name": "BlackWidow V4",
+      "family": "peripherals",
+      "subcategoryPath": ["gaming", "gaming-accessories"],
+      "aliases": ["Razer BlackWidow V4"]
+    }
+  ]
+}

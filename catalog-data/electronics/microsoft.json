@@ -1,0 +1,49 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "microsoft",
+    "name": "Microsoft",
+    "websiteUrl": "https://www.microsoft.com"
+  },
+  "families": [
+    { "slug": "surface-pro", "name": "Surface Pro", "subcategoryPath": ["computers", "tablets"] },
+    { "slug": "surface-laptop", "name": "Surface Laptop", "subcategoryPath": ["computers", "laptops"] },
+    { "slug": "xbox", "name": "Xbox", "subcategoryPath": ["gaming", "consoles"] }
+  ],
+  "products": [
+    {
+      "slug": "microsoft-surface-pro-11",
+      "name": "Surface Pro 11",
+      "family": "surface-pro",
+      "subcategoryPath": ["computers", "tablets"],
+      "releaseYear": 2024,
+      "aliases": ["Surface Pro (11th Edition)"]
+    },
+    {
+      "slug": "microsoft-surface-laptop-7",
+      "name": "Surface Laptop 7",
+      "family": "surface-laptop",
+      "subcategoryPath": ["computers", "laptops"],
+      "releaseYear": 2024,
+      "aliases": ["Surface Laptop (7th Edition)"]
+    },
+    {
+      "slug": "microsoft-xbox-series-x",
+      "name": "Xbox Series X",
+      "family": "xbox",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2020,
+      "aliases": ["Xbox SeriesX"]
+    },
+    {
+      "slug": "microsoft-xbox-series-s",
+      "name": "Xbox Series S",
+      "family": "xbox",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2020,
+      "aliases": ["Xbox SeriesS"]
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "sonos",
+    "name": "Sonos",
+    "websiteUrl": "https://www.sonos.com"
+  },
+  "families": [
+    { "slug": "era", "name": "Era", "subcategoryPath": ["audio", "smart-speakers"] },
+    { "slug": "move", "name": "Move", "subcategoryPath": ["audio", "portable-speakers"] }
+  ],
+  "products": [
+    {
+      "slug": "sonos-era-100",
+      "name": "Era 100",
+      "family": "era",
+      "subcategoryPath": ["audio", "smart-speakers"],
+      "releaseYear": 2023,
+      "aliases": ["Sonos Era100"]
+    },
+    {
+      "slug": "sonos-era-300",
+      "name": "Era 300",
+      "family": "era",
+      "subcategoryPath": ["audio", "smart-speakers"],
+      "releaseYear": 2023,
+      "aliases": ["Sonos Era300"]
+    },
+    {
+      "slug": "sonos-move-2",
+      "name": "Move 2",
+      "family": "move",
+      "subcategoryPath": ["audio", "portable-speakers"],
+      "releaseYear": 2023,
+      "aliases": ["Sonos Move2"]
+    }
+  ]
+}

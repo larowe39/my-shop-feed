@@ -1,0 +1,151 @@
+{
+  "kind": "taxonomy",
+  "version": 1,
+  "categories": [
+    {
+      "slug": "electronics",
+      "name": "Electronics",
+      "description": "Audio, phones, computers, cameras and gaming.",
+      "sortOrder": 10,
+      "subcategories": [
+        {
+          "slug": "audio",
+          "name": "Audio",
+          "sortOrder": 10,
+          "subcategories": [
+            { "slug": "portable-speakers", "name": "Portable Speakers", "sortOrder": 11 },
+            { "slug": "headphones", "name": "Headphones", "sortOrder": 12 },
+            { "slug": "home-audio", "name": "Home Audio", "sortOrder": 13 },
+            { "slug": "smart-speakers", "name": "Smart Speakers", "sortOrder": 14 }
+          ]
+        },
+        { "slug": "phones", "name": "Phones", "sortOrder": 20 },
+        { "slug": "televisions", "name": "Televisions", "sortOrder": 25 },
+        {
+          "slug": "computers",
+          "name": "Computers",
+          "sortOrder": 30,
+          "subcategories": [
+            { "slug": "laptops", "name": "Laptops", "sortOrder": 31 },
+            { "slug": "tablets", "name": "Tablets", "sortOrder": 32 }
+          ]
+        },
+        {
+          "slug": "cameras",
+          "name": "Cameras",
+          "sortOrder": 40,
+          "subcategories": [
+            { "slug": "mirrorless", "name": "Mirrorless", "sortOrder": 41 },
+            { "slug": "dslr", "name": "DSLR", "sortOrder": 42 },
+            { "slug": "action-cameras", "name": "Action Cameras", "sortOrder": 43 }
+          ]
+        },
+        {
+          "slug": "gaming",
+          "name": "Gaming",
+          "sortOrder": 50,
+          "subcategories": [
+            { "slug": "consoles", "name": "Consoles", "sortOrder": 51 },
+            { "slug": "gaming-accessories", "name": "Accessories", "sortOrder": 52 }
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "fashion",
+      "name": "Fashion",
+      "description": "Apparel, streetwear and outerwear.",
+      "sortOrder": 20,
+      "subcategories": [
+        { "slug": "apparel", "name": "Apparel", "sortOrder": 10 },
+        { "slug": "outerwear", "name": "Outerwear", "sortOrder": 20 }
+      ]
+    },
+    {
+      "slug": "shoes",
+      "name": "Shoes",
+      "description": "Sneakers, boots and footwear.",
+      "sortOrder": 30,
+      "subcategories": [
+        { "slug": "sneakers", "name": "Sneakers", "sortOrder": 10 },
+        { "slug": "boots", "name": "Boots", "sortOrder": 20 }
+      ]
+    },
+    {
+      "slug": "watches",
+      "name": "Watches",
+      "description": "Timepieces, luxury and vintage watches.",
+      "sortOrder": 40,
+      "subcategories": [
+        { "slug": "luxury-watches", "name": "Luxury Watches", "sortOrder": 10 },
+        { "slug": "sport-watches", "name": "Sport Watches", "sortOrder": 20 },
+        { "slug": "dive-watches", "name": "Dive Watches", "sortOrder": 30 },
+        { "slug": "dress-watches", "name": "Dress Watches", "sortOrder": 40 },
+        { "slug": "smartwatches", "name": "Smartwatches", "sortOrder": 50 }
+      ]
+    },
+    {
+      "slug": "automotive",
+      "name": "Automotive",
+      "description": "Vehicles, parts, tools and car care.",
+      "sortOrder": 50,
+      "subcategories": [
+        { "slug": "vehicles", "name": "Vehicles", "sortOrder": 10 },
+        { "slug": "parts", "name": "Parts", "sortOrder": 20 },
+        { "slug": "automotive-accessories", "name": "Accessories", "sortOrder": 30 },
+        { "slug": "tools", "name": "Tools", "sortOrder": 40 },
+        { "slug": "car-care", "name": "Car Care", "sortOrder": 50 }
+      ]
+    },
+    {
+      "slug": "home",
+      "name": "Home",
+      "description": "Furniture, kitchen and interior goods.",
+      "sortOrder": 60,
+      "subcategories": [
+        { "slug": "furniture", "name": "Furniture", "sortOrder": 10 },
+        { "slug": "kitchen", "name": "Kitchen", "sortOrder": 20 }
+      ]
+    },
+    {
+      "slug": "outdoors",
+      "name": "Outdoors",
+      "description": "Trail, camp and adventure gear.",
+      "sortOrder": 70,
+      "subcategories": [
+        { "slug": "camping", "name": "Camping", "sortOrder": 10 },
+        { "slug": "hiking", "name": "Hiking", "sortOrder": 20 }
+      ]
+    },
+    {
+      "slug": "beauty",
+      "name": "Beauty",
+      "description": "Skincare, grooming and fragrance.",
+      "sortOrder": 80,
+      "subcategories": [
+        { "slug": "skincare", "name": "Skincare", "sortOrder": 10 },
+        { "slug": "fragrance", "name": "Fragrance", "sortOrder": 20 }
+      ]
+    },
+    {
+      "slug": "fitness",
+      "name": "Fitness",
+      "description": "Activewear, equipment and training.",
+      "sortOrder": 90,
+      "subcategories": [
+        { "slug": "training", "name": "Training", "sortOrder": 10 },
+        { "slug": "recovery", "name": "Recovery", "sortOrder": 20 }
+      ]
+    },
+    {
+      "slug": "accessories",
+      "name": "Accessories",
+      "description": "Bags, eyewear, jewelry and everyday carry.",
+      "sortOrder": 100,
+      "subcategories": [
+        { "slug": "bags", "name": "Bags", "sortOrder": 10 },
+        { "slug": "eyewear", "name": "Eyewear", "sortOrder": 20 }
+      ]
+    }
+  ]
+}

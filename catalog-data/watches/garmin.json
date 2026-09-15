@@ -1,0 +1,41 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "garmin",
+    "name": "Garmin",
+    "websiteUrl": "https://www.garmin.com"
+  },
+  "families": [
+    { "slug": "fenix", "name": "Fenix", "subcategoryPath": ["sport-watches"] },
+    { "slug": "forerunner", "name": "Forerunner", "subcategoryPath": ["sport-watches"] },
+    { "slug": "instinct", "name": "Instinct", "subcategoryPath": ["sport-watches"] }
+  ],
+  "products": [
+    {
+      "slug": "garmin-fenix-8",
+      "name": "Fenix 8",
+      "family": "fenix",
+      "subcategoryPath": ["sport-watches"],
+      "releaseYear": 2024,
+      "aliases": ["Garmin Fenix8"]
+    },
+    {
+      "slug": "garmin-forerunner-965",
+      "name": "Forerunner 965",
+      "family": "forerunner",
+      "subcategoryPath": ["sport-watches"],
+      "releaseYear": 2023,
+      "aliases": ["Garmin Forerunner965"]
+    },
+    {
+      "slug": "garmin-instinct-2",
+      "name": "Instinct 2",
+      "family": "instinct",
+      "subcategoryPath": ["sport-watches"],
+      "releaseYear": 2022,
+      "aliases": ["Garmin Instinct2"]
+    }
+  ]
+}

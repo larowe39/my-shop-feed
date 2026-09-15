@@ -1,0 +1,31 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "fujifilm",
+    "name": "Fujifilm",
+    "websiteUrl": "https://www.fujifilm-x.com"
+  },
+  "families": [
+    { "slug": "x-series", "name": "X Series", "subcategoryPath": ["cameras", "mirrorless"] }
+  ],
+  "products": [
+    {
+      "slug": "fujifilm-x-t5",
+      "name": "X-T5",
+      "family": "x-series",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2022,
+      "aliases": ["Fuji X-T5", "Fujifilm XT5"]
+    },
+    {
+      "slug": "fujifilm-x100vi",
+      "name": "X100VI",
+      "family": "x-series",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2024,
+      "aliases": ["Fuji X100VI", "Fujifilm X100 VI"]
+    }
+  ]
+}

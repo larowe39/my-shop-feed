@@ -1,0 +1,39 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "nikon",
+    "name": "Nikon",
+    "websiteUrl": "https://www.nikonusa.com"
+  },
+  "families": [
+    { "slug": "z-series", "name": "Z Series", "subcategoryPath": ["cameras", "mirrorless"] }
+  ],
+  "products": [
+    {
+      "slug": "nikon-z6-iii",
+      "name": "Z6 III",
+      "family": "z-series",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2024,
+      "aliases": ["Nikon Z6III", "Nikon Z 6III"]
+    },
+    {
+      "slug": "nikon-z8",
+      "name": "Z8",
+      "family": "z-series",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2023,
+      "aliases": ["Nikon Z 8"]
+    },
+    {
+      "slug": "nikon-z9",
+      "name": "Z9",
+      "family": "z-series",
+      "subcategoryPath": ["cameras", "mirrorless"],
+      "releaseYear": 2021,
+      "aliases": ["Nikon Z 9"]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "electronics",
+  "brand": {
+    "slug": "nintendo",
+    "name": "Nintendo",
+    "websiteUrl": "https://www.nintendo.com"
+  },
+  "families": [
+    { "slug": "switch", "name": "Switch", "subcategoryPath": ["gaming", "consoles"] }
+  ],
+  "products": [
+    {
+      "slug": "nintendo-switch",
+      "name": "Nintendo Switch",
+      "family": "switch",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2017,
+      "aliases": ["Switch"]
+    },
+    {
+      "slug": "nintendo-switch-lite",
+      "name": "Nintendo Switch Lite",
+      "family": "switch",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2019,
+      "aliases": ["Switch Lite"]
+    },
+    {
+      "slug": "nintendo-switch-oled",
+      "name": "Nintendo Switch OLED Model",
+      "family": "switch",
+      "subcategoryPath": ["gaming", "consoles"],
+      "releaseYear": 2021,
+      "aliases": ["Switch OLED", "Nintendo Switch OLED"]
+    }
+  ]
+}
