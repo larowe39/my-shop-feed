@@ -4,6 +4,7 @@ export {
   CATALOG_CONFIDENCE_THRESHOLDS,
   normalizeCatalogText,
   findCatalogMatches,
+  hasAmbiguousHighConfidenceMatch,
   addVariantMatch,
 } from "./catalogMatching";
 export type {
@@ -21,6 +22,7 @@ import {
   CATALOG_CONFIDENCE_THRESHOLDS,
   normalizeCatalogText,
   findCatalogMatches,
+  hasAmbiguousHighConfidenceMatch,
   addVariantMatch,
 } from "./catalogMatching";
 import type {
@@ -196,7 +198,9 @@ export async function findCatalogMatch(
     aliases: aliasByEntity.get(product.id) ?? [],
     variants: variantsByProduct.get(product.id) ?? [],
   }));
-  const best = findCatalogMatches(input, candidates)[0];
+  const matches = findCatalogMatches(input, candidates);
+  if (hasAmbiguousHighConfidenceMatch(matches)) return null;
+  const best = matches[0];
   if (!best) return null;
   const candidate = candidates.find((item) => item.product.id === best.productId);
   return candidate ? addVariantMatch(input, candidate, best) : null;

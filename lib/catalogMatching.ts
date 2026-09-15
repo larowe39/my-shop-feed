@@ -109,6 +109,39 @@ function catalogTextMatches(left: string, right: string): boolean {
   return normalizeCatalogText(left) === normalizeCatalogText(right) || compact(left) === compact(right);
 }
 
+const GENERIC_IDENTITY_TOKENS = new Set([
+  "classic", "headphones", "max", "pro", "series", "speaker", "ultra", "watch",
+]);
+const SPECIFICITY_SUFFIXES = new Set(["max", "plus", "pro", "ultra"]);
+
+function containsWholePhrase(title: string, phrase: string): boolean {
+  return Boolean(phrase) && ` ${title} `.includes(` ${phrase} `);
+}
+
+function hasDistinctiveIdentity(phrase: string): boolean {
+  const phraseTokens = tokens(phrase);
+  return phraseTokens.some((token) => /(?=.*[a-z])(?=.*\d)/.test(token)) ||
+    (phraseTokens.length >= 2 && phraseTokens.some((token) => !GENERIC_IDENTITY_TOKENS.has(token)));
+}
+
+function containsModelIdentifier(title: string, modelNumber: string): boolean {
+  const model = compact(modelNumber);
+  if (!model || !/[a-z]/.test(model) || !/\d/.test(model)) return false;
+  return compact(title).includes(model);
+}
+
+function hasSpecificityExtension(title: string, identity: string): boolean {
+  const index = ` ${title} `.indexOf(` ${identity} `);
+  if (index === -1) return false;
+  const following = tokens(title.slice(index + identity.length));
+  const suffix = following[0];
+  const identityTokens = tokens(identity);
+  const lastIdentityToken = identityTokens[identityTokens.length - 1] ?? "";
+  if (suffix === "max" || suffix === "plus") return true;
+  if (suffix === "pro") return /^\d+$/.test(lastIdentityToken);
+  return suffix === "ultra" && /[a-z]/.test(lastIdentityToken) && /\d/.test(lastIdentityToken);
+}
+
 function scoreCandidate(input: CatalogMatchInput, candidate: CatalogMatchCandidate): CatalogMatch {
   const title = normalizeCatalogText(input.title);
   const brand = normalizeCatalogText(input.brand);
@@ -119,6 +152,7 @@ function scoreCandidate(input: CatalogMatchInput, candidate: CatalogMatchCandida
   const categoryName = normalizeCatalogText(candidate.categoryName);
   const aliases = (candidate.aliases ?? []).map(normalizeCatalogText).filter(Boolean);
   const brandMatches = Boolean(brand && brandName && brand === brandName);
+  const brandConflicts = Boolean(brand && brandName && brand !== brandName);
   const categoryMatches = Boolean(category && categoryName && category === categoryName);
   const titleWithoutBrand = brandMatches && title.startsWith(`${brandName} `)
     ? title.slice(brandName.length + 1)
@@ -128,9 +162,32 @@ function scoreCandidate(input: CatalogMatchInput, candidate: CatalogMatchCandida
     (titleForm) => catalogTextMatches(titleForm, productName) || (modelNumber && catalogTextMatches(titleForm, modelNumber))
   );
   const exactAliasMatch = titleForms.some((titleForm) => aliases.some((alias) => catalogTextMatches(titleForm, alias)));
+  const containedProductIdentity = containsWholePhrase(title, productName) && hasDistinctiveIdentity(productName);
+  const containedAlias = aliases.find(
+    (alias) => containsWholePhrase(title, alias) && hasDistinctiveIdentity(alias)
+  );
+  const modelIdentifierMatches = containsModelIdentifier(title, modelNumber);
+  const hasConflictingSpecificity = hasSpecificityExtension(title, productName) ||
+    aliases.some((alias) => hasSpecificityExtension(title, alias));
   const exactVariantMatch = (candidate.variants ?? []).some(
     (variant) => scoreVariant(input, candidate, variant) >= CATALOG_CONFIDENCE_THRESHOLDS.high
   );
+
+  if (brandConflicts) {
+    return {
+      productId: candidate.product.id,
+      confidence: 0.2,
+      reason: "Conflicting explicit brand",
+    };
+  }
+
+  if (hasConflictingSpecificity) {
+    return {
+      productId: candidate.product.id,
+      confidence: 0.3,
+      reason: "Listing contains a more specific product identity",
+    };
+  }
 
   if (brandMatches && exactVariantMatch) {
     return {
@@ -168,6 +225,30 @@ function scoreCandidate(input: CatalogMatchInput, candidate: CatalogMatchCandida
     };
   }
 
+  if (brandMatches && modelIdentifierMatches) {
+    return {
+      productId: candidate.product.id,
+      confidence: 0.97,
+      reason: "Exact brand + distinctive model identifier",
+    };
+  }
+
+  if (brandMatches && containedAlias) {
+    return {
+      productId: candidate.product.id,
+      confidence: 0.96,
+      reason: "Exact normalized alias + brand",
+    };
+  }
+
+  if (brandMatches && containedProductIdentity) {
+    return {
+      productId: candidate.product.id,
+      confidence: 0.95,
+      reason: "Complete canonical identity contained in listing",
+    };
+  }
+
   const comparableNames = [productName, modelNumber, ...aliases].filter(Boolean);
   const bestOverlap = Math.max(0, ...comparableNames.map((name) => tokenOverlap(title, name)));
   const startsWithMatch = comparableNames.some((name) => name.startsWith(title) || title.startsWith(name));
@@ -201,9 +282,38 @@ export function findCatalogMatches(
   input: CatalogMatchInput,
   candidates: CatalogMatchCandidate[]
 ): CatalogMatch[] {
-  return candidates
-    .map((candidate) => scoreCandidate(input, candidate))
+  const title = normalizeCatalogText(input.title);
+  const scored = candidates.map((candidate) => ({ candidate, match: scoreCandidate(input, candidate) }));
+  return scored
+    .map(({ candidate, match }) => {
+      const productName = normalizeCatalogText(candidate.product.name);
+      const hasMoreSpecificIdentity = scored.some(({ candidate: other }) => {
+        const otherName = normalizeCatalogText(other.product.name);
+        const remainingTokens = tokens(otherName).slice(tokens(productName).length);
+        return other.product.id !== candidate.product.id &&
+          containsWholePhrase(title, productName) &&
+          containsWholePhrase(title, otherName) &&
+          otherName.startsWith(`${productName} `) &&
+          (remainingTokens.length > 1 || SPECIFICITY_SUFFIXES.has(remainingTokens[0]));
+      });
+      if (match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.high && hasMoreSpecificIdentity) {
+        return {
+          ...match,
+          confidence: 0.89,
+          reason: "More specific canonical identity is contained in listing",
+        };
+      }
+      return match;
+    })
     .sort((left, right) => right.confidence - left.confidence || left.productId.localeCompare(right.productId));
+}
+
+export function hasAmbiguousHighConfidenceMatch(matches: CatalogMatch[]): boolean {
+  return new Set(
+    matches
+      .filter((match) => match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.high)
+      .map((match) => match.productId)
+  ).size > 1;
 }
 
 function scoreVariant(
