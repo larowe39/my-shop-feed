@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "yakima",
+    "name": "Yakima",
+    "websiteUrl": "https://www.yakima.com",
+    "description": "Yakima roof rack accessories"
+  },
+  "families": [
+    {
+      "slug": "cargo",
+      "name": "Cargo",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "yakima-boundary",
+      "name": "Boundary Rooftop Box",
+      "family": "cargo",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "Boundary",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Yakima Boundary"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "yakima-skybox",
+      "name": "SkyBox",
+      "family": "cargo",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "SkyBox",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Yakima SkyBox"
+      ],
+      "variants": []
+    }
+  ]
+}

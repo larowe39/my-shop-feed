@@ -1,0 +1,74 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "outdoors",
+  "brand": {
+    "slug": "yeti",
+    "name": "YETI",
+    "websiteUrl": "https://www.yeti.com",
+    "description": "YETI coolers and gear"
+  },
+  "families": [
+    {
+      "slug": "tundra",
+      "name": "Tundra",
+      "subcategoryPath": [
+        "camping"
+      ]
+    },
+    {
+      "slug": "ramblers",
+      "name": "Ramblers",
+      "subcategoryPath": [
+        "camping"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "yeti-tundra-45",
+      "name": "Tundra 45",
+      "family": "tundra",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Tundra 45",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "YETI Tundra 45"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "yeti-tundra-65",
+      "name": "Tundra 65",
+      "family": "tundra",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Tundra 65",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "YETI Tundra 65"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "yeti-rambler-20",
+      "name": "Rambler 20 oz",
+      "family": "ramblers",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Rambler 20",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "YETI Rambler 20"
+      ],
+      "variants": []
+    }
+  ]
+}

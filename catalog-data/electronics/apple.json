@@ -5,84 +5,432 @@
   "brand": {
     "slug": "apple",
     "name": "Apple",
-    "websiteUrl": "https://www.apple.com"
+    "websiteUrl": "https://www.apple.com",
+    "description": "Apple consumer electronics"
   },
   "families": [
-    { "slug": "iphone", "name": "iPhone", "subcategoryPath": ["phones"] },
-    { "slug": "ipad", "name": "iPad", "subcategoryPath": ["computers", "tablets"] },
-    { "slug": "macbook", "name": "MacBook", "subcategoryPath": ["computers", "laptops"] },
-    { "slug": "airpods", "name": "AirPods", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "iphone",
+      "name": "iPhone",
+      "subcategoryPath": [
+        "phones"
+      ]
+    },
+    {
+      "slug": "ipad",
+      "name": "iPad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ]
+    },
+    {
+      "slug": "macbook",
+      "name": "MacBook",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ]
+    },
+    {
+      "slug": "airpods",
+      "name": "AirPods",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "apple-iphone-16",
       "name": "iPhone 16",
       "family": "iphone",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["iPhone16"]
+      "aliases": [
+        "iPhone16"
+      ]
     },
     {
       "slug": "apple-iphone-16-pro-max",
       "name": "iPhone 16 Pro Max",
       "family": "iphone",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["iPhone16 Pro Max"]
+      "aliases": [
+        "iPhone16 Pro Max"
+      ]
     },
     {
       "slug": "apple-ipad-pro",
       "name": "iPad Pro",
       "family": "ipad",
-      "subcategoryPath": ["computers", "tablets"],
-      "aliases": ["Apple iPad Pro"]
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "aliases": [
+        "Apple iPad Pro"
+      ]
     },
     {
       "slug": "apple-ipad-air",
       "name": "iPad Air",
       "family": "ipad",
-      "subcategoryPath": ["computers", "tablets"],
-      "aliases": ["Apple iPad Air"]
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "aliases": [
+        "Apple iPad Air"
+      ]
     },
     {
       "slug": "apple-macbook-air",
       "name": "MacBook Air",
       "family": "macbook",
-      "subcategoryPath": ["computers", "laptops"],
-      "aliases": ["Apple MacBook Air"]
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "aliases": [
+        "Apple MacBook Air"
+      ]
     },
     {
       "slug": "apple-macbook-pro",
       "name": "MacBook Pro",
       "family": "macbook",
-      "subcategoryPath": ["computers", "laptops"],
-      "aliases": ["Apple MacBook Pro"]
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "aliases": [
+        "Apple MacBook Pro"
+      ]
     },
     {
       "slug": "apple-airpods-pro-2",
       "name": "AirPods Pro 2",
       "family": "airpods",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2023,
-      "aliases": ["AirPods Pro (2nd generation)", "AirPods Pro2"],
+      "aliases": [
+        "AirPods Pro (2nd generation)",
+        "AirPods Pro2"
+      ],
       "variants": [
-        { "slug": "usb-c", "name": "USB-C Charging Case" }
+        {
+          "slug": "usb-c",
+          "name": "USB-C Charging Case"
+        }
       ]
     },
     {
       "slug": "apple-airpods-4",
       "name": "AirPods 4",
       "family": "airpods",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["AirPods (4th generation)"]
+      "aliases": [
+        "AirPods (4th generation)"
+      ]
     },
     {
       "slug": "apple-airpods-max",
       "name": "AirPods Max",
       "family": "airpods",
-      "subcategoryPath": ["audio", "headphones"],
-      "aliases": ["Apple AirPods Max"]
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "aliases": [
+        "Apple AirPods Max"
+      ]
+    },
+    {
+      "slug": "apple-iphone-15",
+      "name": "iPhone 15",
+      "family": "iphone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "A2846",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "iPhone15",
+        "Apple iPhone 15"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-iphone-15-plus",
+      "name": "iPhone 15 Plus",
+      "family": "iphone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "A2847",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "iPhone15 Plus"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-iphone-15-pro",
+      "name": "iPhone 15 Pro",
+      "family": "iphone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "A2848",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "iPhone15 Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-iphone-15-pro-max",
+      "name": "iPhone 15 Pro Max",
+      "family": "iphone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "A2850",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "iPhone15 Pro Max"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-iphone-16-plus",
+      "name": "iPhone 16 Plus",
+      "family": "iphone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "A3290",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "apple-iphone-16-pro",
+      "name": "iPhone 16 Pro",
+      "family": "iphone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "A3283",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "iPhone16 Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-ipad-10",
+      "name": "iPad 10th Generation",
+      "family": "ipad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "A2696",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "iPad 10",
+        "10th Gen iPad"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-ipad-mini-7",
+      "name": "iPad mini 7",
+      "family": "ipad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "A2995",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "apple-ipad-air-11",
+      "name": "iPad Air 11-inch",
+      "family": "ipad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "A2902",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "iPad Air 11",
+        "11-inch iPad Air"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-ipad-air-13",
+      "name": "iPad Air 13-inch",
+      "family": "ipad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "A2898",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "iPad Air 13",
+        "13-inch iPad Air"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-ipad-pro-11",
+      "name": "iPad Pro 11-inch",
+      "family": "ipad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "A2834",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "iPad Pro 11",
+        "11-inch iPad Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-ipad-pro-13",
+      "name": "iPad Pro 13-inch",
+      "family": "ipad",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "A2925",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "iPad Pro 13",
+        "13-inch iPad Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-macbook-air-13-m2",
+      "name": "MacBook Air 13-inch (M2)",
+      "family": "macbook",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "M2",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "MacBook Air M2",
+        "MB Air M2"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-macbook-air-15-m2",
+      "name": "MacBook Air 15-inch (M2)",
+      "family": "macbook",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "M2",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "MacBook Air 15",
+        "15-inch MacBook Air"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-macbook-air-13-m3",
+      "name": "MacBook Air 13-inch (M3)",
+      "family": "macbook",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "M3",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "MacBook Air M3",
+        "13-inch MacBook Air M3"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-macbook-pro-14-m4",
+      "name": "MacBook Pro 14-inch (M4)",
+      "family": "macbook",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "M4",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "MacBook Pro 14",
+        "14-inch M4 MBP"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "apple-macbook-pro-16-m4",
+      "name": "MacBook Pro 16-inch (M4)",
+      "family": "macbook",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "M4",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "MacBook Pro 16",
+        "16-inch M4 MBP"
+      ],
+      "variants": []
     }
   ]
 }

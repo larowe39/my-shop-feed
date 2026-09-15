@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "home",
+  "brand": {
+    "slug": "kitchenaid",
+    "name": "KitchenAid",
+    "websiteUrl": "https://www.kitchenaid.com",
+    "description": "KitchenAid appliances"
+  },
+  "families": [
+    {
+      "slug": "stand-mixer",
+      "name": "Stand Mixer",
+      "subcategoryPath": [
+        "kitchen"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "kitchenaid-artisan-5qt",
+      "name": "Artisan 5-Quart Stand Mixer",
+      "family": "stand-mixer",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "5-Quart Artisan",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "KitchenAid Artisan"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "kitchenaid-professional-600",
+      "name": "Professional 600 Stand Mixer",
+      "family": "stand-mixer",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "Professional 600",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "KitchenAid Pro 600"
+      ],
+      "variants": []
+    }
+  ]
+}

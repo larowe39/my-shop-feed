@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "fitness",
+  "brand": {
+    "slug": "concept2",
+    "name": "Concept2",
+    "websiteUrl": "https://www.concept2.com",
+    "description": "Concept2 fitness equipment"
+  },
+  "families": [
+    {
+      "slug": "rower",
+      "name": "Rower",
+      "subcategoryPath": [
+        "training"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "concept2-rower-d",
+      "name": "RowErg",
+      "family": "rower",
+      "subcategoryPath": [
+        "training"
+      ],
+      "modelNumber": "D",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Concept2 RowErg"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "concept2-rower-e",
+      "name": "Model E Rower",
+      "family": "rower",
+      "subcategoryPath": [
+        "training"
+      ],
+      "modelNumber": "E",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Concept2 Model E"
+      ],
+      "variants": []
+    }
+  ]
+}

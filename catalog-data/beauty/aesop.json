@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "beauty",
+  "brand": {
+    "slug": "aesop",
+    "name": "Aesop",
+    "websiteUrl": "https://www.aesop.com",
+    "description": "Aesop skincare and home line"
+  },
+  "families": [
+    {
+      "slug": "skincare",
+      "name": "Skincare",
+      "subcategoryPath": [
+        "skincare"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "aesop-resurrection-aromatic-hand-balm",
+      "name": "Resurrection Aromatique Hand Balm",
+      "family": "skincare",
+      "subcategoryPath": [
+        "skincare"
+      ],
+      "modelNumber": "Resurrection Aromatique Hand Balm",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Aesop Hand Balm"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "aesop-reverence-aroma",
+      "name": "Reverence Aromatique Hand Wash",
+      "family": "skincare",
+      "subcategoryPath": [
+        "skincare"
+      ],
+      "modelNumber": "Reverence Aromatique Hand Wash",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Aesop Hand Wash"
+      ],
+      "variants": []
+    }
+  ]
+}

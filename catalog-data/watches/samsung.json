@@ -5,27 +5,40 @@
   "brand": {
     "slug": "samsung",
     "name": "Samsung",
-    "websiteUrl": "https://www.samsung.com"
+    "websiteUrl": "https://www.samsung.com",
+    "description": "Samsung consumer electronics"
   },
   "families": [
-    { "slug": "galaxy-watch", "name": "Galaxy Watch", "subcategoryPath": ["smartwatches"] }
+    {
+      "slug": "galaxy-watch",
+      "name": "Galaxy Watch",
+      "subcategoryPath": [
+        "smartwatches"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "samsung-galaxy-watch7",
       "name": "Galaxy Watch7",
       "family": "galaxy-watch",
-      "subcategoryPath": ["smartwatches"],
+      "subcategoryPath": [
+        "smartwatches"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Galaxy Watch 7"]
+      "aliases": [
+        "Galaxy Watch 7"
+      ]
     },
     {
       "slug": "samsung-galaxy-watch-ultra",
       "name": "Galaxy Watch Ultra",
       "family": "galaxy-watch",
-      "subcategoryPath": ["smartwatches"],
+      "subcategoryPath": [
+        "smartwatches"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Galaxy Watch Ultra"]
+      "aliases": []
     }
   ]
 }

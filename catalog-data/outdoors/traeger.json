@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "outdoors",
+  "brand": {
+    "slug": "traeger",
+    "name": "Traeger",
+    "websiteUrl": "https://www.traeger.com",
+    "description": "Traeger grills"
+  },
+  "families": [
+    {
+      "slug": "grill",
+      "name": "Grill",
+      "subcategoryPath": [
+        "camping"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "traeger-pro-575",
+      "name": "Pro 575",
+      "family": "grill",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Pro 575",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Traeger Pro 575"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "traeger-timberline-1300",
+      "name": "Timberline 1300",
+      "family": "grill",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Timberline 1300",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Traeger Timberline 1300"
+      ],
+      "variants": []
+    }
+  ]
+}

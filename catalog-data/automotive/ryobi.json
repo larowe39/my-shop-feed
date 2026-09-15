@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "ryobi",
+    "name": "Ryobi",
+    "websiteUrl": "https://www.ryobitools.com",
+    "description": "Ryobi tools"
+  },
+  "families": [
+    {
+      "slug": "one-plus",
+      "name": "ONE+",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "ryobi-pblhm101b",
+      "name": "PBLHM101B",
+      "family": "one-plus",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "PBLHM101B",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Ryobi PBLHM101B"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "ryobi-r18id2",
+      "name": "R18ID2",
+      "family": "one-plus",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "R18ID2",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Ryobi R18ID2"
+      ],
+      "variants": []
+    }
+  ]
+}

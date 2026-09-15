@@ -5,7 +5,8 @@
   "brand": {
     "slug": "apple",
     "name": "Apple",
-    "websiteUrl": "https://www.apple.com"
+    "websiteUrl": "https://www.apple.com",
+    "description": "Apple consumer electronics"
   },
   "families": [
     { "slug": "apple-watch", "name": "Apple Watch", "subcategoryPath": ["smartwatches"] }

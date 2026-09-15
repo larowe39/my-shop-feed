@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "beauty",
+  "brand": {
+    "slug": "le-labo",
+    "name": "Le Labo",
+    "websiteUrl": "https://www.lelabofragrances.com",
+    "description": "Le Labo fragrance"
+  },
+  "families": [
+    {
+      "slug": "fragrance",
+      "name": "Fragrance",
+      "subcategoryPath": [
+        "fragrance"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "le-labo-santal-33",
+      "name": "Santal 33",
+      "family": "fragrance",
+      "subcategoryPath": [
+        "fragrance"
+      ],
+      "modelNumber": "Santal 33",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Le Labo Santal 33"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "le-labo-bergamote-22",
+      "name": "Bergamote 22",
+      "family": "fragrance",
+      "subcategoryPath": [
+        "fragrance"
+      ],
+      "modelNumber": "Bergamote 22",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Le Labo Bergamote 22"
+      ],
+      "variants": []
+    }
+  ]
+}

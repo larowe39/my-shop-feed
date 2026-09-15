@@ -1,0 +1,48 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "casio",
+    "name": "Casio",
+    "websiteUrl": "https://www.casio.com",
+    "description": "Casio watches"
+  },
+  "families": [
+    {
+      "slug": "g-shock",
+      "name": "G-Shock",
+      "subcategoryPath": [
+        "sport-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "casio-g-shock-ga2100",
+      "name": "G-Shock GA2100",
+      "family": "g-shock",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "GA2100-1A1",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "casio-g-shock-gw-b5600",
+      "name": "G-Shock GW-B5600",
+      "family": "g-shock",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "GW-B5600",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

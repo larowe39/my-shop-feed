@@ -1,0 +1,50 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "breitling",
+    "name": "Breitling",
+    "websiteUrl": "https://www.breitling.com",
+    "description": "Breitling watches"
+  },
+  "families": [
+    {
+      "slug": "navitimer",
+      "name": "Navitimer",
+      "subcategoryPath": [
+        "luxury-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "breitling-navitimer-b01",
+      "name": "Navitimer B01 Chronograph 43",
+      "family": "navitimer",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "AB0118101C1A1",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Navitimer B01"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "breitling-superocean-heritage",
+      "name": "Superocean Heritage",
+      "family": "navitimer",
+      "subcategoryPath": [
+        "dive-watches"
+      ],
+      "modelNumber": "A17313B1L2",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

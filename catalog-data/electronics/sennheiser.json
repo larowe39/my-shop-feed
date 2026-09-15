@@ -5,27 +5,134 @@
   "brand": {
     "slug": "sennheiser",
     "name": "Sennheiser",
-    "websiteUrl": "https://www.sennheiser.com"
+    "websiteUrl": "https://en-uk.sennheiser.com",
+    "description": "Sennheiser headphones"
   },
   "families": [
-    { "slug": "momentum", "name": "Momentum", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "momentum",
+      "name": "Momentum",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "accutime",
+      "name": "Accentum",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "sennheiser-momentum-4-wireless",
       "name": "Momentum 4 Wireless",
       "family": "momentum",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2022,
-      "aliases": ["Momentum4 Wireless"]
+      "aliases": [
+        "Momentum4 Wireless"
+      ]
     },
     {
       "slug": "sennheiser-momentum-true-wireless-3",
       "name": "Momentum True Wireless 3",
       "family": "momentum",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2022,
-      "aliases": ["Momentum True Wireless3", "MTW3"]
+      "aliases": [
+        "Momentum True Wireless3",
+        "MTW3"
+      ]
+    },
+    {
+      "slug": "sennheiser-momentum-4",
+      "name": "Momentum 4",
+      "family": "momentum",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "Momentum 4",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Sennheiser Momentum 4"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sennheiser-accentum",
+      "name": "Accentum",
+      "family": "accutime",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "Accentum",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Sennheiser Accentum"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sennheiser-cx-plus",
+      "name": "CX Plus",
+      "family": "accutime",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "CX Plus",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Sennheiser CX Plus"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sennheiser-hd-560s",
+      "name": "HD 560S",
+      "family": "momentum",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "HD 560S",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "HD560S"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sennheiser-ie-900",
+      "name": "IE 900",
+      "family": "momentum",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "IE 900",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "IE900"
+      ],
+      "variants": []
     }
   ]
 }

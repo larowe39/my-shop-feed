@@ -1,0 +1,59 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "home",
+  "brand": {
+    "slug": "herman-miller",
+    "name": "Herman Miller",
+    "websiteUrl": "https://www.hermanmiller.com",
+    "description": "Herman Miller furniture"
+  },
+  "families": [
+    {
+      "slug": "eames",
+      "name": "Eames",
+      "subcategoryPath": [
+        "furniture"
+      ]
+    },
+    {
+      "slug": "aeron",
+      "name": "Aeron",
+      "subcategoryPath": [
+        "furniture"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "herman-miller-eames-lounge-chair",
+      "name": "Eames Lounge Chair",
+      "family": "eames",
+      "subcategoryPath": [
+        "furniture"
+      ],
+      "modelNumber": "Eames Lounge Chair",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Eames Lounge"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "herman-miller-aeron-chair",
+      "name": "Aeron Chair",
+      "family": "aeron",
+      "subcategoryPath": [
+        "furniture"
+      ],
+      "modelNumber": "Aeron Chair",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Aeron"
+      ],
+      "variants": []
+    }
+  ]
+}

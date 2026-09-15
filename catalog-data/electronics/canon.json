@@ -5,35 +5,115 @@
   "brand": {
     "slug": "canon",
     "name": "Canon",
-    "websiteUrl": "https://www.usa.canon.com"
+    "websiteUrl": "https://www.canon.com",
+    "description": "Canon cameras"
   },
   "families": [
-    { "slug": "eos-r", "name": "EOS R", "subcategoryPath": ["cameras", "mirrorless"] }
+    {
+      "slug": "eos-r",
+      "name": "EOS R",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ]
+    },
+    {
+      "slug": "eos-rr",
+      "name": "EOS R series",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "canon-eos-r6-mark-ii",
       "name": "EOS R6 Mark II",
       "family": "eos-r",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2022,
-      "aliases": ["Canon R6 II", "EOS R6 II"]
+      "aliases": [
+        "Canon R6 II",
+        "EOS R6 II"
+      ]
     },
     {
       "slug": "canon-eos-r8",
       "name": "EOS R8",
       "family": "eos-r",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Canon R8"]
+      "aliases": [
+        "Canon R8"
+      ]
     },
     {
       "slug": "canon-eos-r50",
       "name": "EOS R50",
       "family": "eos-r",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Canon R50"]
+      "aliases": [
+        "Canon R50"
+      ]
+    },
+    {
+      "slug": "canon-eos-r10",
+      "name": "EOS R10",
+      "family": "eos-r",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "EOS R10",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Canon R10"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "canon-eos-r7",
+      "name": "EOS R7",
+      "family": "eos-r",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "EOS R7",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Canon R7"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "canon-eos-r5",
+      "name": "EOS R5",
+      "family": "eos-r",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "EOS R5",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Canon R5"
+      ],
+      "variants": []
     }
   ]
 }

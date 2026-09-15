@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "outdoors",
+  "brand": {
+    "slug": "snow-peak",
+    "name": "Snow Peak",
+    "websiteUrl": "https://www.snowpeak.com",
+    "description": "Snow Peak outdoor gear"
+  },
+  "families": [
+    {
+      "slug": "trek",
+      "name": "Trek",
+      "subcategoryPath": [
+        "camping"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "snow-peak-titanium-trek-900",
+      "name": "Titanium Trek 900",
+      "family": "trek",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Trek 900",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Snow Peak Trek 900"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "snow-peak-cookset-2p",
+      "name": "Cookset 2P",
+      "family": "trek",
+      "subcategoryPath": [
+        "camping"
+      ],
+      "modelNumber": "Cookset 2P",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Snow Peak 2P Cookset"
+      ],
+      "variants": []
+    }
+  ]
+}

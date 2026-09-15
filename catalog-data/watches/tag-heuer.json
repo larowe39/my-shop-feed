@@ -1,0 +1,57 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "tag-heuer",
+    "name": "TAG Heuer",
+    "websiteUrl": "https://www.tagheuer.com",
+    "description": "TAG Heuer watches"
+  },
+  "families": [
+    {
+      "slug": "aquaracer",
+      "name": "Aquaracer",
+      "subcategoryPath": [
+        "sport-watches"
+      ]
+    },
+    {
+      "slug": "carrera",
+      "name": "Carrera",
+      "subcategoryPath": [
+        "luxury-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "tag-heuer-aquaracer-300m",
+      "name": "Aquaracer Professional 300M",
+      "family": "aquaracer",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "WBP201B",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Aquaracer 300M"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "tag-heuer-carrera-date",
+      "name": "Carrera Date",
+      "family": "carrera",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "WAR201R",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

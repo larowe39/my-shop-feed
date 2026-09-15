@@ -1,0 +1,77 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "shoes",
+  "brand": {
+    "slug": "new-balance",
+    "name": "New Balance",
+    "websiteUrl": "https://www.newbalance.com/",
+    "description": "New Balance running and lifestyle footwear."
+  },
+  "families": [
+    {
+      "slug": "990",
+      "name": "990",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "9060",
+      "name": "9060",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    },
+    {
+      "slug": "530",
+      "name": "530",
+      "subcategoryPath": [
+        "sneakers"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "new-balance-990v6",
+      "name": "990v6",
+      "family": "990",
+      "subcategoryPath": [
+        "sneakers"
+      ],
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "New Balance 990v6",
+        "990 v6",
+        "990v 6"
+      ]
+    },
+    {
+      "slug": "new-balance-9060",
+      "name": "9060",
+      "family": "9060",
+      "subcategoryPath": [
+        "sneakers"
+      ],
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "New Balance 9060"
+      ]
+    },
+    {
+      "slug": "new-balance-530",
+      "name": "530",
+      "family": "530",
+      "subcategoryPath": [
+        "sneakers"
+      ],
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "New Balance 530"
+      ]
+    }
+  ]
+}

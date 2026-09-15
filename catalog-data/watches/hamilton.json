@@ -1,0 +1,48 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "hamilton",
+    "name": "Hamilton",
+    "websiteUrl": "https://www.hamiltonwatch.com",
+    "description": "Hamilton watches"
+  },
+  "families": [
+    {
+      "slug": "khaki",
+      "name": "Khaki",
+      "subcategoryPath": [
+        "sport-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "hamilton-khaki-field-mechanical",
+      "name": "Khaki Field Mechanical",
+      "family": "khaki",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "H69439931",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "hamilton-khaki-aviation",
+      "name": "Khaki Aviation",
+      "family": "khaki",
+      "subcategoryPath": [
+        "sport-watches"
+      ],
+      "modelNumber": "H76515131",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

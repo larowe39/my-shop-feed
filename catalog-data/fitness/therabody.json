@@ -1,0 +1,61 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "fitness",
+  "brand": {
+    "slug": "therabody",
+    "name": "Therabody",
+    "websiteUrl": "https://www.therabody.com",
+    "description": "Therabody recovery devices"
+  },
+  "families": [
+    {
+      "slug": "theragun",
+      "name": "Theragun",
+      "subcategoryPath": [
+        "recovery"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "therabody-theragun-pro",
+      "name": "Theragun PRO",
+      "family": "theragun",
+      "subcategoryPath": [
+        "recovery"
+      ],
+      "modelNumber": "TG0003513-3A10",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "therabody-theragun-prime",
+      "name": "Theragun Prime",
+      "family": "theragun",
+      "subcategoryPath": [
+        "recovery"
+      ],
+      "modelNumber": "TG0003512-1A10",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "therabody-theragun-mini",
+      "name": "Theragun Mini",
+      "family": "theragun",
+      "subcategoryPath": [
+        "recovery"
+      ],
+      "modelNumber": "TG0003511-1A10",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    }
+  ]
+}

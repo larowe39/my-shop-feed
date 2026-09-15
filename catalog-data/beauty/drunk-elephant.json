@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "beauty",
+  "brand": {
+    "slug": "drunk-elephant",
+    "name": "Drunk Elephant",
+    "websiteUrl": "https://www.drunkelephant.com",
+    "description": "Drunk Elephant skincare"
+  },
+  "families": [
+    {
+      "slug": "skincare",
+      "name": "Skincare",
+      "subcategoryPath": [
+        "skincare"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "drunk-elephant-protini-polypeptide-firming-moisturizer",
+      "name": "Protini Polypeptide Firming Moisturizer",
+      "family": "skincare",
+      "subcategoryPath": [
+        "skincare"
+      ],
+      "modelNumber": "Protini",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Drunk Elephant Protini"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "drunk-elephant-lala-retinoid-cream",
+      "name": "Lala Retro Whipped Cream",
+      "family": "skincare",
+      "subcategoryPath": [
+        "skincare"
+      ],
+      "modelNumber": "Lala Retro",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Drunk Elephant Lala Retro"
+      ],
+      "variants": []
+    }
+  ]
+}

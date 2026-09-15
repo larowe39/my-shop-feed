@@ -5,65 +5,286 @@
   "brand": {
     "slug": "sony",
     "name": "Sony",
-    "websiteUrl": "https://www.sony.com"
+    "websiteUrl": "https://electronics.sony.com",
+    "description": "Sony audio and imaging"
   },
   "families": [
-    { "slug": "alpha", "name": "Alpha", "subcategoryPath": ["cameras", "mirrorless"] },
-    { "slug": "playstation", "name": "PlayStation", "subcategoryPath": ["gaming", "consoles"] },
-    { "slug": "wf-1000x", "name": "WF-1000X", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "alpha",
+      "name": "Alpha",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ]
+    },
+    {
+      "slug": "playstation",
+      "name": "PlayStation",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ]
+    },
+    {
+      "slug": "wf-1000x",
+      "name": "WF-1000X",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "wh-1000x",
+      "name": "WH-1000X",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "wf-series",
+      "name": "WF Series",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
-    {
-      "slug": "sony-alpha-7-iv",
-      "name": "Alpha 7 IV",
-      "family": "alpha",
-      "subcategoryPath": ["cameras", "mirrorless"],
-      "releaseYear": 2021,
-      "aliases": ["Sony A7 IV", "Sony a7IV"]
-    },
-    {
-      "slug": "sony-alpha-7r-v",
-      "name": "Alpha 7R V",
-      "family": "alpha",
-      "subcategoryPath": ["cameras", "mirrorless"],
-      "releaseYear": 2022,
-      "aliases": ["Sony A7R V"]
-    },
     {
       "slug": "sony-alpha-9-iii",
       "name": "Alpha 9 III",
       "family": "alpha",
-      "subcategoryPath": ["cameras", "mirrorless"],
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Sony A9 III"]
+      "aliases": [
+        "Sony A9 III"
+      ]
     },
     {
       "slug": "sony-playstation-5",
       "name": "PlayStation 5",
       "family": "playstation",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2020,
-      "aliases": ["PS5", "Sony PS5"],
+      "aliases": [
+        "PS5",
+        "Sony PS5"
+      ],
       "variants": [
-        { "slug": "disc", "name": "Disc Edition" },
-        { "slug": "digital", "name": "Digital Edition" }
+        {
+          "slug": "disc",
+          "name": "Disc Edition"
+        },
+        {
+          "slug": "digital",
+          "name": "Digital Edition"
+        }
       ]
     },
     {
       "slug": "sony-playstation-5-pro",
       "name": "PlayStation 5 Pro",
       "family": "playstation",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2024,
-      "aliases": ["PS5 Pro"]
+      "aliases": [
+        "PS5 Pro"
+      ]
     },
     {
       "slug": "sony-wf-1000xm5",
       "name": "WF-1000XM5",
       "family": "wf-1000x",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Sony WF1000XM5", "Sony XM5 earbuds"]
+      "aliases": [
+        "Sony WF1000XM5",
+        "Sony XM5 earbuds"
+      ]
+    },
+    {
+      "slug": "sony-wh-1000xm5",
+      "name": "WH-1000XM5",
+      "family": "wh-1000x",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "WH1000XM5/B",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "WH1000XM5"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-wh-1000xm4",
+      "name": "WH-1000XM4",
+      "family": "wh-1000x",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "WH1000XM4/B",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "WH1000XM4"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-wh-1000xm3",
+      "name": "WH-1000XM3",
+      "family": "wh-1000x",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "WH1000XM3/B",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "WH1000XM3"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-wh-xb910n",
+      "name": "WH-XB910N",
+      "family": "wh-1000x",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "WHXB910N/B",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "sony-wf-c510",
+      "name": "WF-C510",
+      "family": "wf-series",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "WFC510/B",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "sony-wf-c500",
+      "name": "WF-C500",
+      "family": "wf-series",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "WFC500/B",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "sony-a7-iv",
+      "name": "Alpha 7 IV",
+      "family": "alpha",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "ILCE-7M4",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "A7 IV"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-a7r-v",
+      "name": "Alpha 7R V",
+      "family": "alpha",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "ILCE-7RM5",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "A7R V"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-a6700",
+      "name": "Alpha 6700",
+      "family": "alpha",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "ILCE-6700",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "A6700"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-rx100-vii",
+      "name": "Cyber-shot RX100 VII",
+      "family": "alpha",
+      "subcategoryPath": [
+        "cameras",
+        "mirrorless"
+      ],
+      "modelNumber": "DSCRX100M7",
+      "releaseYear": 2019,
+      "status": "active",
+      "aliases": [
+        "RX100 VII"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "sony-playstation-5-digital",
+      "name": "PlayStation 5 Digital Edition",
+      "family": "playstation",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
+      "modelNumber": "CFI-1000B",
+      "releaseYear": 2020,
+      "status": "active",
+      "aliases": [
+        "PS5 Digital",
+        "PS5 Digital Edition"
+      ],
+      "variants": []
     }
   ]
 }

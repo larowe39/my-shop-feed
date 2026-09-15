@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "home",
+  "brand": {
+    "slug": "le-creuset",
+    "name": "Le Creuset",
+    "websiteUrl": "https://www.lecreuset.com",
+    "description": "Le Creuset cookware"
+  },
+  "families": [
+    {
+      "slug": "signature",
+      "name": "Signature",
+      "subcategoryPath": [
+        "kitchen"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "le-creuset-skillet-9",
+      "name": "Signature Skillet 9.5",
+      "family": "signature",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "LSM9",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Le Creuset 9.5 Skillet"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "le-creuset-round-dutch-oven-5",
+      "name": "Round Dutch Oven 5.5 qt",
+      "family": "signature",
+      "subcategoryPath": [
+        "kitchen"
+      ],
+      "modelNumber": "RT5",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Le Creuset Dutch Oven 5.5"
+      ],
+      "variants": []
+    }
+  ]
+}

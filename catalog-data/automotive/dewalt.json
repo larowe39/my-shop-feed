@@ -1,0 +1,67 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "dewalt",
+    "name": "DeWalt",
+    "websiteUrl": "https://www.dewalt.com",
+    "description": "DeWalt power tools"
+  },
+  "families": [
+    {
+      "slug": "20v-max",
+      "name": "20V MAX",
+      "subcategoryPath": [
+        "tools"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "dewalt-dcd999",
+      "name": "DCD999",
+      "family": "20v-max",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "DCD999",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "DeWalt DCD999"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "dewalt-dcf887",
+      "name": "DCF887",
+      "family": "20v-max",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "DCF887",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "DeWalt DCF887"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "dewalt-dcm575",
+      "name": "DCM575",
+      "family": "20v-max",
+      "subcategoryPath": [
+        "tools"
+      ],
+      "modelNumber": "DCM575",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "DeWalt DCM575"
+      ],
+      "variants": []
+    }
+  ]
+}

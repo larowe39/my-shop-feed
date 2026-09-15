@@ -5,62 +5,253 @@
   "brand": {
     "slug": "samsung",
     "name": "Samsung",
-    "websiteUrl": "https://www.samsung.com"
+    "websiteUrl": "https://www.samsung.com",
+    "description": "Samsung consumer electronics"
   },
   "families": [
-    { "slug": "galaxy-s", "name": "Galaxy S", "subcategoryPath": ["phones"] },
-    { "slug": "galaxy-z", "name": "Galaxy Z", "subcategoryPath": ["phones"] },
-    { "slug": "galaxy-tab", "name": "Galaxy Tab", "subcategoryPath": ["computers", "tablets"] },
-    { "slug": "galaxy-buds", "name": "Galaxy Buds", "subcategoryPath": ["audio", "headphones"] }
+    {
+      "slug": "galaxy-s",
+      "name": "Galaxy S",
+      "subcategoryPath": [
+        "phones"
+      ]
+    },
+    {
+      "slug": "galaxy-z",
+      "name": "Galaxy Z",
+      "subcategoryPath": [
+        "phones"
+      ]
+    },
+    {
+      "slug": "galaxy-tab",
+      "name": "Galaxy Tab",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ]
+    },
+    {
+      "slug": "galaxy-buds",
+      "name": "Galaxy Buds",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "samsung-galaxy-s24",
       "name": "Galaxy S24",
       "family": "galaxy-s",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Samsung S24"]
+      "aliases": [
+        "Samsung S24"
+      ]
     },
     {
       "slug": "samsung-galaxy-s24-ultra",
       "name": "Galaxy S24 Ultra",
       "family": "galaxy-s",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Samsung S24 Ultra"]
+      "aliases": [
+        "Samsung S24 Ultra"
+      ]
     },
     {
       "slug": "samsung-galaxy-z-fold6",
       "name": "Galaxy Z Fold6",
       "family": "galaxy-z",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Galaxy Z Fold 6"]
+      "aliases": [
+        "Galaxy Z Fold 6"
+      ]
     },
     {
       "slug": "samsung-galaxy-z-flip6",
       "name": "Galaxy Z Flip6",
       "family": "galaxy-z",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Galaxy Z Flip 6"]
+      "aliases": [
+        "Galaxy Z Flip 6"
+      ]
     },
     {
       "slug": "samsung-galaxy-tab-s9",
       "name": "Galaxy Tab S9",
       "family": "galaxy-tab",
-      "subcategoryPath": ["computers", "tablets"],
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
       "releaseYear": 2023,
-      "aliases": ["Galaxy Tab S9"]
+      "aliases": []
     },
     {
       "slug": "samsung-galaxy-buds3-pro",
       "name": "Galaxy Buds3 Pro",
       "family": "galaxy-buds",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Galaxy Buds 3 Pro"]
+      "aliases": [
+        "Galaxy Buds 3 Pro"
+      ]
+    },
+    {
+      "slug": "samsung-galaxy-s24-plus",
+      "name": "Galaxy S24 Plus",
+      "family": "galaxy-s",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "SM-S926",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-s25",
+      "name": "Galaxy S25",
+      "family": "galaxy-s",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "SM-S931",
+      "releaseYear": 2025,
+      "status": "active",
+      "aliases": [
+        "Galaxy S 25"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-s25-plus",
+      "name": "Galaxy S25 Plus",
+      "family": "galaxy-s",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "SM-S936",
+      "releaseYear": 2025,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-s25-ultra",
+      "name": "Galaxy S25 Ultra",
+      "family": "galaxy-s",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "SM-S938",
+      "releaseYear": 2025,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-z-fold5",
+      "name": "Galaxy Z Fold5",
+      "family": "galaxy-z",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "SM-F946B",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Galaxy Z Fold 5"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-z-flip5",
+      "name": "Galaxy Z Flip5",
+      "family": "galaxy-z",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "SM-F731",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Galaxy Z Flip 5"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-tab-s10",
+      "name": "Galaxy Tab S10",
+      "family": "galaxy-tab",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "SM-X820",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-tab-s9-fe",
+      "name": "Galaxy Tab S9 FE",
+      "family": "galaxy-tab",
+      "subcategoryPath": [
+        "computers",
+        "tablets"
+      ],
+      "modelNumber": "SM-X510",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-buds-fe",
+      "name": "Galaxy Buds FE",
+      "family": "galaxy-buds",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "SM-R400",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "samsung-galaxy-buds-pro",
+      "name": "Galaxy Buds Pro",
+      "family": "galaxy-buds",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "SM-R190",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [],
+      "variants": []
     }
   ]
 }

@@ -1,0 +1,87 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "watches",
+  "brand": {
+    "slug": "omega",
+    "name": "Omega",
+    "websiteUrl": "https://www.omegawatches.com",
+    "description": "Omega mechanical watches"
+  },
+  "families": [
+    {
+      "slug": "speedmaster",
+      "name": "Speedmaster",
+      "subcategoryPath": [
+        "luxury-watches"
+      ]
+    },
+    {
+      "slug": "seamaster",
+      "name": "Seamaster",
+      "subcategoryPath": [
+        "dive-watches"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "omega-speedmaster-moonwatch",
+      "name": "Speedmaster Professional Moonwatch",
+      "family": "speedmaster",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "311.30.42.30.01.005",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Moonwatch"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "omega-speedmaster-date",
+      "name": "Speedmaster Date",
+      "family": "speedmaster",
+      "subcategoryPath": [
+        "luxury-watches"
+      ],
+      "modelNumber": "329.30.44.51.01.001",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [],
+      "variants": []
+    },
+    {
+      "slug": "omega-seamaster-diver-300m",
+      "name": "Seamaster Diver 300M",
+      "family": "seamaster",
+      "subcategoryPath": [
+        "dive-watches"
+      ],
+      "modelNumber": "210.30.42.20.01.001",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "Seamaster 300M"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "omega-seamaster-aqua-terra",
+      "name": "Seamaster Aqua Terra",
+      "family": "seamaster",
+      "subcategoryPath": [
+        "dive-watches"
+      ],
+      "modelNumber": "220.10.41.21.03.001",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Aqua Terra"
+      ],
+      "variants": []
+    }
+  ]
+}

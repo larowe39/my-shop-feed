@@ -5,27 +5,99 @@
   "brand": {
     "slug": "gopro",
     "name": "GoPro",
-    "websiteUrl": "https://www.gopro.com"
+    "websiteUrl": "https://gopro.com",
+    "description": "GoPro action cameras"
   },
   "families": [
-    { "slug": "hero", "name": "HERO", "subcategoryPath": ["cameras", "action-cameras"] }
+    {
+      "slug": "hero",
+      "name": "HERO",
+      "subcategoryPath": [
+        "cameras",
+        "action-cameras"
+      ]
+    }
   ],
   "products": [
     {
-      "slug": "gopro-hero12-black",
-      "name": "HERO12 Black",
+      "slug": "gopro-hero-10-black",
+      "name": "Hero 10 Black",
       "family": "hero",
-      "subcategoryPath": ["cameras", "action-cameras"],
-      "releaseYear": 2023,
-      "aliases": ["GoPro Hero 12", "GoPro HERO12"]
+      "subcategoryPath": [
+        "cameras",
+        "action-cameras"
+      ],
+      "modelNumber": "CHDHX-101",
+      "releaseYear": 2021,
+      "status": "active",
+      "aliases": [
+        "GoPro Hero 10"
+      ],
+      "variants": []
     },
     {
-      "slug": "gopro-hero13-black",
-      "name": "HERO13 Black",
+      "slug": "gopro-hero-11-black",
+      "name": "Hero 11 Black",
       "family": "hero",
-      "subcategoryPath": ["cameras", "action-cameras"],
+      "subcategoryPath": [
+        "cameras",
+        "action-cameras"
+      ],
+      "modelNumber": "CHDHX-111",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "GoPro Hero 11"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "gopro-hero-12-black",
+      "name": "Hero 12 Black",
+      "family": "hero",
+      "subcategoryPath": [
+        "cameras",
+        "action-cameras"
+      ],
+      "modelNumber": "CHDHX-121",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "GoPro Hero 12"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "gopro-hero-13-black",
+      "name": "Hero 13 Black",
+      "family": "hero",
+      "subcategoryPath": [
+        "cameras",
+        "action-cameras"
+      ],
+      "modelNumber": "CHDHX-131",
       "releaseYear": 2024,
-      "aliases": ["GoPro Hero 13", "GoPro HERO13"]
+      "status": "active",
+      "aliases": [
+        "GoPro Hero 13"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "gopro-max",
+      "name": "MAX",
+      "family": "hero",
+      "subcategoryPath": [
+        "cameras",
+        "action-cameras"
+      ],
+      "modelNumber": "CHDHZ-202",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "GoPro Max"
+      ],
+      "variants": []
     }
   ]
 }

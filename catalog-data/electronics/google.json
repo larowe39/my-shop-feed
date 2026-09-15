@@ -5,52 +5,209 @@
   "brand": {
     "slug": "google",
     "name": "Google",
-    "websiteUrl": "https://store.google.com"
+    "websiteUrl": "https://store.google.com",
+    "description": "Google consumer electronics"
   },
   "families": [
-    { "slug": "pixel", "name": "Pixel", "subcategoryPath": ["phones"] },
-    { "slug": "pixel-buds", "name": "Pixel Buds", "subcategoryPath": ["audio", "headphones"] },
-    { "slug": "nest", "name": "Nest", "subcategoryPath": ["audio", "smart-speakers"] }
+    {
+      "slug": "pixel",
+      "name": "Pixel",
+      "subcategoryPath": [
+        "phones"
+      ]
+    },
+    {
+      "slug": "pixel-buds",
+      "name": "Pixel Buds",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ]
+    },
+    {
+      "slug": "nest",
+      "name": "Nest",
+      "subcategoryPath": [
+        "audio",
+        "smart-speakers"
+      ]
+    },
+    {
+      "slug": "pixel-phone",
+      "name": "Pixel",
+      "subcategoryPath": [
+        "phones"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "google-pixel-9",
       "name": "Pixel 9",
       "family": "pixel",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Google Pixel9"]
+      "aliases": [
+        "Google Pixel9"
+      ]
     },
     {
       "slug": "google-pixel-9-pro",
       "name": "Pixel 9 Pro",
       "family": "pixel",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Google Pixel9 Pro"]
+      "aliases": [
+        "Google Pixel9 Pro"
+      ]
     },
     {
       "slug": "google-pixel-9-pro-fold",
       "name": "Pixel 9 Pro Fold",
       "family": "pixel",
-      "subcategoryPath": ["phones"],
+      "subcategoryPath": [
+        "phones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Pixel Fold 2"]
+      "aliases": [
+        "Pixel Fold 2"
+      ]
     },
     {
       "slug": "google-pixel-buds-pro-2",
       "name": "Pixel Buds Pro 2",
       "family": "pixel-buds",
-      "subcategoryPath": ["audio", "headphones"],
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
       "releaseYear": 2024,
-      "aliases": ["Pixel Buds Pro2"]
+      "aliases": [
+        "Pixel Buds Pro2"
+      ]
     },
     {
       "slug": "google-nest-audio",
       "name": "Nest Audio",
       "family": "nest",
-      "subcategoryPath": ["audio", "smart-speakers"],
-      "aliases": ["Google Nest Audio"]
+      "subcategoryPath": [
+        "audio",
+        "smart-speakers"
+      ],
+      "aliases": [
+        "Google Nest Audio"
+      ]
+    },
+    {
+      "slug": "google-pixel-8",
+      "name": "Pixel 8",
+      "family": "pixel-phone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "G1A",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Google Pixel 8"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "google-pixel-8a",
+      "name": "Pixel 8a",
+      "family": "pixel-phone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "G1C",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Google Pixel 8a"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "google-pixel-8-pro",
+      "name": "Pixel 8 Pro",
+      "family": "pixel-phone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "G1B",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Google Pixel 8 Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "google-pixel-9-pro-xl",
+      "name": "Pixel 9 Pro XL",
+      "family": "pixel-phone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "G9PX",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Google Pixel 9 Pro XL"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "google-pixel-fold",
+      "name": "Pixel Fold",
+      "family": "pixel-phone",
+      "subcategoryPath": [
+        "phones"
+      ],
+      "modelNumber": "G3",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "Google Pixel Fold"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "google-pixel-buds-pro",
+      "name": "Pixel Buds Pro",
+      "family": "pixel-buds",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "G1",
+      "releaseYear": 2022,
+      "status": "active",
+      "aliases": [
+        "Google Pixel Buds Pro"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "google-pixel-buds-2",
+      "name": "Pixel Buds 2",
+      "family": "pixel-buds",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "G2",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "Google Pixel Buds 2"
+      ],
+      "variants": []
     }
   ]
 }

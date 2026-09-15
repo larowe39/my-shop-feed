@@ -5,27 +5,137 @@
   "brand": {
     "slug": "lg",
     "name": "LG",
-    "websiteUrl": "https://www.lg.com"
+    "websiteUrl": "https://www.lg.com",
+    "description": "LG consumer electronics"
   },
   "families": [
-    { "slug": "oled", "name": "OLED", "subcategoryPath": ["televisions"] }
+    {
+      "slug": "oled",
+      "name": "OLED",
+      "subcategoryPath": [
+        "televisions"
+      ]
+    },
+    {
+      "slug": "gram",
+      "name": "Gram",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ]
+    },
+    {
+      "slug": "oled-tv",
+      "name": "OLED TV",
+      "subcategoryPath": [
+        "televisions"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "lg-oled-c4",
       "name": "OLED C4",
       "family": "oled",
-      "subcategoryPath": ["televisions"],
+      "subcategoryPath": [
+        "televisions"
+      ],
       "releaseYear": 2024,
-      "aliases": ["LG C4", "LG OLED evo C4"]
+      "aliases": [
+        "LG C4",
+        "LG OLED evo C4"
+      ]
     },
     {
       "slug": "lg-oled-g4",
       "name": "OLED G4",
       "family": "oled",
-      "subcategoryPath": ["televisions"],
+      "subcategoryPath": [
+        "televisions"
+      ],
       "releaseYear": 2024,
-      "aliases": ["LG G4", "LG OLED evo G4"]
+      "aliases": [
+        "LG G4",
+        "LG OLED evo G4"
+      ]
+    },
+    {
+      "slug": "lg-gram-14",
+      "name": "Gram 14",
+      "family": "gram",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "14Z90R",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "LG Gram 14"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "lg-gram-16",
+      "name": "Gram 16",
+      "family": "gram",
+      "subcategoryPath": [
+        "computers",
+        "laptops"
+      ],
+      "modelNumber": "16Z90R",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "LG Gram 16"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "lg-c3-oled",
+      "name": "C3 OLED",
+      "family": "oled-tv",
+      "subcategoryPath": [
+        "televisions"
+      ],
+      "modelNumber": "OLED55C3",
+      "releaseYear": 2023,
+      "status": "active",
+      "aliases": [
+        "LG C3"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "lg-b3-oled",
+      "name": "B3 OLED",
+      "family": "oled-tv",
+      "subcategoryPath": [
+        "televisions"
+      ],
+      "modelNumber": "OLED55B3",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "LG B3"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "lg-tone-free-fp9",
+      "name": "Tone Free FP9",
+      "family": "gram",
+      "subcategoryPath": [
+        "audio",
+        "headphones"
+      ],
+      "modelNumber": "HBS-FP9",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "LG Tone Free FP9"
+      ],
+      "variants": []
     }
   ]
 }

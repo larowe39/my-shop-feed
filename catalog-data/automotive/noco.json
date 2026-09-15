@@ -1,0 +1,52 @@
+{
+  "kind": "catalog",
+  "version": 1,
+  "category": "automotive",
+  "brand": {
+    "slug": "noco",
+    "name": "NOCO",
+    "websiteUrl": "https://www.noco.com",
+    "description": "NOCO jump starters and chargers"
+  },
+  "families": [
+    {
+      "slug": "boost",
+      "name": "Boost",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "slug": "noco-boost-hd-gb70",
+      "name": "Boost HD GB70",
+      "family": "boost",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "GB70",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "NOCO GB70"
+      ],
+      "variants": []
+    },
+    {
+      "slug": "noco-boost-xl-gb251",
+      "name": "Boost XL GB251",
+      "family": "boost",
+      "subcategoryPath": [
+        "automotive-accessories"
+      ],
+      "modelNumber": "GB251",
+      "releaseYear": 2024,
+      "status": "active",
+      "aliases": [
+        "NOCO GB251"
+      ],
+      "variants": []
+    }
+  ]
+}

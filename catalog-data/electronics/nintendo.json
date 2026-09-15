@@ -5,35 +5,83 @@
   "brand": {
     "slug": "nintendo",
     "name": "Nintendo",
-    "websiteUrl": "https://www.nintendo.com"
+    "websiteUrl": "https://www.nintendo.com",
+    "description": "Nintendo gaming hardware"
   },
   "families": [
-    { "slug": "switch", "name": "Switch", "subcategoryPath": ["gaming", "consoles"] }
+    {
+      "slug": "switch",
+      "name": "Switch",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ]
+    },
+    {
+      "slug": "switch-lite",
+      "name": "Switch Lite",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ]
+    }
   ],
   "products": [
     {
       "slug": "nintendo-switch",
       "name": "Nintendo Switch",
       "family": "switch",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2017,
-      "aliases": ["Switch"]
+      "aliases": [
+        "Switch"
+      ]
     },
     {
       "slug": "nintendo-switch-lite",
       "name": "Nintendo Switch Lite",
       "family": "switch",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2019,
-      "aliases": ["Switch Lite"]
+      "aliases": [
+        "Switch Lite"
+      ]
     },
     {
       "slug": "nintendo-switch-oled",
       "name": "Nintendo Switch OLED Model",
       "family": "switch",
-      "subcategoryPath": ["gaming", "consoles"],
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
       "releaseYear": 2021,
-      "aliases": ["Switch OLED", "Nintendo Switch OLED"]
+      "aliases": [
+        "Switch OLED",
+        "Nintendo Switch OLED"
+      ]
+    },
+    {
+      "slug": "nintendo-switch-2",
+      "name": "Nintendo Switch 2",
+      "family": "switch",
+      "subcategoryPath": [
+        "gaming",
+        "consoles"
+      ],
+      "modelNumber": "",
+      "releaseYear": 2025,
+      "status": "active",
+      "aliases": [
+        "Switch 2"
+      ],
+      "variants": []
     }
   ]
 }
