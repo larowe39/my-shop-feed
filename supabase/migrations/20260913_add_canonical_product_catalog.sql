@@ -88,10 +88,6 @@ create table if not exists public.catalog_aliases (
 
 comment on table public.catalog_aliases is
   'Normalized matching aliases. entity_id is intentionally polymorphic and is interpreted by entity_type; writes belong in trusted admin tooling.';
-comment on column public.products.catalog_product_id is
-  'Optional canonical real-world product referenced by this user listing; null means the listing is not yet matched.';
-comment on column public.products.catalog_variant_id is
-  'Optional canonical variant referenced by this user listing; null means no variant was confirmed.';
 
 create index if not exists catalog_subcategories_category_idx on public.catalog_subcategories(category_id);
 create index if not exists catalog_subcategories_parent_idx on public.catalog_subcategories(parent_subcategory_id);
@@ -111,6 +107,11 @@ create index if not exists catalog_aliases_normalized_idx on public.catalog_alia
 
 alter table public.products add column if not exists catalog_product_id uuid references public.catalog_products(id) on delete set null;
 alter table public.products add column if not exists catalog_variant_id uuid references public.catalog_product_variants(id) on delete set null;
+
+comment on column public.products.catalog_product_id is
+  'Optional canonical real-world product referenced by this user listing; null means the listing is not yet matched.';
+comment on column public.products.catalog_variant_id is
+  'Optional canonical variant referenced by this user listing; null means no variant was confirmed.';
 
 create index if not exists products_catalog_product_id_idx on public.products(catalog_product_id);
 create index if not exists products_catalog_variant_id_idx on public.products(catalog_variant_id);
@@ -200,9 +201,8 @@ from (values
   ('fitness', 'recovery', 'Recovery', 20),
   ('accessories', 'bags', 'Bags', 10),
   ('accessories', 'eyewear', 'Eyewear', 20)
-) as item(category_slug, parent_slug, slug, name, sort_order)
+) as item(category_slug, slug, name, sort_order)
 join public.catalog_categories category on category.slug = item.category_slug
-where item.parent_slug is null
 on conflict do nothing;
 
 insert into public.catalog_subcategories (category_id, parent_subcategory_id, slug, name, sort_order)
