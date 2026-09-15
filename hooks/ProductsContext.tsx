@@ -557,6 +557,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         category: input.category,
         image_url: input.image_url ?? null,
         user_id: input.user_id ?? null,
+        catalog_product_id: input.catalog_product_id ?? null,
+        catalog_variant_id: input.catalog_variant_id ?? null,
       })
       .select()
       .single();
