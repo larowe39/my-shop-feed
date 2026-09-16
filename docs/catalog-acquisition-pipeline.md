@@ -81,18 +81,85 @@ both capabilities.
 
 Open Icecat uses the documented product lookup API at
 `https://live.icecat.biz/api` with `shopname`, `lang`, and `productcode` query
-parameters and HTTP Basic credentials. Set `ICECAT_USERNAME`,
-`ICECAT_PASSWORD`, and optionally `ICECAT_SHOPNAME`, `ICECAT_API_URL`, and
-`ICECAT_PRODUCT_CODES` in `.env.local`. Product codes or GTINs must be supplied
-explicitly; the adapter refuses an unbounded crawl. `--limit` is capped at 100
-and `--pages` bounds the requested code batches. Requests have a timeout and
-individual failures are reported without discarding successful records.
+parameters. Set `ICECAT_API_TOKEN` in `.env.local` to authenticate with the
+`Api-Token` request header. API-token authentication takes precedence when both
+token and Basic credentials are configured. `ICECAT_USERNAME` and
+`ICECAT_PASSWORD` remain supported as a Basic-auth fallback. Optional settings
+include `ICECAT_SHOPNAME`, `ICECAT_API_URL`, and `ICECAT_PRODUCT_CODES`. Product
+codes or GTINs must be supplied explicitly; the adapter refuses an unbounded
+crawl. `--limit` is capped at 100 and `--pages` bounds the requested code
+batches. Requests have a timeout and individual failures are reported without
+discarding successful records. Credentials are never included in source
+metadata, checkpoints, or CLI output.
 
-Open Icecat currently advertises `lookup: true, discovery: false`. Therefore
-`--limit 10` means at most 10 supplied Icecat identifiers; it does **not** mean
-discover 10 arbitrary Icecat products. Requesting `--discover` fails clearly
-instead of being reinterpreted as lookup. Icecat discovery must not be added
-until an official and authorized bulk mechanism is confirmed.
+Open Icecat advertises `lookup: true, discovery: true`. Discovery reads the
+documented `files.index.xml.gz` or `daily.index.xml.gz` index through a
+backpressure-aware HTTP/gzip stream and a SAX parser. Each bounded page enters
+the existing acquisition pipeline before the next page is requested; the CLI
+does not retain the complete discovery result. `--limit` is enforced per
+usable, enriched record, so a limit smaller than the page size produces a
+partial final page.
+
+The verified index shape is `ICECAT-interface > files.index > file`. Each
+`file` contributes Product_ID, Prod_ID, Model_Name, Supplier_id, Catid,
+Updated, On_Market, path, HighPic, Date_Added, nested EAN_UPC values, country
+markets, and alternate M_Prod_ID values to raw provenance. Supplier_id is not a
+brand name, and nested M_Prod_ID Supplier_name values are alternate supplier
+context rather than canonical brand identity. Discovery therefore performs a
+bounded product-XML fetch using each candidate's path and accepts the record
+only when that detail document supplies the brand/manufacturer required by the
+acquisition model. Failed enrichments are reported and discovery continues up
+to a conservative bounded attempt limit while seeking the requested number of
+usable records.
+
+Verified product sheets use Product ID, Prod_id, GeneratedIntTitle, Title,
+IntName, and Name attributes. Product ID becomes the Icecat external identity;
+Prod_id becomes the detail MPN/model identifier. Product naming uses the first
+non-empty value in this order: GeneratedIntTitle, Title, IntName, Name. Empty
+localized fields never override these values. Brand identity comes only from
+explicit descendant Supplier Name attributes, never title text or numeric
+Supplier IDs. Repeated identical supplier names are deduplicated; conflicting
+distinct names reject the enrichment. BrandProductCode Identifier values and
+the supplier ID/name remain raw provenance and never become aliases.
+
+The detail Product ID must equal the index Product_ID, and a present detail
+Prod_id must equal a present index Prod_ID. Conflicts produce non-retriable
+structured provider errors rather than silently replacing index identity.
+
+Category, country market, on-market, and Updated-since filters run against the
+index before enrichment. Brand filtering runs after bounded detail enrichment;
+it is not inferred from Supplier_id or M_Prod_ID Supplier_name.
+
+Transport decoding follows the response bytes rather than provider-wide
+assumptions. The `.gz` index remains a streaming resource and is passed through
+streaming gunzip only when its first bytes contain the gzip signature. Bounded
+individual product paths normally return plain `application/xml`; those bytes
+are decoded directly. A bounded response is gunzipped only when its payload
+actually starts with gzip magic bytes, preventing double decompression when a
+fetch implementation has already decoded an HTTP gzip response but retains its
+Content-Encoding header.
+
+Bulk discovery uses separate streaming timeout semantics: a 30-second request
+timeout covers only establishment through response headers, then is cleared.
+A 120-second inactivity timeout resets for every decompressed chunk and detects
+a genuinely stalled body without imposing a wall-clock deadline on the full
+index. Timeouts are reported as retriable provider request errors. Individual
+product lookup retains its independent per-request timeout.
+
+Discovery checkpoints retain the source URL, mode, ETag, Last-Modified value,
+content metadata, last source identity and Updated value, processed count, and
+checkpoint version. Resume is a **STREAMING RE-SCAN FROM BEGINNING**, not
+random-access seeking: records are streamed again and skipped until they sort
+after the saved cursor. A changed ETag or Last-Modified value fails the run
+rather than silently continuing against a different snapshot.
+
+The synthetic streaming tests verify bounded read-ahead, early cancellation,
+first-page delivery before source completion, malformed-record reporting, and
+truncated-XML failure. The Open Icecat full index endpoint has been verified to
+accept `Api-Token` authentication, return gzip content with ETag and
+Last-Modified headers, and use the files.index/file XML shape described above.
+Its full-run ordering, sustained streaming behavior, and server-side
+cancellation remain live-unverified pending a bounded authenticated dry run.
 
 Run a fixture-only dry run with an intentionally empty local canonical catalog:
 

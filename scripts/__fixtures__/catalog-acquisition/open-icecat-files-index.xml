@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ICECAT-interface xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://data.icecat.biz/xsd/files.index.xsd">
+  <files.index Generated="20260916062001">
+    <file path="export/freexml/INT/1001.xml" Limited="No" HighPic="https://images.icecat.biz/img/gallery/1001.jpg" HighPicSize="2973358" HighPicWidth="4200" HighPicHeight="2772" Product_ID="1001" Updated="20260916060101" Quality="ICECAT" Prod_ID="WH1000XM5/B" Supplier_id="42" Catid="123" On_Market="1" Model_Name="WH-1000XM5" Product_View="849615" Date_Added="20051027000000">
+      <M_Prod_ID>WH1000XM5/B</M_Prod_ID>
+      <M_Prod_ID Supplier_id="37985" Supplier_name="HPI SOURCING">ALT-1001</M_Prod_ID>
+      <EAN_UPCS>
+        <EAN_UPC Value="4548736131133" IsApproved="1" Format="GTIN-13" />
+      </EAN_UPCS>
+      <Country_Markets>
+        <Country_Market Value="US" />
+        <Country_Market Value="GB" />
+      </Country_Markets>
+    </file>
+    <file path="export/freexml/INT/1002.xml" Limited="No" HighPic="https://images.icecat.biz/img/gallery/1002.jpg" Product_ID="1002" Updated="20260916060202" Quality="ICECAT" Prod_ID="EA-DS1" Supplier_id="42" Catid="456" On_Market="0" Model_Name="Desk Speaker" Date_Added="20200102030405">
+      <M_Prod_ID>EA-DS1</M_Prod_ID>
+      <EAN_UPCS>
+        <EAN_UPC Value="1234567890123" IsApproved="1" Format="GTIN-13" />
+      </EAN_UPCS>
+      <Country_Markets>
+        <Country_Market Value="DE" />
+      </Country_Markets>
+    </file>
+    <file path="export/freexml/INT/1003.xml" Limited="No" Product_ID="1003" Updated="20260916060303" Quality="ICECAT" Prod_ID="XLR-100" Supplier_id="99" Catid="999" On_Market="1" Model_Name="XLR Controller" Date_Added="20210102030405">
+      <M_Prod_ID>XLR-100</M_Prod_ID>
+      <EAN_UPCS />
+      <Country_Markets>
+        <Country_Market Value="US" />
+      </Country_Markets>
+    </file>
+  </files.index>
+</ICECAT-interface>
