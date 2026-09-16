@@ -1,0 +1,44 @@
+[
+  {
+    "sourceExternalId": "json-sony-1",
+    "brand": "Sony",
+    "productName": "Sony WH-1000XM5",
+    "modelNumber": "WH-1000XM5",
+    "family": "Wireless Headphones",
+    "category": "Electronics",
+    "subcategory": "Audio",
+    "aliases": ["WH1000XM5", "Sony XM5"],
+    "sourceUrl": "https://example.com/sony-wh1000xm5",
+    "raw": { "sku": "WH1000XM5" }
+  },
+  {
+    "sourceExternalId": "json-jbl-1",
+    "brand": "JBL",
+    "productName": "JBL Boombox 3",
+    "modelNumber": "Boombox 3",
+    "family": "Portable Speakers",
+    "category": "Electronics",
+    "subcategory": "Audio",
+    "aliases": ["Boom Box 3", "JBL BoomBox3"],
+    "sourceUrl": "https://example.com/jbl-boombox-3",
+    "raw": { "model": "Boombox 3" }
+  },
+  {
+    "sourceExternalId": "json-gopro-1",
+    "brand": "GoPro",
+    "productName": "GoPro HERO13",
+    "modelNumber": "HERO13",
+    "family": "Action Cameras",
+    "category": "Electronics",
+    "subcategory": "Imaging",
+    "aliases": ["HERO 13"],
+    "sourceUrl": "https://example.com/gopro-hero13",
+    "raw": { "model": "HERO13" }
+  },
+  {
+    "sourceExternalId": "json-bad-1",
+    "brand": "",
+    "productName": "",
+    "raw": { "notes": "missing required fields" }
+  }
+]

@@ -1,0 +1,5 @@
+sourceExternalId,brand,productName,modelNumber,family,category,subcategory,aliases,sourceUrl
+csv-jbl-1,JBL,JBL Boombox 3,Boombox 3,Portable Speakers,Electronics,Audio,"Boom Box 3; JBL BoomBox3",https://example.com/jbl-boombox-3
+csv-sony-1,Sony,Sony WH-1000XM5,WH-1000XM5,Wireless Headphones,Electronics,Audio,"WH1000XM5; Sony XM5",https://example.com/sony-wh1000xm5
+csv-gopro-1,GoPro,GoPro HERO13,HERO13,Action Cameras,Electronics,Imaging,"HERO 13",https://example.com/gopro-hero13
+csv-bad-1,, , , , , , ,

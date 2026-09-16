@@ -1,0 +1,14 @@
+[
+  {
+    "sourceExternalId": "penchant-promotion-smoke-test-002",
+    "brand": "JBL",
+    "productName": "JBL PENCHANT Aurora Field Speaker",
+    "modelNumber": "AURORA-FIELD-X7",
+    "family": "Portable Speaker",
+    "category": "Electronics",
+    "subcategory": "Portable Speakers",
+    "aliases": ["PENCHANT Aurora X7"],
+    "sourceUrl": "https://example.com/penchant-promotion-smoke-test-002",
+    "raw": { "notes": "Synthetic PENCHANT catalog pipeline promotion smoke-test fixture (002). Not a real product. Safe to promote/delete." }
+  }
+]
