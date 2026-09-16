@@ -98,6 +98,25 @@ async function main() {
   ]);
   assert.strictEqual(duplicateClassification, "EXACT_EXISTING");
 
+  // Regression: findCatalogMatches() always returns a fully-scored candidate
+  // for every canonical product (never pre-filtered), so classifyCandidate
+  // must not treat ANY non-empty result as POSSIBLE_EXISTING evidence -- a
+  // genuinely new, unrelated-brand candidate against a large real canonical
+  // catalog must classify NEW, not POSSIBLE_EXISTING off a near-zero-confidence
+  // "conflicting brand" hit.
+  const unrelatedBrandCandidate = {
+    brand: "JBL",
+    productName: "JBL PENCHANT Catalog Pipeline Test Model 001",
+    modelNumber: "PENCHANT-TEST-001",
+    sourceExternalId: "penchant-regression-1",
+    raw: {},
+  };
+  assert.strictEqual(
+    classifyCandidate(unrelatedBrandCandidate, [{ brand: "8BitDo", productName: "Pro 2 Controller", modelNumber: null }]),
+    "NEW",
+    "a genuinely new candidate must not be flagged POSSIBLE_EXISTING off an unrelated low-confidence match"
+  );
+
   const newCandidate = {
     brand: "GoPro",
     productName: "GoPro HERO13",

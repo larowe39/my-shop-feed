@@ -10,7 +10,7 @@
 // lib/catalogMatching.ts (Matcher V2) is imported read-only and never modified
 // by this file.
 import { createHash } from "node:crypto";
-import { findCatalogMatches } from "./catalogMatching.ts";
+import { CATALOG_CONFIDENCE_THRESHOLDS, findCatalogMatches } from "./catalogMatching.ts";
 import type {
   CandidateClassification,
   CanonicalCatalogEntry,
@@ -257,7 +257,12 @@ export function classifyCandidate(
 
   const candidateInput = { title: productName, brand };
   const matches = findCatalogMatches(candidateInput, canonicalMatchCandidates(canonicalCatalog));
-  const best = matches[0];
+  // findCatalogMatches always returns a fully-scored candidate for every
+  // canonical product (never pre-filtered), so treating any non-empty result
+  // as evidence would flag unrelated products (e.g. a 0.2-confidence
+  // "conflicting brand" hit) as POSSIBLE_EXISTING. Only Matcher V2's own
+  // "possible" confidence threshold counts as real similarity evidence.
+  const best = matches.find((match) => match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.possible);
   if (best) return "POSSIBLE_EXISTING";
 
   return "NEW";
