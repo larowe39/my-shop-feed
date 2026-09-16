@@ -341,10 +341,43 @@ it with `catalog:staging:status` and `catalog:staging:list` before reviewing.
 
 ## Schema extension
 
-The deployed PR #21 migration is unchanged. The new
+The deployed PR #21 migration is unchanged. The deployed
 `20260916_extend_catalog_staging_observability.sql` migration adds the
 import-run link, image URL, UPC, GTIN, and MPN fields, plus an import-run index.
 It reuses the existing four staging tables and creates no redundant tables.
+
+## External taxonomy mappings
+
+Provider adapters emit a generic external taxonomy identity containing provider,
+external ID, name, path, and optional parent identity. Open Icecat keeps
+`Catid` as the external ID; it is never treated as a PENCHANT UUID or taxonomy
+ID. Detail category names and paths are retained only when the provider actually
+supplies them.
+
+The new additive migration
+`20260917_add_catalog_taxonomy_mappings.sql` creates the operator-only
+`catalog_taxonomy_mappings` registry. It supports `unmapped`,
+`suggested`, `verified`, and `rejected` states. Only `verified` mappings with
+an existing canonical category/subcategory are trusted for automatic reuse.
+Mapping method and evidence are retained. Suggested or rejected mappings never
+resolve a candidate's canonical hierarchy.
+
+```sh
+npm run catalog:taxonomy:list -- --source open-icecat --status verified
+npm run catalog:taxonomy:list -- --unmapped --limit 25
+npm run catalog:taxonomy:show -- --source open-icecat --external-id 846
+npm run catalog:taxonomy:map -- --source open-icecat --external-id 846 \
+  --subcategory-id CANONICAL_SUBCATEGORY_ID --status verified
+npm run catalog:taxonomy:map -- --source open-icecat --external-id 846 \
+  --subcategory-id CANONICAL_SUBCATEGORY_ID --status verified --apply
+```
+
+Mapping commands are dry-run by default, validate the existing canonical
+subcategory/category relationship, and never create taxonomy rows. A verified
+mapping is reused dynamically during future acquisition and resolves staged
+category/subcategory fields without approving or promoting candidates. Existing
+staged rows are not backfilled or mutated by mapping creation; they are handled
+by a later acquisition or explicit operator workflow.
 
 ## Idempotency and fingerprints
 

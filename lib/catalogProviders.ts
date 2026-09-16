@@ -4,7 +4,7 @@ import { StringDecoder } from "node:string_decoder";
 import { createGunzip, gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
 import { SaxesParser } from "saxes";
-import type { CatalogCandidateInput } from "./catalogStagingTypes.ts";
+import type { CatalogCandidateInput, ExternalTaxonomyIdentity } from "./catalogStagingTypes.ts";
 
 export type ProviderFetchOptions = {
   limit?: number;
@@ -416,11 +416,22 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
       typeof (rawRecord as IcecatIndexRecord).imageUrl === "string" ? (rawRecord as IcecatIndexRecord).imageUrl : null
     ),
     sourceType: "open-icecat",
+    externalTaxonomy: externalCategory.id || externalCategory.name
+      ? {
+          provider: "open-icecat",
+          externalId: externalCategory.id ?? externalCategory.name!,
+          name: externalCategory.name,
+          path: externalCategory.path,
+        } satisfies ExternalTaxonomyIdentity
+      : null,
     raw: {
       provider: "open-icecat",
       providerProductId: productId,
       sourceCategory,
       externalCategory,
+      externalTaxonomy: externalCategory.id || externalCategory.name
+        ? { provider: "open-icecat", externalId: externalCategory.id ?? externalCategory.name!, name: externalCategory.name, path: externalCategory.path }
+        : null,
       taxonomyMapping: taxonomy,
       record: (rawRecord as Record<string, unknown>).record ?? rawRecord,
       sourceType: "open-icecat",

@@ -238,7 +238,6 @@ export class LocalStagingStore implements StagingStore {
     this.write(ledger);
     return results;
   }
-
   async listStagedCandidates(): Promise<StagedCatalogCandidate[]> {
     return this.read().stagedProducts;
   }
@@ -309,6 +308,7 @@ function rowToCandidate(row: Record<string, unknown>, aliases: string[] = []): S
     upc: (row.upc as string) ?? null,
     gtin: (row.gtin as string) ?? null,
     mpn: (row.mpn as string) ?? null,
+    externalTaxonomy: ((row.raw_payload as Record<string, unknown> | null)?.externalTaxonomy as StagedCatalogCandidate["externalTaxonomy"]) ?? null,
     rawPayload: (row.raw_payload as Record<string, unknown>) ?? {},
     normalizedBrand: (row.normalized_brand as string) ?? undefined,
     normalizedName: (row.normalized_name as string) ?? undefined,

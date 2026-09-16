@@ -50,6 +50,8 @@ async function main() {
     store = resolveStagingStore({ backend: options.backend || undefined });
   }
   const metadata = provider.getSourceMetadata();
+  const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
+  const taxonomyStore = resolveTaxonomyMappingStore({ backend: options.backend || undefined });
 
   let records = [];
   let providerErrors = [];
@@ -102,6 +104,7 @@ async function main() {
         apply: options.apply,
         adapter: "open-icecat",
         sourcePath: options.source,
+        taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
       }, store);
       persistedRunId = pageRun.runId || persistedRunId;
       for (const key of Object.keys(summary)) summary[key] += pageRun.summary[key];
@@ -136,6 +139,7 @@ async function main() {
       apply: options.apply,
       adapter: "open-icecat",
       sourcePath: options.source,
+      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
     }, store);
   }
   if (!run.summary.qualityMetrics) {

@@ -36,6 +36,8 @@ async function main() {
   // dedup logic is (the exact bug found in the PR #21 production smoke test).
   const { resolveCanonicalCatalogEntries } = await import("../lib/catalogCanonicalLookup.ts");
   const canonicalCatalog = await resolveCanonicalCatalogEntries({ backend: args.backend ?? undefined });
+  const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
+  const taxonomyStore = resolveTaxonomyMappingStore({ backend: args.backend ?? undefined });
   console.log(`CANONICAL CATALOG: ${canonicalCatalog.length} product(s) loaded for classification.`);
 
   let store;
@@ -49,7 +51,7 @@ async function main() {
     records,
     canonicalCatalog,
     { name: path.basename(sourcePath), type: args.adapter },
-    { apply: args.apply, adapter: args.adapter, sourcePath },
+    { apply: args.apply, adapter: args.adapter, sourcePath, taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity) },
     store
   );
 

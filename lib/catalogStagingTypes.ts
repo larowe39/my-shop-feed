@@ -52,7 +52,17 @@ export type CatalogCandidateInput = {
   gtin?: string | null;
   mpn?: string | null;
   sourceSku?: string | null;
+  externalTaxonomy?: ExternalTaxonomyIdentity | null;
   raw: Record<string, unknown>;
+};
+
+export type ExternalTaxonomyIdentity = {
+  provider: string;
+  externalId: string;
+  name?: string | null;
+  path?: string | null;
+  parentId?: string | null;
+  parentPath?: string | null;
 };
 
 export type CanonicalCatalogEntry = {
@@ -90,6 +100,7 @@ export type StagedCatalogCandidate = {
   gtin?: string | null;
   mpn?: string | null;
   sourceSku?: string | null;
+  externalTaxonomy?: ExternalTaxonomyIdentity | null;
   rawPayload: Record<string, unknown>;
   normalizedBrand?: string;
   normalizedName?: string;

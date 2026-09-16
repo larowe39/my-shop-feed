@@ -21,6 +21,8 @@ import type {
 import type { CreateImportRunInput, StagingStore } from "./stagingStore.ts";
 import type { AcquisitionQualityMetrics, AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
 import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
+import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
+import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
 
 export type {
   CandidateClassification,
@@ -45,6 +47,8 @@ export type AcquisitionRunResult = {
   summary: AcquisitionSummary;
   persistence: string[];
 };
+
+export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
 
 function rate(numerator: number, denominator: number): number {
   return denominator > 0 ? Number((numerator / denominator).toFixed(4)) : 0;
@@ -429,7 +433,7 @@ export async function acquireFromRecords(
   records: Partial<CatalogCandidateInput>[],
   canonicalCatalog: CanonicalCatalogEntry[] = [],
   sourceInfo: Partial<SourceRegistryEntry> = {},
-  options: { apply?: boolean; adapter?: string; sourcePath?: string | null } = {},
+  options: { apply?: boolean; adapter?: string; sourcePath?: string | null; taxonomyResolver?: TaxonomyMappingResolver } = {},
   store?: StagingStore
 ): Promise<AcquisitionRunResult> {
   const apply = options.apply ?? false;
@@ -451,20 +455,46 @@ export async function acquireFromRecords(
   };
   const candidates: StagedCatalogCandidate[] = [];
   const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
+  const resolvedRecordsForMetrics: Partial<CatalogCandidateInput>[] = [];
 
   const sourceType = sourceInfo.type ?? "manual import";
   for (let index = 0; index < records.length; index += 1) {
     const rawRecord = records[index] ?? {};
-    const validation = validateCatalogCandidate(rawRecord as CatalogCandidateInput);
+    let resolvedRecord = rawRecord;
+    if (rawRecord.externalTaxonomy && options.taxonomyResolver) {
+      const mapping = await options.taxonomyResolver(rawRecord.externalTaxonomy);
+      const trustedMapping = mappingIsTrusted(mapping) ? mapping : null;
+      if (trustedMapping) {
+        resolvedRecord = {
+          ...rawRecord,
+          category: trustedMapping.canonicalCategoryName ?? rawRecord.category,
+          subcategory: trustedMapping.canonicalSubcategoryName ?? rawRecord.subcategory,
+          raw: {
+            ...(rawRecord.raw ?? {}),
+            taxonomyMapping: {
+              id: trustedMapping.id,
+              provider: trustedMapping.provider,
+              externalTaxonomyId: trustedMapping.externalTaxonomyId,
+              status: trustedMapping.status,
+              method: trustedMapping.method,
+              canonicalCategoryId: trustedMapping.canonicalCategoryId,
+              canonicalSubcategoryId: trustedMapping.canonicalSubcategoryId,
+            },
+          },
+        };
+      }
+    }
+    const validation = validateCatalogCandidate(resolvedRecord as CatalogCandidateInput);
     if (!validation.valid) {
       summary.invalid += 1;
       summary.errors += 1;
-      invalidRecords.push({ candidate: rawRecord, errors: validation.errors, classification: "INVALID" });
+      invalidRecords.push({ candidate: resolvedRecord, errors: validation.errors, classification: "INVALID" });
       continue;
     }
 
     summary.valid += 1;
-    const classification = classifyCandidate(rawRecord as CatalogCandidateInput, canonicalCatalog);
+    resolvedRecordsForMetrics.push(resolvedRecord);
+    const classification = classifyCandidate(resolvedRecord as CatalogCandidateInput, canonicalCatalog);
 
     if (classification === "EXACT_EXISTING") {
       summary.exactExisting += 1;
@@ -475,41 +505,42 @@ export async function acquireFromRecords(
     else if (classification === "NEW") summary.new += 1;
     else if (classification === "CONFLICT") summary.conflict += 1;
 
-    const readiness = assessCandidateReadiness(rawRecord, classification);
+    const readiness = assessCandidateReadiness(resolvedRecord, classification);
     const status: ReviewStatus = readiness.reviewRequired ? "needs_review" : "pending";
     const fingerprint = sourceFingerprint({
-      sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
-      sourceExternalId: rawRecord.sourceExternalId ?? null,
-      brand: rawRecord.brand,
-      productName: rawRecord.productName,
-      modelNumber: rawRecord.modelNumber,
-      family: rawRecord.family,
-      category: rawRecord.category,
-      sourceUrl: rawRecord.sourceUrl ?? null,
+      sourceId: sourceInfo.id ?? resolvedRecord.sourceId ?? null,
+      sourceExternalId: resolvedRecord.sourceExternalId ?? null,
+      brand: resolvedRecord.brand,
+      productName: resolvedRecord.productName,
+      modelNumber: resolvedRecord.modelNumber,
+      family: resolvedRecord.family,
+      category: resolvedRecord.category,
+      sourceUrl: resolvedRecord.sourceUrl ?? null,
     });
 
     candidates.push({
       id: makeId("candidate"),
-      sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
-      sourceExternalId: rawRecord.sourceExternalId ?? null,
+      sourceId: sourceInfo.id ?? resolvedRecord.sourceId ?? null,
+      sourceExternalId: resolvedRecord.sourceExternalId ?? null,
       fingerprint,
       status,
       classification,
-      brand: rawRecord.brand ?? "",
-      productName: rawRecord.productName ?? "",
-      modelNumber: rawRecord.modelNumber ?? null,
-      family: rawRecord.family ?? null,
-      category: rawRecord.category ?? null,
-      subcategory: rawRecord.subcategory ?? null,
-      aliases: [...new Set(normalizeAliasList(rawRecord.aliases ?? []))],
-      sourceUrl: rawRecord.sourceUrl ?? null,
-      imageUrl: rawRecord.imageUrl ?? null,
-      sourceType: rawRecord.sourceType ?? sourceType,
-      upc: rawRecord.upc ?? null,
-      gtin: rawRecord.gtin ?? null,
-      mpn: rawRecord.mpn ?? null,
-      sourceSku: rawRecord.sourceSku ?? null,
-      rawPayload: rawRecord.raw ?? {},
+      brand: resolvedRecord.brand ?? "",
+      productName: resolvedRecord.productName ?? "",
+      modelNumber: resolvedRecord.modelNumber ?? null,
+      family: resolvedRecord.family ?? null,
+      category: resolvedRecord.category ?? null,
+      subcategory: resolvedRecord.subcategory ?? null,
+      aliases: [...new Set(normalizeAliasList(resolvedRecord.aliases ?? []))],
+      sourceUrl: resolvedRecord.sourceUrl ?? null,
+      imageUrl: resolvedRecord.imageUrl ?? null,
+      sourceType: resolvedRecord.sourceType ?? sourceType,
+      upc: resolvedRecord.upc ?? null,
+      gtin: resolvedRecord.gtin ?? null,
+      mpn: resolvedRecord.mpn ?? null,
+      sourceSku: resolvedRecord.sourceSku ?? null,
+      externalTaxonomy: resolvedRecord.externalTaxonomy ?? null,
+      rawPayload: resolvedRecord.raw ?? {},
       normalizedBrand: validation.normalized.brand,
       normalizedName: validation.normalized.productName,
       normalizedModel: validation.normalized.modelNumber || undefined,
@@ -522,7 +553,7 @@ export async function acquireFromRecords(
     summary.staged += 1;
   }
 
-  summary.qualityMetrics = calculateAcquisitionQualityMetrics(records, summary);
+  summary.qualityMetrics = calculateAcquisitionQualityMetrics(resolvedRecordsForMetrics, summary);
 
   const persistenceMessages: string[] = [];
   let source: SourceRegistryEntry | undefined;
