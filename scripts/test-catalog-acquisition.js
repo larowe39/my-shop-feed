@@ -29,6 +29,8 @@ async function main() {
     candidateReviewView,
     formatApprovalPreview,
     reviewCandidatesSequentially,
+    buildCatalogRunReport,
+    rankTaxonomyGaps,
   } = acquisition;
 
   const stagingStoreModule = await import("../lib/stagingStore.ts");
@@ -632,7 +634,65 @@ async function main() {
   assert.strictEqual(normalizedAliasSet.size, rpcCallArgs.p_aliases.length, "duplicate normalized aliases must be collapsed before promotion");
 
   // ---------------------------------------------------------------------
-  // 10. Fail-closed: Supabase backend with missing credentials never falls
+  // 10. Run-scoped reporting must remain isolated to the selected import run.
+  // ---------------------------------------------------------------------
+  const reportLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-report.test.json");
+  const reportStore = new LocalStagingStore(reportLedgerPath);
+  reportStore.reset();
+
+  const runA = await acquireFromRecords(
+    [
+      { sourceExternalId: "run-a-1", brand: "HP", productName: "LaserJet Pro", modelNumber: "MFP 123", imageUrl: "https://example.test/hp.jpg", gtin: "1234567890123", sourceUrl: "https://example.test/a", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" } } },
+      { sourceExternalId: "run-a-2", brand: "Sony", productName: "WH-1000XM5", modelNumber: "WH1000XM5", gtin: "9998887776665", imageUrl: "https://example.test/sony.jpg", raw: { provider: "open-icecat" } },
+      { sourceExternalId: "run-a-3", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "88", name: "Speakers" } } },
+      { sourceExternalId: "run-a-4", brand: "", productName: "bad", raw: { provider: "open-icecat" } },
+    ],
+    [{ brand: "Sony", productName: "Sony WH-1000XM5", modelNumber: "WH1000XM5" }],
+    { name: "scale-run-a", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    reportStore
+  );
+
+  const runB = await acquireFromRecords(
+    [
+      { sourceExternalId: "run-b-1", brand: "Dell", productName: "XPS 13", modelNumber: "XPS13", imageUrl: "https://example.test/dell.jpg", raw: { provider: "open-icecat" } },
+      { sourceExternalId: "run-b-2", brand: "Bose", productName: "QuietComfort Ultra", modelNumber: "QC Ultra", raw: { provider: "open-icecat" } },
+    ],
+    [],
+    { name: "scale-run-b", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    reportStore
+  );
+
+  const aReport = buildCatalogRunReport(runA.runId, await reportStore.listImportRuns(), await reportStore.listStagedCandidates());
+  const bReport = buildCatalogRunReport(runB.runId, await reportStore.listImportRuns(), await reportStore.listStagedCandidates());
+  assert.strictEqual(aReport.metrics.processed, 4);
+  assert.strictEqual(aReport.metrics.valid, 3, "requested/fetched/enriched semantics: valid count must reflect only valid records");
+  assert.strictEqual(aReport.metrics.invalid, 1);
+  assert.strictEqual(aReport.metrics.imageCoverage, 0.6667, "image coverage must reflect the run-scoped valid candidate set");
+  assert.strictEqual(aReport.metrics.gtinCoverage, 0.6667, "GTIN coverage must be calculated on valid records only");
+  assert.strictEqual(aReport.metrics.modelCoverage, 1);
+  assert.strictEqual(aReport.metrics.providerErrors, 0);
+  assert.strictEqual(aReport.metrics.unresolvedTaxonomy, 2, "every valid candidate with provider taxonomy but no trusted mapping and no canonical hierarchy is unresolved in the run");
+  assert.ok(aReport.sample.length <= 3, "samples must remain bounded");
+  assert.strictEqual(bReport.metrics.processed, 2);
+  assert.ok(bReport.metrics.imageCoverage >= 0.5);
+  assert.strictEqual(aReport.currentRunId, runA.runId);
+  assert.strictEqual(bReport.currentRunId, runB.runId);
+  assert.notStrictEqual(aReport.currentRunId, bReport.currentRunId);
+  assert.ok(!aReport.candidates.some((entry) => entry.sourceExternalId === "run-b-1"), "old run rows must not contaminate a new run report");
+
+  const taxonomyGaps = rankTaxonomyGaps(runA.runId, await reportStore.listStagedCandidates(), [
+    { provider: "open-icecat", externalId: "846", name: "Printers", path: "Electronics > Printers", status: "suggested", canonicalCategoryId: null, canonicalSubcategoryId: null },
+    { provider: "open-icecat", externalId: "88", name: "Speakers", path: "Electronics > Speakers", status: "verified", canonicalCategoryId: "cat-electronics", canonicalSubcategoryId: "sub-speakers" },
+  ]);
+  assert.strictEqual(taxonomyGaps[0].externalId, "846");
+  assert.strictEqual(taxonomyGaps[0].candidateCount, 1);
+  assert.strictEqual(taxonomyGaps[0].verifiedMapping, false);
+  assert.strictEqual(taxonomyGaps[0].name, "Printers");
+
+  // ---------------------------------------------------------------------
+  // 11. Fail-closed: Supabase backend with missing credentials never falls
   //     back to the local ledger.
   // ---------------------------------------------------------------------
   assert.throws(() => resolveStagingStore({ backend: "supabase" }), StagingBackendError);
@@ -644,8 +704,8 @@ async function main() {
   const explicitLocal = resolveStagingStore({ backend: "local" });
   assert.strictEqual(explicitLocal.kind, "local");
 
-  localStore.reset();
-  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath]) {
+  reportStore.reset();
+  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
   console.log("Catalog acquisition tests passed.");
