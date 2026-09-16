@@ -63,6 +63,20 @@ must never write canonical tables. `OpenIcecatProvider` is the first adapter.
 This keeps future GS1, manufacturer, retailer, or supplier adapters independent
 of classification and staging.
 
+Providers advertise capabilities explicitly:
+
+- **Lookup/enrichment:** known GTIN, EAN, UPC, MPN, or product code -> provider
+  lookup -> normalization -> the existing PENCHANT acquisition pipeline.
+- **Discovery/enumeration:** external catalog, feed, or API -> bounded pages or
+  cursors -> normalization -> the same acquisition pipeline.
+
+Discovery is optional. Its generic contract is an async iterable of bounded
+pages containing records, errors, `nextCursor`, completion state, and an
+optional checkpoint. A future caller can process each page immediately through
+`acquireFromRecords` and persist its cursor, so a provider need not hold
+100,000-plus records in memory. Providers supporting both operations advertise
+both capabilities.
+
 ### Open Icecat
 
 Open Icecat uses the documented product lookup API at
@@ -73,6 +87,12 @@ parameters and HTTP Basic credentials. Set `ICECAT_USERNAME`,
 explicitly; the adapter refuses an unbounded crawl. `--limit` is capped at 100
 and `--pages` bounds the requested code batches. Requests have a timeout and
 individual failures are reported without discarding successful records.
+
+Open Icecat currently advertises `lookup: true, discovery: false`. Therefore
+`--limit 10` means at most 10 supplied Icecat identifiers; it does **not** mean
+discover 10 arbitrary Icecat products. Requesting `--discover` fails clearly
+instead of being reinterpreted as lookup. Icecat discovery must not be added
+until an official and authorized bulk mechanism is confirmed.
 
 Run a fixture-only dry run with an intentionally empty local canonical catalog:
 

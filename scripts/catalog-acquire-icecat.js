@@ -10,6 +10,7 @@ function args() {
   const raw = process.argv.slice(2);
   return {
     apply: raw.includes("--apply"),
+    discover: raw.includes("--discover"),
     source: getFlagValue(raw, "--source"),
     backend: getFlagValue(raw, "--backend") || process.env.CATALOG_STAGING_BACKEND || null,
     limit: Number(getFlagValue(raw, "--limit") || 10),
@@ -24,6 +25,10 @@ async function main() {
   const options = args();
   const { OpenIcecatProvider, parseIcecatProductsXml } = await import("../lib/catalogProviders.ts");
   const provider = new OpenIcecatProvider();
+  if (options.discover) {
+    const { assertProviderSupports } = await import("../lib/catalogProviders.ts");
+    assertProviderSupports(provider, "discovery");
+  }
   let records = [];
   let providerErrors = [];
   let fetched = 0;

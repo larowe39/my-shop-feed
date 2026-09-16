@@ -5,9 +5,11 @@ const path = require("path");
 
 async function main() {
   const provider = await import("../lib/catalogProviders.ts");
-  const { OpenIcecatProvider, parseIcecatXml, normalizeIcecatProduct, mapIcecatCategory } = provider;
+  const acquisition = await import("../lib/catalogAcquisition.ts");
+  const { OpenIcecatProvider, parseIcecatXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages } = provider;
   const fixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-products.xml"), "utf8");
   const first = normalizeIcecatProduct(parseIcecatXml(fixture));
+  assert.deepStrictEqual(new OpenIcecatProvider({ username: "u", password: "p" }).capabilities, { lookup: true, discovery: false });
 
   assert.strictEqual(first.sourceExternalId, "icecat-1001");
   assert.strictEqual(first.brand, "Sony");
@@ -54,6 +56,32 @@ async function main() {
   assert.strictEqual(partial.errors.length, 2);
   await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
+  assert.throws(() => assertProviderSupports(new OpenIcecatProvider(), "discovery"), /does not support discovery/);
+
+  const discoveredRecord = { sourceExternalId: "discovered-1", brand: "Brand", productName: "Discovered Product", raw: { source: "mock-discovery" } };
+  const discoveryProvider = {
+    capabilities: { lookup: false, discovery: true },
+    normalizeProduct: (raw) => raw,
+    getSourceMetadata: () => ({ name: "Mock Catalog", type: "external-provider", baseUrl: "https://example.test", metadata: {} }),
+    async *discoverProducts(options) {
+      assert.strictEqual(options.limit, 2);
+      yield { records: [discoveredRecord], nextCursor: "cursor-2", done: false, errors: [], checkpoint: { cursor: "cursor-2" } };
+      yield { records: [{ ...discoveredRecord, sourceExternalId: "discovered-2" }], nextCursor: null, done: true, errors: [] };
+    },
+  };
+  assertProviderSupports(discoveryProvider, "discovery");
+  const discoveryPages = [];
+  await processDiscoveredPages(discoveryProvider, { limit: 2, pageSize: 1 }, async (page) => {
+    discoveryPages.push(page);
+    const pageRun = await acquisition.acquireFromRecords(page.records.map((record) => discoveryProvider.normalizeProduct(record)), [], {}, { apply: false });
+    assert.strictEqual(pageRun.persistence.length, 0);
+  });
+  assert.strictEqual(discoveryPages.length, 2);
+  assert.strictEqual(discoveryPages[0].checkpoint.cursor, "cursor-2");
+
+  const bothProvider = { ...discoveryProvider, capabilities: { lookup: true, discovery: true }, lookupProducts: async () => ({ records: [], errors: [], fetched: 0, pages: 0 }) };
+  assertProviderSupports(bothProvider, "lookup");
+  assertProviderSupports(bothProvider, "discovery");
 
   console.log("Catalog provider fixture tests passed.");
 }

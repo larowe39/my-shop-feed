@@ -11,6 +11,27 @@ export type ProviderFetchOptions = {
   gtins?: string[];
 };
 
+export type ProviderCapabilities = {
+  lookup: boolean;
+  discovery: boolean;
+};
+
+export type ProviderDiscoveryOptions = {
+  limit?: number;
+  pageSize?: number;
+  cursor?: string | null;
+  checkpoint?: Record<string, unknown>;
+  signal?: AbortSignal;
+};
+
+export type ProviderDiscoveryPage<TRaw> = {
+  records: TRaw[];
+  nextCursor: string | null;
+  done: boolean;
+  errors: ProviderFetchError[];
+  checkpoint?: Record<string, unknown>;
+};
+
 export type ProviderFetchError = {
   message: string;
   sourceExternalId?: string;
@@ -25,9 +46,30 @@ export type ProviderFetchResult<TRaw> = {
 };
 
 export interface CatalogProvider<TRaw = unknown> {
-  fetchProducts(options?: ProviderFetchOptions): Promise<ProviderFetchResult<TRaw>>;
+  readonly capabilities: ProviderCapabilities;
+  lookupProducts(options?: ProviderFetchOptions): Promise<ProviderFetchResult<TRaw>>;
+  discoverProducts?(options?: ProviderDiscoveryOptions): AsyncIterable<ProviderDiscoveryPage<TRaw>>;
   normalizeProduct(rawRecord: TRaw): CatalogCandidateInput;
   getSourceMetadata(): { name: string; type: string; baseUrl: string; metadata: Record<string, unknown> };
+}
+
+export function assertProviderSupports(provider: CatalogProvider, operation: keyof ProviderCapabilities): void {
+  if (!provider.capabilities[operation]) {
+    const label = operation === "discovery" ? "discovery" : "lookup/enrichment";
+    throw new Error(`${provider.getSourceMetadata().name} does not support ${label} with the configured adapter. Supply product identifiers for lookup/enrichment.`);
+  }
+  if (operation === "discovery" && typeof provider.discoverProducts !== "function") {
+    throw new Error(`${provider.getSourceMetadata().name} advertises no usable discovery operation.`);
+  }
+}
+
+export async function processDiscoveredPages<TRaw>(
+  provider: CatalogProvider<TRaw>,
+  options: ProviderDiscoveryOptions,
+  processPage: (page: ProviderDiscoveryPage<TRaw>) => Promise<void>
+): Promise<void> {
+  assertProviderSupports(provider, "discovery");
+  for await (const page of provider.discoverProducts!(options)) await processPage(page);
 }
 
 type IcecatProduct = Record<string, unknown>;
@@ -73,13 +115,6 @@ function first(...values: unknown[]): string | null {
 function categoryName(product: IcecatProduct): string | null {
   const category = product.Category ?? product.category;
   return first(attr(category, "Name", "name"), text(category));
-}
-
-function getProductNode(parsed: Record<string, unknown>): IcecatProduct {
-  const root = (parsed["ICECAT-interface"] ?? parsed["icecat-interface"] ?? parsed) as Record<string, unknown>;
-  const product = root.Product ?? root.product ?? root.products;
-  if (Array.isArray(product)) return (product[0] ?? {}) as IcecatProduct;
-  return (product ?? root) as IcecatProduct;
 }
 
 export function parseIcecatXml(xml: string): IcecatProduct {
@@ -164,6 +199,7 @@ export type OpenIcecatProviderOptions = {
 };
 
 export class OpenIcecatProvider implements CatalogProvider<IcecatProduct> {
+  readonly capabilities: ProviderCapabilities = { lookup: true, discovery: false };
   private readonly config: Required<Pick<OpenIcecatProviderOptions, "baseUrl" | "shopName" | "fetcher">> & OpenIcecatProviderOptions;
 
   constructor(options: OpenIcecatProviderOptions = {}) {
@@ -188,7 +224,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct> {
     return normalizeIcecatProduct(rawRecord, this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
   }
 
-  async fetchProducts(options: ProviderFetchOptions = {}): Promise<ProviderFetchResult<IcecatProduct>> {
+  async lookupProducts(options: ProviderFetchOptions = {}): Promise<ProviderFetchResult<IcecatProduct>> {
     const lookups = [
       ...(options.productCodes ?? []).filter(Boolean).map((code) => ({ code, parameter: "productcode" as const })),
       ...(options.gtins ?? []).filter(Boolean).map((code) => ({ code, parameter: "ean_upc" as const })),
@@ -220,5 +256,9 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct> {
       if (lastError) errors.push({ sourceExternalId: lookup.code, message: lastError instanceof Error ? lastError.message : String(lastError), retriable: true });
     }
     return { records, errors, fetched: selected.length, pages };
+  }
+
+  async fetchProducts(options: ProviderFetchOptions = {}): Promise<ProviderFetchResult<IcecatProduct>> {
+    return this.lookupProducts(options);
   }
 }
