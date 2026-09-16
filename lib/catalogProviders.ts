@@ -1,5 +1,8 @@
-import { gunzipSync } from "node:zlib";
+import { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
+import { createGunzip, gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
+import { SaxesParser } from "saxes";
 import type { CatalogCandidateInput } from "./catalogStagingTypes.ts";
 
 export type ProviderFetchOptions = {
@@ -31,6 +34,10 @@ export type ProviderDiscoveryOptions = {
   onMarket?: boolean | string | number | null;
   country?: string;
   updatedSince?: string | null;
+  diagnostics?: {
+    onRecordSeen?: () => void;
+    onRecordQualified?: () => void;
+  };
 };
 
 export type ProviderDiscoveryPage<TRaw> = {
@@ -362,6 +369,57 @@ function decodeDiscoveryCursor(cursor: string | null | undefined): { productId: 
   return { productId: productId || null, updated: updated || null };
 }
 
+async function* streamIcecatIndex(url: string, headers: Headers, source: Readable): AsyncGenerator<Buffer> {
+  const contentEncoding = headers.get("content-encoding")?.toLowerCase() ?? "";
+  const shouldGunzip = contentEncoding.includes("gzip") || /\.gz(?:\?|$)/i.test(url);
+  const normalizeChunk = (chunk: unknown): Buffer => {
+    if (Buffer.isBuffer(chunk)) return chunk;
+    if (chunk instanceof ArrayBuffer) return Buffer.from(chunk);
+    if (ArrayBuffer.isView(chunk)) return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    return Buffer.from(String(chunk ?? ""));
+  };
+
+  const sourceIterator = source[Symbol.asyncIterator]();
+  const first = await sourceIterator.next();
+  if (first.done) return;
+  const firstChunk = normalizeChunk(first.value);
+  const isGzipPayload = firstChunk.length >= 2 && firstChunk[0] === 0x1f && firstChunk[1] === 0x8b;
+
+  const replaySource = async function* () {
+    yield firstChunk;
+    for (;;) {
+      const next = await sourceIterator.next();
+      if (next.done) return;
+      yield normalizeChunk(next.value);
+    }
+  };
+
+  if (shouldGunzip && isGzipPayload) {
+    const compressedStream = Readable.from(replaySource());
+    const gunzip = createGunzip();
+    compressedStream.pipe(gunzip);
+    try {
+      for await (const chunk of gunzip) yield normalizeChunk(chunk);
+    } finally {
+      gunzip.destroy();
+      compressedStream.destroy();
+      await sourceIterator.return?.();
+    }
+    return;
+  }
+
+  try {
+    yield firstChunk;
+    for (;;) {
+      const next = await sourceIterator.next();
+      if (next.done) return;
+      yield normalizeChunk(next.value);
+    }
+  } finally {
+    await sourceIterator.return?.();
+  }
+}
+
 function matchesDiscoveryFilter(record: IcecatIndexRecord, filters: ProviderDiscoveryOptions): boolean {
   if (filters.brand) {
     const wanted = filters.brand.trim().toLowerCase();
@@ -427,66 +485,235 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     if (!this.config.username || !this.config.password) {
       throw new Error("Open Icecat credentials are required for discovery. Set ICECAT_USERNAME, ICECAT_PASSWORD, and optionally ICECAT_INDEX_URL.");
     }
+
     const mode = (options.mode ?? "initial").toString().toLowerCase() === "daily" ? "daily" : "initial";
     const pageSize = Math.max(1, Math.min(options.pageSize ?? 25, 5000));
     const limit = Math.max(0, Math.min(options.limit ?? 100, 100000));
-    const cursor = decodeDiscoveryCursor(options.cursor ?? (options.checkpoint && typeof options.checkpoint.cursor === "string" ? options.checkpoint.cursor : null));
+    const checkpoint = options.checkpoint ?? {};
     const url = buildIndexUrl(this.config.indexBaseUrl, mode);
     const headers = {
       Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}`,
       Accept: "application/xml, application/gzip, */*",
     };
 
-    const xml = await fetchWithTimeout(this.config.fetcher, url, headers, 30000);
-    const records = parseIcecatIndexXml(xml)
-      .filter((record) => matchesDiscoveryFilter(record, options))
-      .filter((record) => {
-        if (!cursor.productId) return true;
-        const productId = String(record.sourceExternalId ?? "");
-        const recordUpdated = record.updated ?? "";
-        if (productId === cursor.productId) {
-          if (!cursor.updated || !recordUpdated) return false;
-          return recordUpdated > cursor.updated;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    const resumeCursor = decodeDiscoveryCursor(options.cursor ?? (typeof checkpoint.cursor === "string" ? checkpoint.cursor : null));
+    const resumeEnabled = Boolean(resumeCursor.productId || resumeCursor.updated);
+    let cleanup: (() => void) | undefined;
+
+    try {
+      const response = await this.config.fetcher(url, { headers, signal: controller.signal });
+      if (!response.ok) throw new Error(`Icecat HTTP ${response.status} ${response.statusText}`);
+
+      const checkpointUrl = typeof checkpoint.sourceUrl === "string" ? checkpoint.sourceUrl : null;
+      const checkpointMode = typeof checkpoint.mode === "string" ? checkpoint.mode : null;
+      const checkpointVersion = typeof checkpoint.checkpointVersion === "string" ? checkpoint.checkpointVersion : null;
+      const currentMeta = {
+        sourceUrl: url,
+        mode,
+        checkpointVersion: "icecat-index-v1",
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+        contentLength: response.headers.get("content-length"),
+        contentEncoding: response.headers.get("content-encoding"),
+      };
+
+      if (checkpointUrl && checkpointUrl !== url) throw new Error("Icecat discovery checkpoint is for a different source URL and cannot be resumed safely.");
+      if (checkpointMode && checkpointMode !== mode) throw new Error("Icecat discovery checkpoint mode does not match the requested discovery mode.");
+      if (checkpointVersion && checkpointVersion !== currentMeta.checkpointVersion) throw new Error("Icecat discovery checkpoint version is incompatible with the current index format.");
+      if (checkpoint.etag && currentMeta.etag && checkpoint.etag !== currentMeta.etag) throw new Error("Icecat discovery checkpoint ETag does not match the current source snapshot.");
+      if (checkpoint.lastModified && currentMeta.lastModified && checkpoint.lastModified !== currentMeta.lastModified) throw new Error("Icecat discovery checkpoint Last-Modified does not match the current source snapshot.");
+
+      const bodyStream = Readable.fromWeb(response.body as any);
+      const decompressedStream = streamIcecatIndex(url, response.headers, bodyStream);
+      const parser = new SaxesParser();
+      const decoder = new StringDecoder("utf8");
+      let currentRecord: Record<string, string> | null = null;
+      let page: IcecatIndexRecord[] = [];
+      let pageErrors: ProviderFetchError[] = [];
+      let readyPages: ProviderDiscoveryPage<IcecatIndexRecord>[] = [];
+      let emittedCount = 0;
+      let qualifyingCount = 0;
+      let processedCount = 0;
+      let lastSourceIdentity: string | null = null;
+      let lastUpdatedValue: string | null = null;
+      let limitReached = false;
+      let resumeSatisfied = !resumeEnabled;
+
+      const flushPage = () => {
+        if (!page.length && !pageErrors.length) return null;
+        const currentPage = page.slice();
+        const currentErrors = pageErrors.slice();
+        const lastRecord = currentPage[currentPage.length - 1];
+        const nextCursor = lastRecord ? encodeDiscoveryCursor(lastRecord) : null;
+        page = [];
+        pageErrors = [];
+        emittedCount += currentPage.length;
+        const nextPage: ProviderDiscoveryPage<IcecatIndexRecord> = {
+          records: currentPage,
+          nextCursor,
+          done: limit > 0 && emittedCount >= limit,
+          errors: currentErrors,
+          checkpoint: {
+            checkpointVersion: currentMeta.checkpointVersion,
+            sourceUrl: url,
+            mode,
+            etag: currentMeta.etag,
+            lastModified: currentMeta.lastModified,
+            contentLength: currentMeta.contentLength,
+            contentEncoding: currentMeta.contentEncoding,
+            lastProcessedIdentity: lastSourceIdentity,
+            lastProcessedUpdated: lastUpdatedValue,
+            processedCount,
+            cursor: nextCursor,
+          },
+        };
+        readyPages.push(nextPage);
+        if (nextPage.done) limitReached = true;
+        return nextPage;
+      };
+
+      cleanup = () => {
+        void decompressedStream.return(undefined);
+        if (!bodyStream.destroyed) bodyStream.destroy();
+      };
+
+      parser.on("opentag", (node) => {
+        if (limitReached) return;
+        if (node.name === "Product") {
+          currentRecord = { ...(node.attributes as Record<string, unknown> as Record<string, string>) };
         }
-        return Number(productId) > Number(cursor.productId) || String(productId) > String(cursor.productId);
-      })
-      .sort((left, right) => {
-        const leftUpdated = left.updated ?? "";
-        const rightUpdated = right.updated ?? "";
-        const byUpdated = leftUpdated.localeCompare(rightUpdated);
-        if (byUpdated !== 0) return byUpdated;
-        return String(left.sourceExternalId).localeCompare(String(right.sourceExternalId));
       });
 
-    let page: IcecatIndexRecord[] = [];
-    let emitted = 0;
-    for (const record of records) {
-      if (limit > 0 && emitted >= limit) break;
-      page.push(record);
-      emitted += 1;
-      if (page.length >= pageSize) {
-        const lastRecord = page[page.length - 1];
-        const nextCursor = encodeDiscoveryCursor(lastRecord);
-        yield {
-          records: page,
-          nextCursor,
-          done: limit > 0 && emitted >= limit,
-          errors: [],
-          checkpoint: { cursor: nextCursor, mode, totalEmitted: emitted },
+      parser.on("closetag", (node) => {
+        if (limitReached) return;
+        if (node.name !== "Product" || !currentRecord) return;
+
+        processedCount += 1;
+        options.diagnostics?.onRecordSeen?.();
+        const productId = first(currentRecord.Product_ID, currentRecord.ProductId, currentRecord.id);
+        const productBrand = first(currentRecord.Brand, currentRecord.Manufacturer, currentRecord.Supplier_Name, currentRecord.Supplier);
+        const productName = first(currentRecord.Model_Name, currentRecord.Name, currentRecord.ProductName, currentRecord.Prod_ID);
+        if (!productId || !productBrand || !productName) {
+          pageErrors.push({
+            sourceExternalId: productId ?? undefined,
+            message: "Icecat index record is missing Product_ID, brand/manufacturer, or product name",
+            retriable: false,
+          });
+          currentRecord = null;
+          if (page.length + pageErrors.length >= pageSize) flushPage();
+          return;
+        }
+        const updated = first(currentRecord.Updated, currentRecord.updated) ?? null;
+        const onMarket = normalizeIcecatBoolean(first(currentRecord.On_Market, currentRecord.onMarket) ?? "0");
+        const category = first(currentRecord.Catid, currentRecord.category, currentRecord.CategoryId) ?? null;
+        const country = first(currentRecord.Country, currentRecord.country) ?? null;
+        const gtin = first(currentRecord.EAN_UPC, currentRecord.EAN, currentRecord.UPC, currentRecord.GTIN) ?? null;
+        const mpn = first(currentRecord.Prod_ID, currentRecord.ProductCode, currentRecord.MPN) ?? null;
+        const modelNumber = first(currentRecord.Model_Name, currentRecord.ModelName, currentRecord.Model, mpn) ?? null;
+        const record: IcecatIndexRecord = {
+          sourceExternalId: String(productId),
+          brand: String(productBrand),
+          productName: String(productName),
+          modelNumber: modelNumber ? String(modelNumber) : null,
+          mpn: mpn ? String(mpn) : null,
+          gtin: gtin ? String(gtin) : null,
+          sourceUrl: null,
+          category: category ? String(category) : null,
+          subcategory: null,
+          onMarket,
+          country: country ? String(country) : null,
+          updated: updated ? String(updated) : null,
+          raw: {
+            provider: "open-icecat",
+            providerProductId: productId,
+            record: currentRecord,
+            sourceType: "open-icecat-index",
+            categoryId: category,
+            onMarket,
+            country,
+            updated,
+          },
         };
-        page = [];
-      }
-    }
-    if (page.length) {
-      const lastRecord = page[page.length - 1];
-      const nextCursor = encodeDiscoveryCursor(lastRecord);
-      yield {
-        records: page,
-        nextCursor: limit > 0 && emitted >= limit ? null : nextCursor,
-        done: true,
-        errors: [],
-        checkpoint: { cursor: limit > 0 && emitted >= limit ? null : nextCursor, mode, totalEmitted: emitted },
+
+        if (resumeEnabled) {
+          const cursorProductId = resumeCursor.productId ?? "";
+          const cursorUpdated = resumeCursor.updated ?? "";
+          const recordProductId = String(record.sourceExternalId ?? "");
+          const recordUpdated = record.updated ?? "";
+          const recordIsAfterCursor =
+            recordProductId === cursorProductId
+              ? Boolean(cursorUpdated && recordUpdated && recordUpdated > cursorUpdated)
+              : Number(recordProductId) > Number(cursorProductId) || String(recordProductId) > String(cursorProductId);
+          if (!recordIsAfterCursor) {
+            currentRecord = null;
+            return;
+          }
+          resumeSatisfied = true;
+        }
+
+        if (!matchesDiscoveryFilter(record, options)) {
+          currentRecord = null;
+          return;
+        }
+
+        qualifyingCount += 1;
+        options.diagnostics?.onRecordQualified?.();
+        lastSourceIdentity = record.sourceExternalId;
+        lastUpdatedValue = record.updated ?? lastUpdatedValue;
+        page.push(record);
+
+        if (page.length + pageErrors.length >= pageSize || (limit > 0 && qualifyingCount >= limit)) {
+          flushPage();
+        }
+
+        currentRecord = null;
+      });
+
+      parser.on("error", (error) => {
+        if (limitReached) return;
+        throw error;
+      });
+
+      const feedParser = async function* (textChunk: string): AsyncGenerator<ProviderDiscoveryPage<IcecatIndexRecord>> {
+        const maxParserFeedChars = 1024;
+        for (let offset = 0; offset < textChunk.length && !limitReached; offset += maxParserFeedChars) {
+          parser.write(textChunk.slice(offset, offset + maxParserFeedChars));
+          while (readyPages.length) {
+            yield readyPages.shift()!;
+          }
+        }
       };
+
+      for await (const chunk of decompressedStream) {
+        for await (const readyPage of feedParser(decoder.write(chunk))) {
+          yield readyPage;
+          if (readyPage.done) {
+            cleanup();
+            return;
+          }
+        }
+      }
+
+      if (!limitReached) {
+        for await (const readyPage of feedParser(decoder.end())) yield readyPage;
+        parser.close();
+        flushPage();
+      }
+
+      while (readyPages.length) {
+        const pageToYield = readyPages.shift()!;
+        yield pageToYield;
+        if (pageToYield.done) {
+          limitReached = true;
+          cleanup();
+          return;
+        }
+      }
+    } finally {
+      cleanup?.();
+      clearTimeout(timeout);
     }
   }
 

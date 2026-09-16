@@ -30,16 +30,27 @@ function args() {
 
 async function main() {
   const options = args();
-  const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
+  const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports, processDiscoveredPages } = await import("../lib/catalogProviders.ts");
+  const { acquireFromRecords, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
   const provider = new OpenIcecatProvider({ username: process.env.ICECAT_USERNAME, password: process.env.ICECAT_PASSWORD, indexBaseUrl: process.env.ICECAT_INDEX_URL || undefined });
   if (options.discover) {
     assertProviderSupports(provider, "discovery");
   }
 
+  const { resolveCanonicalCatalogEntries } = await import("../lib/catalogCanonicalLookup.ts");
+  const canonicalCatalog = await resolveCanonicalCatalogEntries({ backend: options.backend || undefined });
+  let store;
+  if (options.apply) {
+    const { resolveStagingStore } = await import("../lib/stagingStore.ts");
+    store = resolveStagingStore({ backend: options.backend || undefined });
+  }
+  const metadata = provider.getSourceMetadata();
+
   let records = [];
   let providerErrors = [];
   let fetched = 0;
   let pages = 0;
+  let run;
 
   if (options.discover) {
     const discoveryOptions = {
@@ -52,20 +63,41 @@ async function main() {
       onMarket: options.onMarket === null ? undefined : options.onMarket,
       updatedSince: options.updatedSince || undefined,
     };
-    const discoveryPages = [];
-    for await (const page of provider.discoverProducts(discoveryOptions)) {
-      discoveryPages.push(page);
+    const summary = {
+      processed: 0,
+      valid: 0,
+      invalid: 0,
+      exactExisting: 0,
+      likelyExisting: 0,
+      possibleExisting: 0,
+      new: 0,
+      conflict: 0,
+      staged: 0,
+      errors: 0,
+    };
+    const persistence = new Set();
+
+    await processDiscoveredPages(provider, discoveryOptions, async (page) => {
       fetched += page.records.length;
       pages += 1;
+      providerErrors.push(...page.errors);
+      const pageRecords = [];
       for (const record of page.records) {
         try {
-          records.push(provider.normalizeProduct(record));
+          pageRecords.push(provider.normalizeProduct(record));
         } catch (error) {
           providerErrors.push({ message: error instanceof Error ? error.message : String(error), sourceExternalId: record.sourceExternalId });
         }
       }
-      if (limitReached(discoveryPages, options.limit)) break;
-    }
+      const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, metadata, {
+        apply: options.apply,
+        adapter: "open-icecat",
+        sourcePath: options.source,
+      }, store);
+      for (const key of Object.keys(summary)) summary[key] += pageRun.summary[key];
+      for (const entry of pageRun.persistence) persistence.add(entry);
+    });
+    run = { summary, persistence: [...persistence] };
   } else if (options.source) {
     const sourcePath = path.resolve(options.source);
     const xml = fs.readFileSync(sourcePath, "utf8");
@@ -88,20 +120,13 @@ async function main() {
     }
   }
 
-  const { resolveCanonicalCatalogEntries } = await import("../lib/catalogCanonicalLookup.ts");
-  const canonicalCatalog = await resolveCanonicalCatalogEntries({ backend: options.backend || undefined });
-  const { acquireFromRecords, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
-  let store;
-  if (options.apply) {
-    const { resolveStagingStore } = await import("../lib/stagingStore.ts");
-    store = resolveStagingStore({ backend: options.backend || undefined });
+  if (!run) {
+    run = await acquireFromRecords(records, canonicalCatalog, metadata, {
+      apply: options.apply,
+      adapter: "open-icecat",
+      sourcePath: options.source,
+    }, store);
   }
-  const metadata = provider.getSourceMetadata();
-  const run = await acquireFromRecords(records, canonicalCatalog, metadata, {
-    apply: options.apply,
-    adapter: "open-icecat",
-    sourcePath: options.source,
-  }, store);
   console.log(`PROVIDER: open-icecat`);
   console.log(`MODE: ${options.discover ? options.mode : "lookup"}`);
   console.log(`RECORDS FETCHED: ${fetched}`);
@@ -110,12 +135,6 @@ async function main() {
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
   console.log(options.apply ? "APPLY -- staging data written; no approval or promotion performed." : "DRY RUN -- ZERO Supabase staging/canonical writes");
-}
-
-function limitReached(discoveryPages, limit) {
-  if (limit <= 0) return false;
-  const total = discoveryPages.reduce((sum, page) => sum + page.records.length, 0);
-  return total >= limit;
 }
 
 main().catch((error) => {

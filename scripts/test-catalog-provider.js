@@ -11,9 +11,9 @@ async function main() {
   const indexFixture = `<?xml version="1.0" encoding="UTF-8"?>
 <ICECAT-interface>
   <file generated="2026-01-01T00:00:00Z">
-    <Product Product_ID="1001" Supplier_id="42" Prod_ID="WH1000XM5/B" Model_Name="WH-1000XM5" On_Market="1" Updated="2026-01-01T00:00:00Z" Catid="123" Quality="1" Country="US" EAN_UPC="4548736131133" />
-    <Product Product_ID="1002" Supplier_id="42" Prod_ID="EA-DS1" Model_Name="Desk Speaker" On_Market="0" Updated="2026-01-02T00:00:00Z" Catid="456" Quality="3" Country="DE" EAN_UPC="1234567890123" />
-    <Product Product_ID="1003" Supplier_id="99" Prod_ID="XLR-100" Model_Name="XLR Controller" On_Market="1" Updated="2026-01-03T00:00:00Z" Catid="999" Quality="2" Country="US" EAN_UPC="" />
+    <Product Product_ID="1001" Brand="Example Audio" Supplier_id="42" Prod_ID="WH1000XM5/B" Model_Name="WH-1000XM5" On_Market="1" Updated="2026-01-01T00:00:00Z" Catid="123" Quality="1" Country="US" EAN_UPC="4548736131133" />
+    <Product Product_ID="1002" Brand="Example Audio" Supplier_id="42" Prod_ID="EA-DS1" Model_Name="Desk Speaker" On_Market="0" Updated="2026-01-02T00:00:00Z" Catid="456" Quality="3" Country="DE" EAN_UPC="1234567890123" />
+    <Product Product_ID="1003" Brand="Example Audio" Supplier_id="99" Prod_ID="XLR-100" Model_Name="XLR Controller" On_Market="1" Updated="2026-01-03T00:00:00Z" Catid="999" Quality="2" Country="US" EAN_UPC="" />
   </file>
 </ICECAT-interface>`;
   const first = normalizeIcecatProduct(parseIcecatXml(fixture));
@@ -85,7 +85,16 @@ async function main() {
   assert.strictEqual(dailyDiscoveryPages.length, 2);
   assert.strictEqual(dailyDiscoveryPages[0].records[0].sourceExternalId, "1002");
   assert.strictEqual(dailyDiscoveryPages[1].records[0].sourceExternalId, "1003");
-  assert.strictEqual(dailyDiscoveryPages[0].records[0].brand, "Open Icecat");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].brand, "Example Audio");
+
+  await testLargeStreamingDiscovery(OpenIcecatProvider);
+  await testTruncatedXmlFailure(OpenIcecatProvider);
+  await testMalformedDiscoveryRecord(OpenIcecatProvider);
+
+  const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
+  assert.match(icecatCliSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "discovery CLI must process one page at a time");
+  assert.doesNotMatch(icecatCliSource, /const discoveryPages = \[\]/, "discovery CLI must not retain every page");
+  assert.match(icecatCliSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the existing acquisition pipeline immediately");
 
   assert.doesNotThrow(() => assertProviderSupports(new OpenIcecatProvider({ username: "u", password: "p" }), "discovery"));
 
@@ -115,6 +124,120 @@ async function main() {
   assertProviderSupports(bothProvider, "discovery");
 
   console.log("Catalog provider fixture tests passed.");
+}
+
+async function testTruncatedXmlFailure(OpenIcecatProvider) {
+  const provider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async () => new Response('<ICECAT-interface><file><Product Product_ID="1" Brand="Brand" Model_Name="Model" />'),
+  });
+  await assert.rejects(async () => {
+    for await (const page of provider.discoverProducts({ limit: 20, pageSize: 10 })) void page;
+  }, /unclosed tag|unexpected end|closed root|documents may contain only one root/i, "natural truncated XML must fail");
+  console.log("testTruncatedXmlFailure passed.");
+}
+
+async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
+  const provider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async () => new Response('<ICECAT-interface><file><Product Product_ID="bad" Model_Name="Missing brand"/><Product Product_ID="good" Brand="Brand" Model_Name="Good"/></file></ICECAT-interface>'),
+  });
+  const pages = [];
+  for await (const page of provider.discoverProducts({ limit: 1, pageSize: 25 })) pages.push(page);
+  assert.strictEqual(pages.flatMap((page) => page.records).length, 1);
+  assert.strictEqual(pages.flatMap((page) => page.errors).length, 1);
+  assert.match(pages[0].errors[0].message, /missing Product_ID, brand\/manufacturer, or product name/);
+  console.log("testMalformedDiscoveryRecord passed.");
+}
+
+async function testLargeStreamingDiscovery(OpenIcecatProvider) {
+  const TOTAL_AVAILABLE = 100000;
+  const counters = {
+    sourceRecordsGenerated: 0,
+    parserRecordsSeen: 0,
+    qualifyingRecords: 0,
+    recordsEmitted: 0,
+    pagesEmitted: 0,
+    sourceCompletedNaturally: false,
+    sourceCancelledEarly: false,
+  };
+  const encoder = new TextEncoder();
+  let phase = "header";
+
+  const source = new ReadableStream({
+    pull(controller) {
+      if (phase === "header") {
+        phase = "records";
+        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        return;
+      }
+      if (counters.sourceRecordsGenerated < TOTAL_AVAILABLE) {
+        counters.sourceRecordsGenerated += 1;
+        const id = counters.sourceRecordsGenerated;
+        controller.enqueue(encoder.encode(`<Product Product_ID="${id}" Brand="Synthetic" Model_Name="Model ${id}" Updated="2026-01-01T00:00:00Z"/>`));
+        return;
+      }
+      counters.sourceCompletedNaturally = true;
+      phase = "done";
+      controller.enqueue(encoder.encode("</file></ICECAT-interface>"));
+      controller.close();
+    },
+    cancel() {
+      if (!counters.sourceCompletedNaturally) counters.sourceCancelledEarly = true;
+    },
+  });
+
+  const provider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(source) });
+  let generatedWhenFirstPageArrived = null;
+  let generatedAfterSlowConsumer = null;
+  let generatedAfterSecondWait = null;
+  for await (const page of provider.discoverProducts({
+    limit: 10,
+    pageSize: 25,
+    diagnostics: {
+      onRecordSeen: () => { counters.parserRecordsSeen += 1; },
+      onRecordQualified: () => { counters.qualifyingRecords += 1; },
+    },
+  })) {
+    counters.pagesEmitted += 1;
+    counters.recordsEmitted += page.records.length;
+    if (counters.pagesEmitted === 1) {
+      generatedWhenFirstPageArrived = counters.sourceRecordsGenerated;
+      assert.strictEqual(counters.sourceCompletedNaturally, false, "page 1 must arrive before source completion");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      generatedAfterSlowConsumer = counters.sourceRecordsGenerated;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      generatedAfterSecondWait = counters.sourceRecordsGenerated;
+      assert.strictEqual(generatedAfterSecondWait, generatedAfterSlowConsumer, "source generation must stop once native stream buffers fill");
+      assert.ok(generatedAfterSlowConsumer < 1000, "slow-consumer read-ahead must remain bounded");
+    }
+  }
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(counters.recordsEmitted, 10);
+  assert.strictEqual(counters.pagesEmitted, 1);
+  assert.ok(counters.sourceRecordsGenerated < 1000, "the 100,000-record source must stop generating early");
+  assert.strictEqual(counters.sourceCompletedNaturally, false);
+  assert.strictEqual(counters.sourceCancelledEarly, true);
+  assert.strictEqual(counters.qualifyingRecords, 10);
+  assert.ok(counters.parserRecordsSeen >= 10 && counters.parserRecordsSeen < 20);
+
+  console.log("testLargeStreamingDiscovery, testFirstPageBeforeSourceEnd, testSlowConsumerBackpressure, and testIntentionalLimitTermination passed.");
+  console.log("Large streaming discovery counters:", JSON.stringify({
+    TOTAL_AVAILABLE,
+    SOURCE_RECORDS_GENERATED: counters.sourceRecordsGenerated,
+    PARSER_RECORDS_SEEN: counters.parserRecordsSeen,
+    QUALIFYING_RECORDS: counters.qualifyingRecords,
+    RECORDS_EMITTED: counters.recordsEmitted,
+    PAGES_EMITTED: counters.pagesEmitted,
+    SOURCE_COMPLETED_NATURALLY: counters.sourceCompletedNaturally,
+    SOURCE_CANCELLED_EARLY: counters.sourceCancelledEarly,
+    GENERATED_WHEN_FIRST_PAGE_ARRIVED: generatedWhenFirstPageArrived,
+    GENERATED_AFTER_SLOW_CONSUMER: generatedAfterSlowConsumer,
+    GENERATED_AFTER_SECOND_WAIT: generatedAfterSecondWait,
+  }));
 }
 
 main().catch((error) => {

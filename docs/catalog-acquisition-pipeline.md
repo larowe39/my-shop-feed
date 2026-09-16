@@ -88,11 +88,26 @@ explicitly; the adapter refuses an unbounded crawl. `--limit` is capped at 100
 and `--pages` bounds the requested code batches. Requests have a timeout and
 individual failures are reported without discarding successful records.
 
-Open Icecat currently advertises `lookup: true, discovery: false`. Therefore
-`--limit 10` means at most 10 supplied Icecat identifiers; it does **not** mean
-discover 10 arbitrary Icecat products. Requesting `--discover` fails clearly
-instead of being reinterpreted as lookup. Icecat discovery must not be added
-until an official and authorized bulk mechanism is confirmed.
+Open Icecat advertises `lookup: true, discovery: true`. Discovery reads the
+documented `files.index.xml.gz` or `daily.index.xml.gz` index through a
+backpressure-aware HTTP/gzip stream and a SAX parser. Each bounded page enters
+the existing acquisition pipeline before the next page is requested; the CLI
+does not retain the complete discovery result. `--limit` is enforced per
+qualifying record, so a limit smaller than the page size produces a partial
+final page.
+
+Discovery checkpoints retain the source URL, mode, ETag, Last-Modified value,
+content metadata, last source identity and Updated value, processed count, and
+checkpoint version. Resume is a **STREAMING RE-SCAN FROM BEGINNING**, not
+random-access seeking: records are streamed again and skipped until they sort
+after the saved cursor. A changed ETag or Last-Modified value fails the run
+rather than silently continuing against a different snapshot.
+
+The synthetic streaming tests verify bounded read-ahead, early cancellation,
+first-page delivery before source completion, malformed-record reporting, and
+truncated-XML failure. The real authenticated Icecat index shape, response
+headers, gzip behavior, ordering, and server-side cancellation remain live
+unverified until credentials are available.
 
 Run a fixture-only dry run with an intentionally empty local canonical catalog:
 
