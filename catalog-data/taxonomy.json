@@ -31,6 +31,35 @@
           ]
         },
         {
+          "slug": "printers-and-scanners",
+          "name": "Printers & Scanners",
+          "sortOrder": 35,
+          "subcategories": [
+            {
+              "slug": "printing-supplies",
+              "name": "Printing Supplies",
+              "sortOrder": 1,
+              "subcategories": [
+                { "slug": "ink-cartridges", "name": "Ink Cartridges", "sortOrder": 1 },
+                { "slug": "print-heads", "name": "Print Heads", "sortOrder": 2 },
+                { "slug": "printer-ribbons", "name": "Printer Ribbons", "sortOrder": 3 }
+              ]
+            },
+            {
+              "slug": "printing-media",
+              "name": "Printing Media",
+              "sortOrder": 2,
+              "subcategories": [
+                { "slug": "large-format-media", "name": "Large Format Media", "sortOrder": 1 },
+                { "slug": "printing-paper", "name": "Printing Paper", "sortOrder": 2 },
+                { "slug": "printing-films", "name": "Printing Films", "sortOrder": 3 },
+                { "slug": "printable-textiles", "name": "Printable Textiles", "sortOrder": 4 },
+                { "slug": "plotter-paper", "name": "Plotter Paper", "sortOrder": 5 }
+              ]
+            }
+          ]
+        },
+        {
           "slug": "cameras",
           "name": "Cameras",
           "sortOrder": 40,

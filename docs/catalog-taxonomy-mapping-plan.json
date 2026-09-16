@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "provider": "open-icecat",
+  "mappings": [
+    {
+      "provider": "open-icecat",
+      "externalId": "151",
+      "externalName": "Laptops",
+      "canonicalPath": "Electronics > Computers > Laptops",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Computers > Laptops",
+      "status": "verified"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "971",
+      "externalName": "Large Format Media",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Media > Large Format Media",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Media > Large Format Media",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "846",
+      "externalName": "Print Heads",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Supplies > Print Heads",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Supplies > Print Heads",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "853",
+      "externalName": "Printing Films",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Media > Printing Films",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Media > Printing Films",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "377",
+      "externalName": "Ink Cartridges",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Supplies > Ink Cartridges",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Supplies > Ink Cartridges",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "714",
+      "externalName": "Printing Paper",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Media > Printing Paper",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Media > Printing Paper",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "845",
+      "externalName": "Printable Textiles",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Media > Printable Textiles",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Media > Printable Textiles",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "702",
+      "externalName": "Plotter Paper",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Media > Plotter Paper",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Media > Plotter Paper",
+      "status": "reviewed"
+    },
+    {
+      "provider": "open-icecat",
+      "externalId": "905",
+      "externalName": "Printer Ribbons",
+      "canonicalPath": "Electronics > Printers & Scanners > Printing Supplies > Printer Ribbons",
+      "canonicalCategory": "Electronics",
+      "canonicalSubcategory": "Printers & Scanners > Printing Supplies > Printer Ribbons",
+      "status": "reviewed"
+    }
+  ],
+  "unresolved": [
+    {
+      "provider": "open-icecat",
+      "externalId": "847",
+      "externalName": "Photo Paper",
+      "reason": "review-required"
+    }
+  ]
+}
