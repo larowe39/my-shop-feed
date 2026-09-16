@@ -55,18 +55,71 @@ async function main() {
   const coverageRun = await coverageStore.createImportRun({ id: "source-coverage-test", name: "coverage-source", type: "open-icecat", baseUrl: null, trustClassification: "staged", active: true, notes: null, metadata: {} }, {
     adapter: "open-icecat", dryRun: true, processed: 100, valid: 100, invalid: 0, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, newRecords: 100, conflictRecords: 0, approved: 0, rejected: 0, promoted: 0, staged: 100, errors: 0, status: "completed", summary: {},
   });
-  await coverageStore.upsertStagedCandidates([
-    { id: "candidate-1", importRunId: coverageRun.id, sourceId: "source-coverage-test", sourceExternalId: "151", fingerprint: "fp-151", status: "pending", classification: "NEW", brand: "Fixture", productName: "Laptop 15", modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null, sourceType: "open-icecat", upc: null, gtin: null, mpn: null, externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops", path: "1 > 2833 Computers & Peripherals > 150 Computers > 151 Laptops" }, rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" }, taxonomyMapping: { status: "verified" } }, confidence: 0.9, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" },
-    { id: "candidate-2", importRunId: coverageRun.id, sourceId: "source-coverage-test", sourceExternalId: "971", fingerprint: "fp-971", status: "pending", classification: "NEW", brand: "Fixture", productName: "Large Format Printer", modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null, sourceType: "open-icecat", upc: null, gtin: null, mpn: null, externalTaxonomy: { provider: "open-icecat", externalId: "971", name: "Large Format Media", path: "1 > 2833 Computers & Peripherals > 225 Printers & Scanners > 692 Printing Media > 971 Large Format Media" }, rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "971", name: "Large Format Media" } }, confidence: 0.9, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" },
-    { id: "candidate-3", importRunId: coverageRun.id, sourceId: "source-coverage-test", sourceExternalId: "847", fingerprint: "fp-847", status: "pending", classification: "NEW", brand: "Fixture", productName: "Photo Paper For Studio", modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null, sourceType: "open-icecat", upc: null, gtin: null, mpn: null, externalTaxonomy: { provider: "open-icecat", externalId: "847", name: "Photo Paper", path: "... > 847 Photo Paper" }, rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "847", name: "Photo Paper" } }, confidence: 0.9, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" },
-  ]);
+  const mappedCounts = new Map([["971", 18], ["846", 13], ["853", 12], ["377", 10], ["151", 9], ["714", 8], ["845", 3], ["702", 3], ["905", 3]]);
+  const unresolvedCounts = new Map([["847", 13], ["292", 3], ["221", 2], ["1066", 1], ["222", 1], ["154", 1]]);
+  const coverageCandidates = [];
+  let candidateNumber = 0;
+  for (const [externalId, count] of [...mappedCounts, ...unresolvedCounts]) {
+    for (let index = 0; index < count; index += 1) {
+      candidateNumber += 1;
+      coverageCandidates.push({
+        id: `candidate-${candidateNumber}`,
+        importRunId: coverageRun.id,
+        sourceId: "source-coverage-test",
+        sourceExternalId: `${externalId}-${index}`,
+        fingerprint: `fp-${externalId}-${index}`,
+        status: "pending",
+        classification: "NEW",
+        brand: "Fixture",
+        productName: `Product ${candidateNumber}`,
+        modelNumber: null,
+        family: null,
+        category: null,
+        subcategory: null,
+        aliases: [],
+        sourceUrl: null,
+        imageUrl: null,
+        sourceType: "open-icecat",
+        upc: null,
+        gtin: null,
+        mpn: null,
+        externalTaxonomy: { provider: "open-icecat", externalId, name: externalId === "847" ? "Photo Paper" : `External ${externalId}` },
+        rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId } },
+        confidence: 0.9,
+        createdAt: "2026-09-16T00:00:00.000Z",
+        updatedAt: "2026-09-16T00:00:00.000Z",
+      });
+    }
+  }
+  coverageCandidates.push({ ...coverageCandidates[0], id: "foreign-candidate", importRunId: "foreign-run", fingerprint: "foreign-fingerprint" });
+  await coverageStore.upsertStagedCandidates(coverageCandidates);
   const planPath = path.join(__dirname, "..", "docs", "catalog-taxonomy-mapping-plan.json");
   const computed = await coveragePlanner.computeCoverage({ runId: coverageRun.id, backend: "local", planPath, logger: console }, { store: coverageStore });
-  assert.strictEqual(computed.total, 3, "coverage planner must compute actual run totals from persisted data");
-  assert.strictEqual(computed.currentlyResolved, 1, "verified 151 target should count as currently resolved");
-  assert.strictEqual(computed.proposedResolved, 2, "proposed mapping plan should resolve the 151 and 971 rows");
-  assert.strictEqual(computed.currentlyUnresolved, 2, "unresolved rows remain for 971 and 847 before mapping application");
-  assert.strictEqual(computed.byExternalCategory.some((row) => row.externalId === "151" && row.resolved), true, "coverage breakdown should retain per-ID resolved state");
+  assert.strictEqual(computed.totalRunProducts, 100, "coverage planner must compute actual run totals from persisted data");
+  assert.strictEqual(computed.currentlyResolvedProducts, 0, "fixture starts with no persisted verified mappings");
+  assert.strictEqual(computed.currentlyUnresolvedProducts, 100, "all fixture products start unresolved");
+  assert.strictEqual(computed.newlyResolvedProducts, 79, "mapped taxonomy IDs must resolve their product source counts");
+  assert.strictEqual(computed.resolvedAfterPlanProducts, 79, "resolved-after-plan products must be weighted by source count");
+  assert.strictEqual(computed.unresolvedAfterPlanProducts, 21, "unmapped taxonomy IDs must retain their product source counts");
+  assert.strictEqual(computed.resolvedAfterPlanProducts + computed.unresolvedAfterPlanProducts, computed.totalRunProducts, "product-level coverage must conserve total products");
+  assert.strictEqual(computed.mappedExternalTaxonomyIds, 9, "mapped taxonomy ID count must remain separate from product count");
+  assert.strictEqual(computed.unresolvedExternalTaxonomyIds, 6, "unresolved taxonomy ID count must remain separate from product count");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "971").sourceCount, 18, "971 must contribute 18 products");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "971").newlyResolvedCount, 18, "971 must contribute 18 newly resolved products");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "847").afterPlanState, "unresolved", "847 must remain unresolved");
+
+  const verifiedRun = await coverageStore.createImportRun({ id: "source-verified-test", name: "verified-source", type: "open-icecat", baseUrl: null, trustClassification: "staged", active: true, notes: null, metadata: {} }, {
+    adapter: "open-icecat", dryRun: true, processed: 2, valid: 2, invalid: 0, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, newRecords: 2, conflictRecords: 0, approved: 0, rejected: 0, promoted: 0, staged: 2, errors: 0, status: "completed", summary: {},
+  });
+  await coverageStore.upsertStagedCandidates([
+    { ...coverageCandidates[0], id: "verified-151-1", importRunId: verifiedRun.id, sourceExternalId: "verified-151-1", fingerprint: "verified-fp-1", rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151" }, taxonomyMapping: { status: "verified" } } },
+    { ...coverageCandidates[1], id: "verified-151-2", importRunId: verifiedRun.id, sourceExternalId: "verified-151-2", fingerprint: "verified-fp-2", rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151" }, taxonomyMapping: { status: "verified" } } },
+  ]);
+  const verifiedComputed = await coveragePlanner.computeCoverage({ runId: verifiedRun.id, backend: "local", planPath, logger: null }, { store: coverageStore });
+  assert.strictEqual(verifiedComputed.currentlyResolvedProducts, 2, "persisted verified products must count as currently resolved");
+  assert.strictEqual(verifiedComputed.newlyResolvedProducts, 0, "persisted verified products must not be double-counted as proposed-new");
+  assert.strictEqual(verifiedComputed.resolvedAfterPlanProducts, 2, "verified products must remain resolved after the plan");
+  assert.strictEqual(verifiedComputed.totalRunProducts, 2, "run isolation must exclude candidates from other runs");
   fs.rmSync(coverageLedgerPath, { force: true });
 
   const categoryFixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-taxonomy", "open-icecat-categories.xml"), "utf8");

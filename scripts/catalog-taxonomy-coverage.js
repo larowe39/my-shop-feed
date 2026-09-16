@@ -52,6 +52,28 @@ async function loadCanonicalTree() {
   return { loaded, nodes };
 }
 
+function canonicalSegmentSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function destinationExists(mapping, canonicalTree) {
+  if (!mapping || !mapping.canonicalPath || !canonicalTree) return false;
+  const segments = mapping.canonicalPath.split(">").map((segment) => canonicalSegmentSlug(segment));
+  if (segments.length < 2) return false;
+  return [...canonicalTree.loaded.taxonomy.categories.values()].some((category) => {
+    if (canonicalSegmentSlug(category.name) !== segments[0]) return false;
+    return [...canonicalTree.nodes.values()].some((node) => {
+      if (node.categorySlug !== category.slug || node.path.length !== segments.length - 1) return false;
+      return node.path.every((part, index) => part === segments[index + 1]);
+    });
+  });
+}
+
 async function resolveRunCandidates(stagingStore, runId) {
   const rows = await stagingStore.listStagedCandidates();
   const filtered = rows.filter((candidate) => !runId || candidate.importRunId === runId);
@@ -61,13 +83,98 @@ async function resolveRunCandidates(stagingStore, runId) {
   });
 }
 
+async function buildCoverageReport({ runId, planFile, logger = console } = {}, sourceRows, normalizedPlan, canonicalTree) {
+  const planByKey = new Map(normalizedPlan.mappings.map((entry) => [`${entry.provider}:${entry.externalId}`, entry]));
+  const byId = new Map();
+
+  for (const candidate of sourceRows) {
+    const identity = candidate.externalTaxonomy || candidate.rawPayload?.externalTaxonomy;
+    if (!identity || typeof identity !== "object") continue;
+    const provider = String(identity.provider || "").trim().toLowerCase();
+    const externalId = String(identity.externalId || "").trim();
+    const key = `${provider}:${externalId}`;
+    const mapping = planByKey.get(key) || null;
+    const currentResolved = Boolean(
+      (candidate.category && candidate.subcategory) ||
+      (candidate.rawPayload && candidate.rawPayload.taxonomyMapping && candidate.rawPayload.taxonomyMapping.status === "verified")
+    );
+    const row = byId.get(key) || {
+      provider,
+      externalId,
+      externalName: identity.name || null,
+      path: identity.path || null,
+      sourceCount: 0,
+      currentResolvedCount: 0,
+      newlyResolvedCount: 0,
+      resolvedAfterPlanCount: 0,
+      unresolvedAfterPlanCount: 0,
+      currentResolved: false,
+      wouldResolve: Boolean(mapping),
+      destination: mapping ? mapping.canonicalPath || mapping.canonicalSubcategory || mapping.canonicalCategory : null,
+      destinationExists: destinationExists(mapping, canonicalTree),
+      sampleProducts: [],
+      resolved: false,
+      afterPlanState: "unresolved",
+    };
+    row.sourceCount += 1;
+    row.currentResolvedCount += currentResolved ? 1 : 0;
+    row.newlyResolvedCount += !currentResolved && mapping ? 1 : 0;
+    row.resolvedAfterPlanCount += currentResolved || mapping ? 1 : 0;
+    row.unresolvedAfterPlanCount += !currentResolved && !mapping ? 1 : 0;
+    row.sampleProducts = [...new Set([...row.sampleProducts, candidate.productName])].slice(0, 3);
+    byId.set(key, row);
+  }
+
+  const byExternalCategory = [...byId.values()]
+    .map((row) => ({
+      ...row,
+      currentResolved: row.currentResolvedCount === row.sourceCount,
+      resolved: row.resolvedAfterPlanCount === row.sourceCount,
+      currentResolution: row.currentResolvedCount === row.sourceCount ? "resolved" : row.currentResolvedCount ? "partial" : "unresolved",
+      afterPlanState: row.resolvedAfterPlanCount === row.sourceCount ? "resolved" : row.resolvedAfterPlanCount ? "partial" : "unresolved",
+    }))
+    .sort((left, right) => right.sourceCount - left.sourceCount);
+  const currentlyResolvedProducts = byExternalCategory.reduce((sum, row) => sum + row.currentResolvedCount, 0);
+  const currentlyUnresolvedProducts = byExternalCategory.reduce((sum, row) => sum + (row.sourceCount - row.currentResolvedCount), 0);
+  const newlyResolvedProducts = byExternalCategory.reduce((sum, row) => sum + row.newlyResolvedCount, 0);
+  const resolvedAfterPlanProducts = byExternalCategory.reduce((sum, row) => sum + row.resolvedAfterPlanCount, 0);
+  const unresolvedAfterPlanProducts = byExternalCategory.reduce((sum, row) => sum + row.unresolvedAfterPlanCount, 0);
+  const mappedExternalTaxonomyIds = byExternalCategory.filter((row) => row.wouldResolve).length;
+  const unresolvedExternalTaxonomyIds = byExternalCategory.filter((row) => !row.wouldResolve).length;
+  const result = {
+    runId,
+    totalRunProducts: sourceRows.length,
+    currentlyResolvedProducts,
+    currentlyUnresolvedProducts,
+    newlyResolvedProducts,
+    resolvedAfterPlanProducts,
+    unresolvedAfterPlanProducts,
+    mappedExternalTaxonomyIds,
+    unresolvedExternalTaxonomyIds,
+    byExternalCategory,
+    plan: normalizedPlan,
+  };
+  if (logger) {
+    logger.log(`RUN: ${runId || "n/a"}`);
+    logger.log(`Total run products: ${result.totalRunProducts}`);
+    logger.log(`Currently resolved products: ${result.currentlyResolvedProducts}`);
+    logger.log(`Currently unresolved products: ${result.currentlyUnresolvedProducts}`);
+    logger.log(`Proposed newly resolved products: ${result.newlyResolvedProducts}`);
+    logger.log(`Resolved products after plan: ${result.resolvedAfterPlanProducts}`);
+    logger.log(`Unresolved products after plan: ${result.unresolvedAfterPlanProducts}`);
+    logger.log(`Mapped external taxonomy IDs: ${result.mappedExternalTaxonomyIds}`);
+    logger.log(`Unresolved external taxonomy IDs: ${result.unresolvedExternalTaxonomyIds}`);
+    for (const row of result.byExternalCategory) {
+      logger.log(`${row.provider}:${row.externalId} | sourceCount=${row.sourceCount} | current=${row.currentResolution} | proposed=${row.wouldResolve ? "yes" : "no"} | afterPlan=${row.afterPlanState} | destinationExists=${row.destinationExists ? "yes" : "no"} | destination=${row.destination || "-"}`);
+    }
+  }
+  return result;
+}
+
 async function computeCoverage({ runId, backend, planFile, logger = console } = {}, extra = {}) {
   const store = extra.store || null;
   const resolvedPlanFile = planFile || extra.planFile || extra.planPath || planPath;
   const normalizedPlan = loadPlan(resolvedPlanFile);
-  const planByKey = new Map(normalizedPlan.mappings.map((entry) => [`${entry.provider}:${entry.externalId}`, entry]));
-  const resolved = [];
-  const unresolved = [];
   let candidateRows = [];
 
   if (store && typeof store.listStagedCandidates === "function") {
@@ -75,131 +182,17 @@ async function computeCoverage({ runId, backend, planFile, logger = console } = 
   }
 
   const sourceRows = candidateRows.filter((candidate) => !runId || candidate.importRunId === runId);
-  const byId = new Map();
-  for (const candidate of sourceRows) {
-    const identity = candidate.externalTaxonomy || candidate.rawPayload?.externalTaxonomy;
-    if (!identity || typeof identity !== "object") continue;
-    const provider = String(identity.provider || "").trim().toLowerCase();
-    const externalId = String(identity.externalId || "").trim();
-    const key = `${provider}:${externalId}`;
-    const mapping = planByKey.get(key);
-    const match = candidate.category && candidate.subcategory ? { category: candidate.category, subcategory: candidate.subcategory } : null;
-    const currentResolved = Boolean(
-      (candidate.category && candidate.subcategory) ||
-      (candidate.rawPayload && candidate.rawPayload.taxonomyMapping && candidate.rawPayload.taxonomyMapping.status === "verified") ||
-      (candidate.externalTaxonomy && candidate.rawPayload && candidate.rawPayload.externalTaxonomy && candidate.rawPayload.externalTaxonomy.provider === candidate.externalTaxonomy.provider && String(candidate.rawPayload.externalTaxonomy.externalId || "") === String(candidate.externalTaxonomy.externalId || "") && candidate.rawPayload.taxonomyMapping && candidate.rawPayload.taxonomyMapping.status === "verified")
-    );
-    byId.set(key, {
-      provider,
-      externalId,
-      externalName: identity.name || null,
-      path: identity.path || null,
-      currentResolved,
-      wouldResolve: Boolean(mapping),
-      destination: mapping ? mapping.canonicalPath || mapping.canonicalSubcategory || mapping.canonicalCategory : null,
-      candidateCount: (byId.get(key)?.candidateCount ?? 0) + 1,
-      sampleProducts: [...(byId.get(key)?.sampleProducts ?? []), candidate.productName].slice(0, 3),
-      resolvedByCurrentMapping: currentResolved,
-      resolved: currentResolved || Boolean(mapping),
-      match,
-    });
-  }
-
-  const byExternalCategory = [...byId.values()].sort((left, right) => right.candidateCount - left.candidateCount);
-  const currentlyResolved = byExternalCategory.filter((row) => row.currentResolved).length;
-  const proposedResolved = byExternalCategory.filter((row) => row.currentResolved || row.wouldResolve).length;
-  const currentlyUnresolved = byExternalCategory.length - currentlyResolved;
-  const stillUnresolved = byExternalCategory.filter((row) => !row.currentResolved && !row.wouldResolve).length;
-  const result = {
-    total: sourceRows.length,
-    currentlyResolved,
-    currentlyUnresolved,
-    proposedResolved,
-    stillUnresolved,
-    byExternalCategory,
-    plan: normalizedPlan,
-  };
-  if (logger) {
-    logger.log(`Run: ${runId || "n/a"}`);
-    logger.log(`Total run products: ${result.total}`);
-    logger.log(`Currently resolved: ${result.currentlyResolved}`);
-    logger.log(`Currently unresolved: ${result.currentlyUnresolved}`);
-    logger.log(`Would resolve under proposed mappings: ${result.proposedResolved}`);
-    logger.log(`Still unresolved: ${result.stillUnresolved}`);
-    for (const row of result.byExternalCategory) {
-      logger.log(`${row.provider}:${row.externalId} | ${row.externalName || "-"} | current=${row.currentResolved ? "yes" : "no"} | wouldResolve=${row.wouldResolve ? "yes" : "no"} | dest=${row.destination || "-"}`);
-    }
-  }
-  return result;
+  const canonicalTree = await loadCanonicalTree();
+  return buildCoverageReport({ runId, planFile: resolvedPlanFile, logger }, sourceRows, normalizedPlan, canonicalTree);
 }
 
 async function main() {
   const { resolveStagingStore } = await import("../lib/stagingStore.ts");
   const store = resolveStagingStore({ backend });
-  const planFile = planPath;
-  const normalizedPlan = loadPlan(planFile);
   const sourceRows = await resolveRunCandidates(store, runId);
-  const byExternalCategory = new Map();
-
-  for (const candidate of sourceRows) {
-    const identity = candidate.externalTaxonomy || candidate.rawPayload?.externalTaxonomy;
-    const provider = String(identity.provider || "").trim().toLowerCase();
-    const externalId = String(identity.externalId || "").trim();
-    const key = `${provider}:${externalId}`;
-    const mapping = normalizedPlan.mappings.find((entry) => entry.provider === provider && entry.externalId === externalId);
-    const row = byExternalCategory.get(key) || {
-      provider,
-      externalId,
-      externalName: identity.name || null,
-      path: identity.path || null,
-      candidateCount: 0,
-      currentResolved: false,
-      wouldResolve: Boolean(mapping),
-      destination: mapping ? mapping.canonicalPath || mapping.canonicalSubcategory || mapping.canonicalCategory : null,
-      sampleProducts: [],
-      resolved: false,
-    };
-    row.candidateCount += 1;
-    row.currentResolved =
-      row.currentResolved ||
-      Boolean(candidate.category && candidate.subcategory) ||
-      Boolean(
-        candidate.rawPayload &&
-          candidate.rawPayload.taxonomyMapping &&
-          candidate.rawPayload.taxonomyMapping.status === "verified"
-      );
-    row.sampleProducts = [...new Set([...row.sampleProducts, candidate.productName])].slice(0, 3);
-    row.resolved = row.currentResolved || row.wouldResolve;
-    byExternalCategory.set(key, row);
-  }
-
-  const byExternalCategoryList = [...byExternalCategory.values()].sort((left, right) => right.candidateCount - left.candidateCount);
-  const total = sourceRows.length;
-  const currentlyResolved = byExternalCategoryList.filter((row) => row.currentResolved).length;
-  const currentlyUnresolved = total - currentlyResolved;
-  const proposedResolved = byExternalCategoryList.filter((row) => row.currentResolved || row.wouldResolve).length;
-  const stillUnresolved = byExternalCategoryList.filter((row) => !row.currentResolved && !row.wouldResolve).length;
-
-  const report = {
-    runId,
-    total,
-    currentlyResolved,
-    currentlyUnresolved,
-    proposedResolved,
-    stillUnresolved,
-    byExternalCategory: byExternalCategoryList,
-    plan: normalizedPlan,
-  };
-
-  console.log(`RUN: ${runId || "n/a"}`);
-  console.log(`Total run products: ${report.total}`);
-  console.log(`Currently resolved: ${report.currentlyResolved}`);
-  console.log(`Currently unresolved: ${report.currentlyUnresolved}`);
-  console.log(`Proposed mappings resolve: ${report.proposedResolved}`);
-  console.log(`Still unresolved: ${report.stillUnresolved}`);
-  for (const row of byExternalCategoryList) {
-    console.log(`${row.provider}:${row.externalId} | ${row.externalName || "-"} | current=${row.currentResolved ? "yes" : "no"} | wouldResolve=${row.wouldResolve ? "yes" : "no"} | sourceCount=${row.candidateCount} | destination=${row.destination || "-"}`);
-  }
+  const normalizedPlan = loadPlan(planPath);
+  const canonicalTree = await loadCanonicalTree();
+  await buildCoverageReport({ runId, planFile: planPath, logger: console }, sourceRows, normalizedPlan, canonicalTree);
 }
 
 module.exports = { computeCoverage: computeCoverage, loadPlan, main };
