@@ -27,6 +27,7 @@ async function main() {
     calculateAcquisitionQualityMetrics,
     assessCandidateReadiness,
     candidateReviewView,
+    formatApprovalPreview,
     reviewCandidatesSequentially,
   } = acquisition;
 
@@ -68,6 +69,15 @@ async function main() {
   assert.match(icecatCliSource, /persistedRunId = pageRun\.runId/, "Icecat discovery must retain the persisted import run ID");
   assert.match(icecatCliSource, /runId: persistedRunId/, "Icecat discovery output must expose the persisted import run ID");
   assert.doesNotMatch(icecatCliSource, /approveCandidate|rejectCandidate|promoteApprovedCandidates|resolveCanonicalPromotionStore/, "Icecat acquisition must not approve or promote");
+  const approveCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-approve.js"), "utf8");
+  const showCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-show.js"), "utf8");
+  const reviewCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-review.js"), "utf8");
+  const rejectCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-reject.js"), "utf8");
+  assert.match(approveCliSource, /formatApprovalPreview/, "approve CLI must print the concise assessment");
+  assert.match(approveCliSource, /args\.includes\("--raw"\)/, "approve CLI raw output must be explicit");
+  assert.match(showCliSource, /args\.includes\("--raw"\)/, "show CLI raw output must be explicit");
+  assert.match(reviewCliSource, /candidateReviewView/, "review CLI must use bounded candidate output");
+  assert.match(rejectCliSource, /args\.includes\("--raw"\)/, "reject CLI raw output must be explicit");
 
   // ---------------------------------------------------------------------
   // 1. Pure parsing / normalization / validation / classification / fingerprint
@@ -328,6 +338,12 @@ async function main() {
   assert.strictEqual(shown.found, true);
   assert.strictEqual(candidateReviewView(shown.candidate).id, pendingCandidate.id);
   assert.ok(!("rawPayload" in candidateReviewView(shown.candidate)), "review view must not expose raw payloads by default");
+  const approvalPreview = formatApprovalPreview(pendingCandidate, { dryRun: true, approvalAllowed: true });
+  assert.match(approvalPreview, /ASSESSMENT/);
+  assert.match(approvalPreview, /External valid: yes/);
+  assert.match(approvalPreview, /Promotion ready:/);
+  assert.match(approvalPreview, /DRY RUN -- ZERO WRITES/);
+  assert.doesNotMatch(approvalPreview, /rawPayload|enrichedProduct|HighPic/);
   const reviewDryRun = await reviewCandidatesSequentially(localStore, [pendingCandidate], async () => "approve", { dryRun: true });
   assert.strictEqual(reviewDryRun[0].result.ok, true);
   assert.strictEqual((await localStore.getStagedCandidateById(pendingCandidate.id)).status, pendingCandidate.status, "sequential dry-run review must not write");

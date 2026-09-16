@@ -4,7 +4,7 @@ require("dotenv").config();
 require("dotenv").config({ path: ".env.local", override: true });
 
 const { getFlagValue } = require("./lib/cliArgs");
-const usage = `Usage: npm run catalog:staging:reject -- --id <candidate-id> [--apply] [--backend local|supabase]`;
+const usage = `Usage: npm run catalog:staging:reject -- --id <candidate-id> [--apply] [--raw] [--backend local|supabase]`;
 const args = process.argv.slice(2);
 const candidateId = getFlagValue(args, "--id");
 if (!candidateId) {
@@ -16,7 +16,7 @@ const backend = getFlagValue(args, "--backend") || process.env.CATALOG_STAGING_B
 
 (async () => {
   const { resolveStagingStore } = await import("../lib/stagingStore.ts");
-  const { rejectCandidate } = await import("../lib/catalogAcquisition.ts");
+  const { candidateReviewView, rejectCandidate } = await import("../lib/catalogAcquisition.ts");
   const store = resolveStagingStore({ backend });
   console.log(`STAGING BACKEND: ${store.kind}`);
   const result = await rejectCandidate(store, candidateId, { dryRun });
@@ -25,7 +25,7 @@ const backend = getFlagValue(args, "--backend") || process.env.CATALOG_STAGING_B
     process.exit(1);
   }
   console.log(result.message);
-  console.log(JSON.stringify(result.candidate, null, 2));
+  console.log(JSON.stringify(args.includes("--raw") ? result.candidate : candidateReviewView(result.candidate), null, 2));
 })().catch((error) => {
   console.error(error.message || error);
   process.exit(1);

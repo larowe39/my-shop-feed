@@ -6,7 +6,7 @@ require("dotenv").config();
 require("dotenv").config({ path: ".env.local", override: true });
 
 const { getFlagValue } = require("./lib/cliArgs");
-const usage = `Usage: npm run catalog:staging:approve -- --id <candidate-id> [--apply] [--backend local|supabase]`;
+const usage = `Usage: npm run catalog:staging:approve -- --id <candidate-id> [--apply] [--raw] [--backend local|supabase]`;
 const args = process.argv.slice(2);
 const candidateId = getFlagValue(args, "--id");
 if (!candidateId) {
@@ -18,7 +18,7 @@ const backend = getFlagValue(args, "--backend") || process.env.CATALOG_STAGING_B
 
 (async () => {
   const { resolveStagingStore } = await import("../lib/stagingStore.ts");
-  const { approveCandidate } = await import("../lib/catalogAcquisition.ts");
+  const { approveCandidate, candidateReviewView, formatApprovalPreview } = await import("../lib/catalogAcquisition.ts");
   const store = resolveStagingStore({ backend });
   console.log(`STAGING BACKEND: ${store.kind}`);
   const result = await approveCandidate(store, candidateId, { dryRun });
@@ -26,8 +26,9 @@ const backend = getFlagValue(args, "--backend") || process.env.CATALOG_STAGING_B
     console.error(result.message);
     process.exit(1);
   }
-  console.log(result.message);
-  console.log(JSON.stringify(result.candidate, null, 2));
+  const approvalAllowed = ["pending", "needs_review", "duplicate", "approved"].includes(result.candidate.status);
+  console.log(formatApprovalPreview(result.candidate, { dryRun, approvalAllowed, approvalBlocker: result.message }));
+  if (args.includes("--raw")) console.log(JSON.stringify(result.candidate, null, 2));
 })().catch((error) => {
   console.error(error.message || error);
   process.exit(1);

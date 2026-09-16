@@ -254,6 +254,10 @@ npm run catalog:staging:list -- --classification NEW --limit 10
 npm run catalog:staging:status -- --run-id RUN_ID
 npm run catalog:staging:show -- --id CANDIDATE_ID
 npm run catalog:staging:show -- --id CANDIDATE_ID --raw
+npm run catalog:staging:approve -- --id CANDIDATE_ID
+npm run catalog:staging:approve -- --id CANDIDATE_ID --raw
+npm run catalog:staging:reject -- --id CANDIDATE_ID
+npm run catalog:staging:reject -- --id CANDIDATE_ID --raw
 ```
 
 The sequential review command presents identity, identifiers, taxonomy, image,
@@ -266,7 +270,18 @@ npm run catalog:staging:review -- --run-id RUN_ID --limit 10
 npm run catalog:staging:review -- --run-id RUN_ID --limit 10 --apply
 ```
 
-Approval never promotes a product. Promotion remains separate.
+Approval never promotes a product. Promotion remains separate. Approval is the
+human-review decision: an externally valid candidate may be approved even when
+canonical hierarchy is unresolved, so the review decision and promotion
+preparation remain separate. The approval preview labels `Human reviewed`,
+`Canonical hierarchy`, and `Promotion ready` independently. Promotion still
+requires resolved canonical hierarchy and remains blocked with
+`HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED` until that issue is resolved.
+
+All five operator-facing commands are concise and redacted by default:
+`show`, `review`, `approve`, and `reject` never print `rawPayload` unless
+`--raw` is explicitly supplied. Approval dry-runs also print
+`DRY RUN -- ZERO WRITES` and do not change the candidate status.
 
 ## Promotion
 

@@ -94,7 +94,7 @@ export function assessCandidateReadiness(
     ? raw.externalCategory as { id?: unknown; name?: unknown }
     : null;
   const taxonomyMapping = raw.taxonomyMapping && typeof raw.taxonomyMapping === "object" ? raw.taxonomyMapping : null;
-  const hierarchyUnresolved = raw.provider === "open-icecat" && Boolean(externalCategory && (externalCategory.id || externalCategory.name)) && !taxonomyMapping;
+  const hierarchyUnresolved = raw.provider === "open-icecat" && !taxonomyMapping && !candidate.category && !candidate.subcategory && !candidate.family;
   if (hierarchyUnresolved) reasons.push("HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED");
 
   const reviewRequired = !validation.valid || !duplicateSafe || hierarchyUnresolved;
@@ -644,6 +644,51 @@ export function candidateReviewView(candidate: StagedCatalogCandidate): Record<s
   };
 }
 
+export function formatApprovalPreview(
+  candidate: StagedCatalogCandidate,
+  options: { dryRun: boolean; approvalAllowed: boolean; approvalBlocker?: string } = { dryRun: true, approvalAllowed: true }
+): string {
+  const readiness = assessCandidateReadiness({
+    brand: candidate.brand,
+    productName: candidate.productName,
+    modelNumber: candidate.modelNumber,
+    family: candidate.family,
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    sourceExternalId: candidate.sourceExternalId,
+    sourceId: candidate.sourceId,
+    raw: candidate.rawPayload,
+  }, candidate.classification);
+  const hierarchyResolved = !readiness.reasons.some((reason) => reason.includes("HIERARCHY UNRESOLVED"));
+  const lines = [
+    "CANDIDATE",
+    `ID: ${candidate.id}`,
+    `Source: ${candidate.sourceType ?? "unknown"}`,
+    `External ID: ${candidate.sourceExternalId ?? "-"}`,
+    `Brand: ${candidate.brand || "-"}`,
+    `Product: ${candidate.productName || "-"}`,
+    `Model: ${candidate.modelNumber ?? candidate.mpn ?? "-"}`,
+    `GTIN: ${candidate.gtin ?? candidate.upc ?? "-"}`,
+    "",
+    "ASSESSMENT",
+    `External valid: ${readiness.externallyValid ? "yes" : "no"}`,
+    `Duplicate safe: ${readiness.duplicateSafe ? "yes" : "no"}`,
+    `Human reviewed: ${candidate.status === "approved" ? "yes" : "no"}`,
+    `Canonical hierarchy: ${hierarchyResolved ? "resolved" : "unresolved"}`,
+    `Manual review required: ${readiness.reviewRequired ? "yes" : "no"}`,
+    `Promotion ready: ${readiness.promotionReady ? "yes" : "no"}`,
+    "",
+    "APPROVAL PREVIEW",
+    `Would approve: ${options.approvalAllowed ? "yes" : "no"}`,
+  ];
+  const blockers = [...readiness.reasons, ...(options.approvalAllowed ? [] : options.approvalBlocker ? [options.approvalBlocker] : [])];
+  if (blockers.length) {
+    lines.push("", "BLOCKERS", ...Array.from(new Set(blockers)).map((reason) => `- ${reason}`));
+  }
+  lines.push("", options.dryRun ? "DRY RUN -- ZERO WRITES" : "APPLY -- staging approval written; no promotion performed");
+  return lines.join("\n");
+}
+
 export async function reviewCandidatesSequentially(
   store: StagingStore,
   candidates: StagedCatalogCandidate[],
@@ -685,6 +730,20 @@ export async function approveCandidate(
   if (!candidate) return { ok: false, message: `Candidate ${candidateId} not found in ${store.kind} staging backend.` };
   if (TERMINAL_STATUSES.includes(candidate.status)) {
     return { ok: false, candidate, message: `Candidate ${candidateId} is in a terminal status (${candidate.status}) and cannot be approved.` };
+  }
+  const readiness = assessCandidateReadiness({
+    brand: candidate.brand,
+    productName: candidate.productName,
+    modelNumber: candidate.modelNumber,
+    family: candidate.family,
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    sourceExternalId: candidate.sourceExternalId,
+    sourceId: candidate.sourceId,
+    raw: candidate.rawPayload,
+  }, candidate.classification);
+  if (!readiness.externallyValid) {
+    return { ok: false, candidate, message: `Candidate ${candidateId} is not externally valid and cannot be approved: ${readiness.reasons.join("; ")}.` };
   }
   if (!APPROVABLE_STATUSES.includes(candidate.status) && candidate.status !== "approved") {
     return { ok: false, candidate, message: `Candidate ${candidateId} is not approvable in its current status (${candidate.status}).` };
