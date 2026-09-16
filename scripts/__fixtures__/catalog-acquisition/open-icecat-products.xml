@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ICECAT-interface>
+  <Product Product_ID="icecat-1001" Brand="Sony" Name="WH-1000XM5" Prod_ID="WH1000XM5/B" EAN_UPC="4548736131133" Model_Name="WH-1000XM5" ProductURL="https://icecat.biz/p/sony/wh1000xm5">
+    <Category Name="Headphones" />
+  </Product>
+  <Product Product_ID="icecat-1002" Brand="Example Audio" Name="Desk Speaker" Prod_ID="EA-DS1">
+    <Category Name="Unmapped Icecat Category" />
+  </Product>
+</ICECAT-interface>

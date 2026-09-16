@@ -44,6 +44,13 @@ export type CatalogCandidateInput = {
   aliases?: string[];
   sourceUrl?: string | null;
   sourceType?: string | null;
+  // Strong identifiers, optional and provider-agnostic. A retailer SKU
+  // (sourceSku) is source-specific provenance, never a universal product
+  // identity -- it must never be written into upc/gtin/mpn.
+  upc?: string | null;
+  gtin?: string | null;
+  mpn?: string | null;
+  sourceSku?: string | null;
   raw: Record<string, unknown>;
 };
 
@@ -55,6 +62,9 @@ export type CanonicalCatalogEntry = {
   category?: string | null;
   subcategory?: string | null;
   aliases?: string[];
+  upc?: string | null;
+  gtin?: string | null;
+  mpn?: string | null;
 };
 
 export type StagedCatalogCandidate = {
@@ -73,6 +83,10 @@ export type StagedCatalogCandidate = {
   aliases: string[];
   sourceUrl?: string | null;
   sourceType?: string | null;
+  upc?: string | null;
+  gtin?: string | null;
+  mpn?: string | null;
+  sourceSku?: string | null;
   rawPayload: Record<string, unknown>;
   normalizedBrand?: string;
   normalizedName?: string;
