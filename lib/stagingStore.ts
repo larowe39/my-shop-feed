@@ -60,6 +60,7 @@ export type CreateImportRunInput = {
   promoted: number;
   staged: number;
   errors: number;
+  status?: "completed" | "failed" | "partial";
   summary: Record<string, unknown>;
 };
 
@@ -69,6 +70,7 @@ export interface StagingStore {
   createImportRun(source: SourceRegistryEntry, input: CreateImportRunInput): Promise<ImportRunRecord>;
   updateImportRun(runId: string, updates: Partial<ImportRunRecord>): Promise<ImportRunRecord | null>;
   listImportRuns(): Promise<ImportRunRecord[]>;
+  countStagedCandidatesByRun(runId: string): Promise<number>;
   /** Idempotent within a run by fingerprint: re-submitting the same candidate updates it in place instead of duplicating. */
   upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]>;
   listStagedCandidates(): Promise<StagedCatalogCandidate[]>;
@@ -192,7 +194,7 @@ export class LocalStagingStore implements StagingStore {
       promoted: input.promoted,
       staged: input.staged,
       errors: input.errors,
-      status: "completed",
+      status: input.status ?? "completed",
       summary: input.summary,
       createdAt: new Date().toISOString(),
     };
@@ -212,6 +214,10 @@ export class LocalStagingStore implements StagingStore {
 
   async listImportRuns(): Promise<ImportRunRecord[]> {
     return this.read().importRuns;
+  }
+
+  async countStagedCandidatesByRun(runId: string): Promise<number> {
+    return this.read().stagedProducts.filter((row) => row.importRunId === runId).length;
   }
 
   async upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]> {
@@ -404,7 +410,7 @@ export class SupabaseStagingStore implements StagingStore {
         approved: input.approved,
         rejected: input.rejected,
         promoted: input.promoted,
-        status: "completed",
+        status: input.status ?? "completed",
         summary: input.summary,
       })
       .select("id, created_at")
@@ -452,6 +458,7 @@ export class SupabaseStagingStore implements StagingStore {
         promoted: updates.promoted,
         staged: updates.staged,
         errors: updates.errors,
+        status: updates.status,
         summary: updates.summary,
       })
       .eq("id", runId)
@@ -512,6 +519,15 @@ export class SupabaseStagingStore implements StagingStore {
       summary: (row.summary as Record<string, unknown>) ?? {},
       createdAt: String(row.created_at ?? new Date().toISOString()),
     }));
+  }
+
+  async countStagedCandidatesByRun(runId: string): Promise<number> {
+    const { count, error } = await this.client
+      .from("catalog_staged_products")
+      .select("id", { count: "exact", head: true })
+      .eq("import_run_id", runId);
+    if (error) throw new StagingBackendError(`Failed to count catalog_staged_products rows for run ${runId}: ${error.message}`);
+    return count ?? 0;
   }
 
   async upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]> {

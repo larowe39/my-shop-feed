@@ -40,6 +40,7 @@ export type ProviderDiscoveryOptions = {
   diagnostics?: {
     onRecordSeen?: () => void;
     onRecordQualified?: () => void;
+    onEnrichmentAttempt?: () => void;
   };
 };
 
@@ -748,6 +749,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             lastProcessedIdentity: lastSourceIdentity,
             lastProcessedUpdated: lastUpdatedValue,
             processedCount,
+            enrichmentAttempts,
             cursor: nextCursor,
           },
         };
@@ -896,6 +898,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         while (candidateRecords.length && !limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
           const indexRecord = candidateRecords.shift()!;
           enrichmentAttempts += 1;
+          options.diagnostics?.onEnrichmentAttempt?.();
           try {
             const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000);
             const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);

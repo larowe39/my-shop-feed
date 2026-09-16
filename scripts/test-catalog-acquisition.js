@@ -25,6 +25,7 @@ async function main() {
     classifyCandidate,
     sourceFingerprint,
     acquireFromRecords,
+    acquireDiscoveredProducts,
     showCandidate,
     approveCandidate,
     rejectCandidate,
@@ -73,8 +74,8 @@ async function main() {
   );
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(icecatCliSource, /resolveStagingStore/, "Icecat apply must resolve the staging backend");
-  assert.match(icecatCliSource, /persistedRunId = pageRun\.runId/, "Icecat discovery must retain the persisted import run ID");
-  assert.match(icecatCliSource, /runId: persistedRunId/, "Icecat discovery output must expose the persisted import run ID");
+  assert.match(icecatCliSource, /acquireDiscoveredProducts/, "Icecat discovery must use the single-run multi-page orchestrator");
+  assert.doesNotMatch(icecatCliSource, /acquireFromRecords\(pageRecords/, "Icecat discovery must not create a complete import run per provider page");
   assert.doesNotMatch(icecatCliSource, /approveCandidate|rejectCandidate|promoteApprovedCandidates|resolveCanonicalPromotionStore/, "Icecat acquisition must not approve or promote");
   const approveCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-approve.js"), "utf8");
   const showCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-show.js"), "utf8");
@@ -558,10 +559,18 @@ async function main() {
             }
             return { eq: () => ({ select: () => ({ single: async () => ({ data: null, error: null }) }) }) };
           },
-          select() {
+          select(_columns, options) {
             if (table === "catalog_staged_aliases") {
               return {
                 in: async (_column, ids) => ({ data: stagedAliasRows.filter((row) => ids.includes(row.staged_product_id)), error: null }),
+              };
+            }
+            if (table === "catalog_staged_products" && options?.head) {
+              return {
+                eq: async (_column, value) => ({
+                  count: [...stagedRowsById.values()].filter((row) => row.import_run_id === value).length,
+                  error: null,
+                }),
               };
             }
             return {
@@ -589,6 +598,7 @@ async function main() {
   assert.ok(recordedCalls.includes("catalog_import_runs"), "Supabase apply path must call catalog_import_runs");
   assert.ok(recordedCalls.includes("catalog_staged_products"), "Supabase apply path must call catalog_staged_products");
   assert.ok(supabaseRun.persistence.every((entry) => entry.startsWith("supabase:")));
+  assert.strictEqual(await supabaseStagingStore.countStagedCandidatesByRun(supabaseRun.runId), 1, "Supabase STAGED reconciliation must use a run-scoped persisted count");
 
   // ---------------------------------------------------------------------
   // 9b. Alias-propagation regression (PR #21 production smoke-test bug):
@@ -749,101 +759,76 @@ async function main() {
   const explicitLocal = resolveStagingStore({ backend: "local" });
   assert.strictEqual(explicitLocal.kind, "local");
 
-  const multiPageLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-multipage-regression.json");
-  const multiPageStore = new LocalStagingStore(multiPageLedgerPath);
-  multiPageStore.reset();
-  const source = await multiPageStore.upsertSource({ name: "multi-page-source", type: "external-provider" });
-  const run = await multiPageStore.createImportRun(source, {
-    adapter: "open-icecat",
-    dryRun: false,
-    processed: 100,
-    valid: 100,
-    invalid: 0,
-    exactExisting: 0,
-    likelyExisting: 0,
-    possibleExisting: 0,
-    newRecords: 100,
-    conflictRecords: 0,
-    approved: 0,
-    rejected: 0,
-    promoted: 0,
-    staged: 0,
-    errors: 0,
-    summary: {},
+  const multiPageLedgerPaths = [100, 101].map((total) => path.join(__dirname, "..", ".catalog-staging", `catalog-run-multipage-${total}.json`));
+  const makeDiscoveryProvider = (total) => ({
+    capabilities: { lookup: false, discovery: true },
+    getSourceMetadata: () => ({ name: `multi-page-source-${total}`, type: "external-provider", baseUrl: "https://example.test", metadata: {} }),
+    normalizeProduct: (record) => record,
+    async *discoverProducts(options) {
+      const pageSize = options.pageSize;
+      for (let offset = 0; offset < total; offset += pageSize) {
+        const records = Array.from({ length: Math.min(pageSize, total - offset) }, (_, index) => {
+          const sequence = offset + index + 1;
+          const externalTaxonomy = { provider: "open-icecat", externalId: `taxonomy-${Math.floor(offset / pageSize) + 1}`, name: `Category ${Math.floor(offset / pageSize) + 1}` };
+          return {
+            sourceExternalId: `icecat-distinct-${sequence}`,
+            brand: `Brand ${Math.floor(offset / pageSize) + 1}`,
+            productName: `Distinct Product ${sequence}`,
+            modelNumber: `MOD-${sequence}`,
+            imageUrl: `https://example.test/${sequence}.jpg`,
+            gtin: sequence <= Math.floor(total * 0.79) ? `GTIN-${sequence}` : null,
+            externalTaxonomy,
+            raw: { provider: "open-icecat", externalTaxonomy },
+          };
+        });
+        yield {
+          records,
+          errors: [],
+          nextCursor: String(offset + records.length),
+          done: offset + records.length >= total,
+          checkpoint: { processedCount: offset + records.length, enrichmentAttempts: offset + records.length },
+        };
+      }
+    },
   });
 
-  const pageBatches = Array.from({ length: 4 }, (_, pageIndex) =>
-    Array.from({ length: 25 }, (_, rowIndex) => ({
-      id: makeId("candidate"),
-      sourceId: source.id,
-      sourceExternalId: `icecat-distinct-${pageIndex * 25 + rowIndex + 1}`,
-      importRunId: run.id,
-      fingerprint: sourceFingerprint({
-        sourceId: source.id,
-        sourceExternalId: `icecat-distinct-${pageIndex * 25 + rowIndex + 1}`,
-        brand: `Brand ${pageIndex + 1}`,
-        productName: `Distinct Product ${(pageIndex * 25) + rowIndex + 1}`,
-        modelNumber: `MOD-${pageIndex + 1}-${rowIndex + 1}`,
-        family: `Family ${pageIndex + 1}`,
-        category: "Electronics",
-      }),
-      status: "pending",
-      classification: "NEW",
-      brand: `Brand ${pageIndex + 1}`,
-      productName: `Distinct Product ${(pageIndex * 25) + rowIndex + 1}`,
-      modelNumber: `MOD-${pageIndex + 1}-${rowIndex + 1}`,
-      family: `Family ${pageIndex + 1}`,
-      category: "Electronics",
-      aliases: [],
-      sourceUrl: null,
-      imageUrl: null,
-      sourceType: "open-icecat",
-      upc: null,
-      gtin: null,
-      mpn: null,
-      externalTaxonomy: { provider: "open-icecat", externalId: `taxonomy-${pageIndex + 1}`, name: `Category ${pageIndex + 1}` },
-      rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: `taxonomy-${pageIndex + 1}`, name: `Category ${pageIndex + 1}` } },
-      normalizedBrand: `Brand ${pageIndex + 1}`,
-      normalizedName: `Distinct Product ${(pageIndex * 25) + rowIndex + 1}`,
-      normalizedModel: `MOD-${pageIndex + 1}-${rowIndex + 1}`,
-      confidence: 0.88,
-      duplicateOfCatalogProductId: null,
-      promotedCatalogProductId: null,
-      promotedAt: null,
-      reviewNotes: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }))
-  );
+  for (const total of [100, 101]) {
+    const multiPageStore = new LocalStagingStore(multiPageLedgerPaths[total === 100 ? 0 : 1]);
+    multiPageStore.reset();
+    const provider = makeDiscoveryProvider(total);
+    const discoveryRun = await acquireDiscoveredProducts(provider, { limit: total, pageSize: 25 }, [], provider.getSourceMetadata(), { apply: true, adapter: "open-icecat" }, multiPageStore);
+    const runs = await multiPageStore.listImportRuns();
+    const persisted = await multiPageStore.listStagedCandidates();
+    const report = buildCatalogRunReport(discoveryRun.runId, runs, persisted);
+    assert.strictEqual(runs.length, 1, `${total} records must create exactly one logical import run`);
+    assert.strictEqual(discoveryRun.pages, Math.ceil(total / 25));
+    assert.strictEqual(persisted.length, total);
+    assert.strictEqual(new Set(persisted.map((candidate) => candidate.sourceExternalId)).size, total, "page boundaries must not overwrite earlier source records");
+    assert.ok(persisted.some((candidate) => candidate.sourceExternalId === "icecat-distinct-1"));
+    assert.ok(persisted.some((candidate) => candidate.sourceExternalId === `icecat-distinct-${total}`));
+    assert.strictEqual(persisted.every((candidate) => candidate.importRunId === discoveryRun.runId), true, "every provider page must persist into the same run");
+    assert.strictEqual(runs[0].status, "completed");
+    assert.strictEqual(report.metrics.requested, total);
+    assert.strictEqual(report.metrics.fetched, total);
+    assert.strictEqual(report.metrics.enriched, total);
+    assert.strictEqual(report.metrics.processed, total);
+    assert.strictEqual(report.metrics.staged, total);
+    assert.strictEqual(report.metrics.providerPages, Math.ceil(total / 25));
+    assert.strictEqual(report.metrics.providerErrors, 0);
+    assert.strictEqual(report.metrics.indexCandidatesExamined, total);
+    assert.strictEqual(report.metrics.enrichmentAttempts, total);
+    assert.strictEqual(report.metrics.gtinCoverage, Number((Math.floor(total * 0.79) / total).toFixed(4)));
+    assert.strictEqual(rankTaxonomyGaps(discoveryRun.runId, persisted, []).reduce((sum, row) => sum + row.candidateCount, 0), total);
+  }
 
-  const pageCandidates = pageBatches.flat();
-  const inserted = await multiPageStore.upsertStagedCandidates(pageCandidates);
-  assert.strictEqual(inserted.length, 100, "100 distinct Icecat products must remain 100 persisted staging rows across multiple pages");
-  assert.strictEqual(new Set(inserted.map((candidate) => candidate.fingerprint)).size, 100, "all 100 candidates must keep distinct staging fingerprints");
-  assert.strictEqual(inserted.every((candidate) => candidate.importRunId === run.id), true, "all persisted rows must belong to the same import run");
-  await multiPageStore.updateImportRun(run.id, { staged: inserted.length, processed: inserted.length, valid: inserted.length, invalid: 0, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, newRecords: inserted.length, conflictRecords: 0, summary: { staged: inserted.length, processed: inserted.length } });
-  const multiPagePersisted = await multiPageStore.listStagedCandidates();
-  const multiPageReport = buildCatalogRunReport(run.id, await multiPageStore.listImportRuns(), multiPagePersisted);
-  assert.strictEqual(multiPageReport.metrics.processed, 100);
-  assert.strictEqual(multiPageReport.metrics.valid, 100);
-  assert.strictEqual(multiPageReport.metrics.staged, 100);
-  assert.strictEqual(multiPageReport.candidates.length, 100);
-  const taxonomyGapTotal = rankTaxonomyGaps(run.id, multiPagePersisted, []).reduce((sum, row) => sum + row.candidateCount, 0);
-  assert.strictEqual(taxonomyGapTotal, 100, "taxonomy-gap totals must reconcile to the full persisted run population");
-
-  const reprocessed = await multiPageStore.upsertStagedCandidates([
-    {
-      ...pageCandidates[41],
-      id: pageCandidates[41].id,
-      updatedAt: new Date().toISOString(),
-    },
-  ]);
-  const multiPagePersistedAfterDuplicate = await multiPageStore.listStagedCandidates();
-  assert.strictEqual(multiPagePersistedAfterDuplicate.length, 100, "reprocessing the exact same source product in the same run must remain idempotent");
-  assert.strictEqual(reprocessed.length, 1, "duplicate same-run reprocessing must update in place without adding a second row");
+  const idempotencyStore = new LocalStagingStore(multiPageLedgerPaths[0]);
+  const idempotencyRows = await idempotencyStore.listStagedCandidates();
+  const reprocessed = await idempotencyStore.upsertStagedCandidates([{ ...idempotencyRows[41], updatedAt: new Date().toISOString() }]);
+  assert.strictEqual((await idempotencyStore.listStagedCandidates()).length, 100, "same-run duplicate encounter must update in place");
+  assert.strictEqual(reprocessed.length, 1);
 
   reportStore.reset();
-  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath, multiPageLedgerPath]) {
+  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath, ...multiPageLedgerPaths]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
   console.log("Catalog acquisition tests passed.");

@@ -200,9 +200,11 @@ async function main() {
   await testMalformedDiscoveryRecord(OpenIcecatProvider);
 
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
-  assert.match(icecatCliSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "discovery CLI must process one page at a time");
+  assert.match(icecatCliSource, /acquireDiscoveredProducts\(provider, discoveryOptions/, "discovery CLI must use the single-run streaming acquisition orchestrator");
   assert.doesNotMatch(icecatCliSource, /const discoveryPages = \[\]/, "discovery CLI must not retain every page");
-  assert.match(icecatCliSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the existing acquisition pipeline immediately");
+  const acquisitionSource = fs.readFileSync(path.join(__dirname, "..", "lib", "catalogAcquisition.ts"), "utf8");
+  assert.match(acquisitionSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "the discovery orchestrator must process provider pages incrementally");
+  assert.match(acquisitionSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the acquisition pipeline immediately");
 
   assert.doesNotThrow(() => assertProviderSupports(new OpenIcecatProvider({ username: "u", password: "p" }), "discovery"));
 

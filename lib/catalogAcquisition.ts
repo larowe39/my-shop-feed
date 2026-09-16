@@ -23,6 +23,8 @@ import type { AcquisitionQualityMetrics, AcquisitionSummary, ImportRunRecord, So
 import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
 import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
+import { processDiscoveredPages } from "./catalogProviders.ts";
+import type { CatalogProvider, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
 
 export type {
   CandidateClassification,
@@ -46,6 +48,28 @@ export type AcquisitionRunResult = {
   }>;
   summary: AcquisitionSummary;
   persistence: string[];
+};
+
+export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
+  fetched: number;
+  pages: number;
+  providerErrors: ProviderFetchError[];
+  enriched: number;
+  elapsedMs: number;
+};
+
+type ExistingImportRun = {
+  id: string;
+  source: SourceRegistryEntry;
+};
+
+type AcquisitionOptions = {
+  apply?: boolean;
+  adapter?: string;
+  sourcePath?: string | null;
+  taxonomyResolver?: TaxonomyMappingResolver;
+  existingRun?: ExistingImportRun;
+  deferRunFinalization?: boolean;
 };
 
 export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
@@ -433,7 +457,7 @@ export async function acquireFromRecords(
   records: Partial<CatalogCandidateInput>[],
   canonicalCatalog: CanonicalCatalogEntry[] = [],
   sourceInfo: Partial<SourceRegistryEntry> = {},
-  options: { apply?: boolean; adapter?: string; sourcePath?: string | null; taxonomyResolver?: TaxonomyMappingResolver } = {},
+  options: AcquisitionOptions = {},
   store?: StagingStore
 ): Promise<AcquisitionRunResult> {
   const apply = options.apply ?? false;
@@ -561,43 +585,46 @@ export async function acquireFromRecords(
   let stagedResult = candidates;
 
   if (apply && store) {
-    source = await store.upsertSource({
-      id: sourceInfo.id,
-      name: sourceInfo.name ?? "fixture-source",
-      type: sourceType,
-      baseUrl: sourceInfo.baseUrl ?? null,
-      trustClassification: sourceInfo.trustClassification ?? "staged",
-      active: sourceInfo.active ?? true,
-      notes: sourceInfo.notes ?? null,
-      metadata: sourceInfo.metadata ?? {},
-    });
+    source = options.existingRun?.source ?? await store.upsertSource({
+        id: sourceInfo.id,
+        name: sourceInfo.name ?? "fixture-source",
+        type: sourceType,
+        baseUrl: sourceInfo.baseUrl ?? null,
+        trustClassification: sourceInfo.trustClassification ?? "staged",
+        active: sourceInfo.active ?? true,
+        notes: sourceInfo.notes ?? null,
+        metadata: sourceInfo.metadata ?? {},
+      });
     for (const candidate of candidates) candidate.sourceId = source.id ?? candidate.sourceId;
 
-    const runInput: CreateImportRunInput = {
-      adapter: options.adapter ?? "json",
-      sourcePath: options.sourcePath ?? null,
-      dryRun: false,
-      processed: summary.processed,
-      valid: summary.valid,
-      invalid: summary.invalid,
-      exactExisting: summary.exactExisting,
-      likelyExisting: summary.likelyExisting,
-      possibleExisting: summary.possibleExisting,
-      newRecords: summary.new,
-      conflictRecords: summary.conflict,
-      approved: 0,
-      rejected: 0,
-      promoted: 0,
-      staged: summary.staged,
-      errors: summary.errors,
-      summary,
-    };
-    const run = await store.createImportRun(source, runInput);
-    runId = run.id;
-    for (const candidate of candidates) candidate.importRunId = run.id;
+    if (options.existingRun) {
+      runId = options.existingRun.id;
+    } else {
+      const runInput: CreateImportRunInput = {
+        adapter: options.adapter ?? "json",
+        sourcePath: options.sourcePath ?? null,
+        dryRun: false,
+        processed: summary.processed,
+        valid: summary.valid,
+        invalid: summary.invalid,
+        exactExisting: summary.exactExisting,
+        likelyExisting: summary.likelyExisting,
+        possibleExisting: summary.possibleExisting,
+        newRecords: summary.new,
+        conflictRecords: summary.conflict,
+        approved: 0,
+        rejected: 0,
+        promoted: 0,
+        staged: summary.staged,
+        errors: summary.errors,
+        summary,
+      };
+      runId = (await store.createImportRun(source, runInput)).id;
+    }
+    for (const candidate of candidates) candidate.importRunId = runId;
     stagedResult = await store.upsertStagedCandidates(candidates);
     summary.staged = stagedResult.length;
-    await store.updateImportRun(run.id, {
+    if (!options.deferRunFinalization) await store.updateImportRun(runId, {
       processed: summary.processed,
       valid: summary.valid,
       invalid: summary.invalid,
@@ -624,6 +651,161 @@ export async function acquireFromRecords(
   };
 }
 
+export async function acquireDiscoveredProducts<TRaw>(
+  provider: CatalogProvider<TRaw>,
+  discoveryOptions: ProviderDiscoveryOptions,
+  canonicalCatalog: CanonicalCatalogEntry[] = [],
+  sourceInfo: Partial<SourceRegistryEntry> = {},
+  options: Omit<AcquisitionOptions, "existingRun" | "deferRunFinalization"> = {},
+  store?: StagingStore
+): Promise<DiscoveryAcquisitionResult> {
+  const apply = options.apply ?? false;
+  if (apply && !store) throw new Error("acquireDiscoveredProducts: a StagingStore is required when apply=true.");
+
+  const startedAt = Date.now();
+  const aggregate: AcquisitionSummary = {
+    processed: 0,
+    valid: 0,
+    invalid: 0,
+    exactExisting: 0,
+    likelyExisting: 0,
+    possibleExisting: 0,
+    new: 0,
+    conflict: 0,
+    staged: 0,
+    errors: 0,
+  };
+  const metricRecords: Partial<CatalogCandidateInput>[] = [];
+  const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
+  const staged: StagedCatalogCandidate[] = [];
+  const providerErrors: ProviderFetchError[] = [];
+  const persistence = new Set<string>();
+  let fetched = 0;
+  let pages = 0;
+  let indexCandidatesExamined: number | null = null;
+  let enrichmentAttempts: number | null = null;
+  let existingRun: ExistingImportRun | undefined;
+
+  if (apply && store) {
+    const source = await store.upsertSource({
+      id: sourceInfo.id,
+      name: sourceInfo.name ?? "fixture-source",
+      type: sourceInfo.type ?? "manual import",
+      baseUrl: sourceInfo.baseUrl ?? null,
+      trustClassification: sourceInfo.trustClassification ?? "staged",
+      active: sourceInfo.active ?? true,
+      notes: sourceInfo.notes ?? null,
+      metadata: sourceInfo.metadata ?? {},
+    });
+    const run = await store.createImportRun(source, {
+      adapter: options.adapter ?? "json",
+      sourcePath: options.sourcePath ?? null,
+      dryRun: false,
+      processed: 0,
+      valid: 0,
+      invalid: 0,
+      exactExisting: 0,
+      likelyExisting: 0,
+      possibleExisting: 0,
+      newRecords: 0,
+      conflictRecords: 0,
+      approved: 0,
+      rejected: 0,
+      promoted: 0,
+      staged: 0,
+      errors: 0,
+      status: "partial",
+      summary: { requestedLimit: discoveryOptions.limit ?? null },
+    });
+    existingRun = { id: run.id, source };
+  }
+
+  await processDiscoveredPages(provider, discoveryOptions, async (page) => {
+    fetched += page.records.length;
+    pages += 1;
+    providerErrors.push(...page.errors);
+    const processedCount = Number(page.checkpoint?.processedCount);
+    const attemptCount = Number(page.checkpoint?.enrichmentAttempts);
+    if (Number.isFinite(processedCount)) indexCandidatesExamined = Math.max(indexCandidatesExamined ?? 0, processedCount);
+    if (Number.isFinite(attemptCount)) enrichmentAttempts = Math.max(enrichmentAttempts ?? 0, attemptCount);
+
+    const pageRecords: CatalogCandidateInput[] = [];
+    for (const record of page.records) {
+      try {
+        pageRecords.push(provider.normalizeProduct(record));
+      } catch (error) {
+        providerErrors.push({
+          message: error instanceof Error ? error.message : String(error),
+          sourceExternalId: (record as { sourceExternalId?: string })?.sourceExternalId,
+        });
+      }
+    }
+    metricRecords.push(...pageRecords);
+    const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
+      ...options,
+      existingRun,
+      deferRunFinalization: Boolean(existingRun),
+    }, store);
+    for (const key of ["processed", "valid", "invalid", "exactExisting", "likelyExisting", "possibleExisting", "new", "conflict", "errors"] as const) {
+      aggregate[key] += pageRun.summary[key];
+    }
+    staged.push(...pageRun.staged);
+    invalidRecords.push(...pageRun.invalidRecords);
+    for (const entry of pageRun.persistence) persistence.add(entry);
+  });
+
+  aggregate.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, aggregate, {
+    discovered: fetched,
+    providerErrors: providerErrors.length,
+  });
+  const elapsedMs = Date.now() - startedAt;
+  if (existingRun && store) {
+    aggregate.staged = await store.countStagedCandidatesByRun(existingRun.id);
+    const persistedSummary = {
+      ...aggregate,
+      requestedLimit: discoveryOptions.limit ?? null,
+      sourceRecords: fetched,
+      successfulEnrichments: metricRecords.length,
+      providerErrors: providerErrors.length,
+      elapsedMs,
+      providerPages: pages,
+      indexCandidatesExamined,
+      enrichmentAttempts,
+    };
+    await store.updateImportRun(existingRun.id, {
+      processed: aggregate.processed,
+      valid: aggregate.valid,
+      invalid: aggregate.invalid,
+      exactExisting: aggregate.exactExisting,
+      likelyExisting: aggregate.likelyExisting,
+      possibleExisting: aggregate.possibleExisting,
+      newRecords: aggregate.new,
+      conflictRecords: aggregate.conflict,
+      staged: aggregate.staged,
+      errors: aggregate.errors,
+      status: "completed",
+      summary: persistedSummary,
+    });
+  } else {
+    aggregate.staged = staged.length;
+  }
+
+  return {
+    source: existingRun?.source,
+    sourceId: existingRun?.source.id,
+    runId: existingRun?.id,
+    staged,
+    invalidRecords,
+    summary: aggregate,
+    persistence: [...persistence],
+    fetched,
+    pages,
+    providerErrors,
+    enriched: metricRecords.length,
+    elapsedMs,
+  };
+}
+
 export type CatalogRunReportMetrics = {
   requested: number;
   fetched: number;
@@ -640,6 +822,9 @@ export type CatalogRunReportMetrics = {
   errors: number;
   providerErrors: number | null;
   elapsedMs: number | null;
+  providerPages: number | null;
+  indexCandidatesExamined: number | null;
+  enrichmentAttempts: number | null;
   imageCoverage: number;
   gtinCoverage: number;
   modelCoverage: number;
@@ -697,11 +882,15 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
   const persistedElapsedMs = currentRun?.summary && typeof currentRun.summary === "object" && "elapsedMs" in currentRun.summary
     ? (currentRun.summary as Record<string, unknown>).elapsedMs as number | null | undefined
     : undefined;
+  const persistedSummary = currentRun?.summary && typeof currentRun.summary === "object"
+    ? currentRun.summary as Record<string, unknown>
+    : {};
+  const persistedNumber = (key: string): number | null => typeof persistedSummary[key] === "number" ? persistedSummary[key] as number : null;
 
   const metrics: CatalogRunReportMetrics = {
-    requested: currentRun?.processed ?? runCandidates.length,
-    fetched: currentRun?.processed ?? runCandidates.length,
-    enriched: currentRun?.valid ?? validRecords.length,
+    requested: persistedNumber("requestedLimit") ?? currentRun?.processed ?? runCandidates.length,
+    fetched: persistedNumber("sourceRecords") ?? currentRun?.processed ?? runCandidates.length,
+    enriched: persistedNumber("successfulEnrichments") ?? currentRun?.valid ?? validRecords.length,
     processed: currentRun?.processed ?? runCandidates.length,
     valid: currentRun?.valid ?? validRecords.length,
     invalid: currentRun?.invalid ?? Math.max(runCandidates.length - validRecords.length, 0),
@@ -714,6 +903,9 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     errors: currentRun?.errors ?? 0,
     providerErrors: persistedProviderErrors ?? null,
     elapsedMs: persistedElapsedMs ?? null,
+    providerPages: persistedNumber("providerPages"),
+    indexCandidatesExamined: persistedNumber("indexCandidatesExamined"),
+    enrichmentAttempts: persistedNumber("enrichmentAttempts"),
     imageCoverage: typeof persistedMetrics?.imageRate === "number" ? persistedMetrics.imageRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.imageUrl)).length / validRecords.length : 0),
     gtinCoverage: typeof persistedMetrics?.gtinRate === "number" ? persistedMetrics.gtinRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / validRecords.length : 0),
     modelCoverage: typeof persistedMetrics?.modelRate === "number" ? persistedMetrics.modelRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / validRecords.length : 0),
@@ -845,6 +1037,9 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     "CATALOG ACQUISITION RUN",
     `Provider: open-icecat`,
     `Run: ${report.currentRunId ?? "n/a"}`,
+    `Requested: ${metrics.requested}`,
+    `Source records: ${metrics.fetched}`,
+    `Successful enrichments: ${metrics.enriched}`,
     `Processed: ${metrics.processed}`,
     `Valid: ${metrics.valid}`,
     `Invalid: ${metrics.invalid}`,
@@ -872,6 +1067,9 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     `Promotion ready: ${metrics.promotionReady}`,
     "",
     "PROVIDER",
+    `Pages: ${metrics.providerPages === null ? "unavailable" : metrics.providerPages}`,
+    `Index candidates examined: ${metrics.indexCandidatesExamined === null ? "unavailable" : metrics.indexCandidatesExamined}`,
+    `Enrichment attempts: ${metrics.enrichmentAttempts === null ? "unavailable" : metrics.enrichmentAttempts}`,
     `Errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
     `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,
   ];
