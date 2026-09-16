@@ -379,6 +379,18 @@ category/subcategory fields without approving or promoting candidates. Existing
 staged rows are not backfilled or mutated by mapping creation; they are handled
 by a later acquisition or explicit operator workflow.
 
+Canonical classification is separate from discovery/navigation. The existing
+`catalog_subcategories.parent_subcategory_id` tree and reviewed
+`catalog-data/taxonomy.json` importer support deeper internal classes without
+changing the app's ten curated Categories tiles. Inspect the canonical tree
+with `catalog:taxonomy:canonical`; it labels top-level allowlisted departments
+as `discovery-visible` and deeper/internal nodes as `internal-only`.
+
+Open Icecat category `846` is intentionally unresolved in this repository. The
+available fixtures preserve external IDs and some category names, but do not
+provide trustworthy evidence identifying real production `846`; no mapping or
+canonical printer classification is fabricated.
+
 ## Idempotency and fingerprints
 
 Each staged record keeps a stable fingerprint derived from source identity and product identity so reprocessing the same record does not create duplicate stage entries.

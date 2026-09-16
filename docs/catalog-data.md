@@ -28,6 +28,22 @@ and watches (Watches). Each `catalog-data` **file** picks one category and
 declares the brand/families/products that belong to it; the same brand slug
 can appear in more than one file (see [C](#c-how-to-add-a-new-brand)).
 
+Canonical classification and consumer discovery are separate concerns. The
+taxonomy file may contain deeper internal subcategory paths such as
+`electronics/printers/ink-toner` without creating a new Categories-screen tile.
+The app's ten curated top-level departments are an explicit discovery
+allowlist; internal taxonomy nodes are not navigation-visible unless the app
+allowlist is deliberately changed. Use the read-only operator view to inspect
+both classifications:
+
+```sh
+npm run catalog:taxonomy:canonical -- --backend local
+```
+
+Canonical taxonomy expansion remains a reviewed `catalog-data` change followed
+by the existing dry-run/import workflow. External provider mappings may point
+to an existing internal node, but never create one automatically.
+
 ## B. catalog-data file format
 
 Two JSON "kinds" live under `catalog-data/`, discovered recursively — nest

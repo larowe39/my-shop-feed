@@ -14,12 +14,24 @@ async function main() {
   const { LocalTaxonomyMappingStore } = mappings;
   const { acquireFromRecords, assessCandidateReadiness } = acquisition;
   const { LocalStagingStore } = staging;
+  const { CURATED_DISCOVERY_CATEGORY_SLUGS, isDiscoveryCategoryVisible } = await import("../lib/discoveryTaxonomy.ts");
 
   fs.rmSync(ledgerPath, { force: true });
   const store = new LocalTaxonomyMappingStore({
     categories: [{ id: "cat-electronics", name: "Electronics" }, { id: "cat-home", name: "Home" }],
-    subcategories: [{ id: "sub-headphones", categoryId: "cat-electronics", name: "Headphones" }],
+    subcategories: [
+      { id: "sub-headphones", categoryId: "cat-electronics", name: "Headphones" },
+      { id: "sub-printers", categoryId: "cat-electronics", name: "Printers" },
+    ],
   });
+
+  assert.strictEqual(CURATED_DISCOVERY_CATEGORY_SLUGS.length, 10);
+  assert.strictEqual(isDiscoveryCategoryVisible("electronics"), true);
+  assert.strictEqual(isDiscoveryCategoryVisible("printers"), false);
+  const categoriesScreenSource = fs.readFileSync(path.join(__dirname, "..", "app", "(tabs)", "categories.tsx"), "utf8");
+  assert.doesNotMatch(categoriesScreenSource, /list\.push\(/, "product labels must not create discovery navigation tiles");
+  const canonicalCliSource = fs.readFileSync(path.join(__dirname, "catalog-taxonomy-canonical.js"), "utf8");
+  assert.match(canonicalCliSource, /internal-only/, "canonical taxonomy inspection must distinguish internal-only nodes");
 
   assert.strictEqual(mappingKey({ provider: "open-icecat", externalId: "846" }), mappingKey({ provider: "OPEN-ICECAT", externalId: "846" }));
   assert.notStrictEqual(mappingKey({ provider: "open-icecat", externalId: "846" }), mappingKey({ provider: "gs1", externalId: "846" }));
@@ -49,6 +61,13 @@ async function main() {
   assert.strictEqual(mappingIsTrusted(verified), true);
   const reused = await store.resolveTrustedMapping({ provider: "open-icecat", externalId: "846" });
   assert.strictEqual(reused.canonicalSubcategoryName, "Headphones");
+
+  const newInternalTarget = await store.validateCanonicalTarget("cat-electronics", "sub-printers");
+  const newInternalMapping = await store.upsertMapping({
+    identity: { provider: "open-icecat", externalId: "printer-category" },
+    status: "verified", method: "manual",
+  }, newInternalTarget);
+  assert.strictEqual(mappingIsTrusted(newInternalMapping), true, "a legitimate reviewed internal class can receive an external mapping");
 
   const unresolved = { sourceExternalId: "product-1", brand: "Sony", productName: "Headphone", raw: { provider: "open-icecat", externalCategory: { id: "846", name: "Headphones" } }, externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Headphones" } };
   assert.strictEqual(assessCandidateReadiness(unresolved, "NEW").promotionReady, false);
