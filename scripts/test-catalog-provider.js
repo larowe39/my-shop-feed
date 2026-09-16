@@ -59,6 +59,7 @@ async function main() {
   await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
   await testIcecatAuthentication(OpenIcecatProvider, fixture, indexFixture);
+  await testIcecatTransportDecoding(OpenIcecatProvider, fixture, indexFixture);
   await testDiscoveryStreamFailures(OpenIcecatProvider);
   const discoveryProviderInstance = new OpenIcecatProvider({ username: "u", password: "p", fetcher: makeIcecatDiscoveryFetcher(indexFixture) });
   const discoveryRecords = [];
@@ -230,6 +231,56 @@ async function testIcecatAuthentication(OpenIcecatProvider, productFixture, inde
   });
 
   console.log("testIcecatAuthentication passed.");
+}
+
+async function testIcecatTransportDecoding(OpenIcecatProvider, productFixture, indexFixture) {
+  const plainProductHeaders = { "Content-Type": "application/xml; charset=UTF-8" };
+  const detailFetcher = makeIcecatDiscoveryFetcher(indexFixture);
+  let plainProductRequestSeen = false;
+  const compressedIndexProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) {
+        return new Response(gzipSync(indexFixture), { headers: { "Content-Type": "application/x-gzip-compressed" } });
+      }
+      plainProductRequestSeen = true;
+      const response = await detailFetcher(url, init);
+      return new Response(await response.arrayBuffer(), { headers: plainProductHeaders });
+    },
+  });
+  const discovered = [];
+  for await (const page of compressedIndexProvider.discoverProducts({ limit: 1, pageSize: 1 })) discovered.push(...page.records);
+  assert.strictEqual(discovered.length, 1, "gzip files.index transport must stream and enrich successfully");
+  assert.strictEqual(plainProductRequestSeen, true);
+
+  const plainLookupProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async () => new Response(productFixture, { headers: plainProductHeaders }),
+  });
+  const plainLookup = await plainLookupProvider.lookupProducts({ productCodes: ["PLAIN-XML"], limit: 1 });
+  assert.strictEqual(plainLookup.records.length, 1);
+  assert.strictEqual(plainLookup.errors.length, 0, "plain product XML must not produce incorrect header check");
+
+  const gzipLookupProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async () => new Response(gzipSync(productFixture), { headers: { "Content-Type": "application/gzip" } }),
+  });
+  const gzipLookup = await gzipLookupProvider.lookupProducts({ productCodes: ["GZIP-XML"], limit: 1 });
+  assert.strictEqual(gzipLookup.records.length, 1, "actual gzip magic bytes must be decompressed");
+
+  const transparentLookupProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async () => new Response(productFixture, { headers: { ...plainProductHeaders, "Content-Encoding": "gzip" } }),
+  });
+  const transparentLookup = await transparentLookupProvider.lookupProducts({ productCodes: ["TRANSPARENT-GZIP"], limit: 1 });
+  assert.strictEqual(transparentLookup.records.length, 1);
+  assert.strictEqual(transparentLookup.errors.length, 0, "already-decoded XML must not be gunzipped again when a gzip header remains");
+
+  console.log("testIcecatTransportDecoding passed.");
 }
 
 async function testTruncatedXmlFailure(OpenIcecatProvider) {

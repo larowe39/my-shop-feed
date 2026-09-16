@@ -368,12 +368,8 @@ async function fetchWithTimeout(fetcher: typeof fetch, url: string, headers: Rec
     const response = await fetcher(url, { headers, signal: controller.signal });
     if (!response.ok) throw new Error(`Icecat HTTP ${response.status} ${response.statusText}`);
     const buffer = Buffer.from(await response.arrayBuffer());
-    const contentEncoding = response.headers.get("content-encoding")?.toLowerCase() ?? "";
     const isGzipPayload = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
-    if (contentEncoding.includes("gzip") || (String(url).endsWith(".gz") && isGzipPayload)) {
-      return gunzipSync(buffer).toString("utf8");
-    }
-    return buffer.toString("utf8");
+    return (isGzipPayload ? gunzipSync(buffer) : buffer).toString("utf8");
   } finally {
     clearTimeout(timeout);
   }

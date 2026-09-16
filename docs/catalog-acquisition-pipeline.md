@@ -116,6 +116,15 @@ Category, country market, on-market, and Updated-since filters run against the
 index before enrichment. Brand filtering runs after bounded detail enrichment;
 it is not inferred from Supplier_id or M_Prod_ID Supplier_name.
 
+Transport decoding follows the response bytes rather than provider-wide
+assumptions. The `.gz` index remains a streaming resource and is passed through
+streaming gunzip only when its first bytes contain the gzip signature. Bounded
+individual product paths normally return plain `application/xml`; those bytes
+are decoded directly. A bounded response is gunzipped only when its payload
+actually starts with gzip magic bytes, preventing double decompression when a
+fetch implementation has already decoded an HTTP gzip response but retains its
+Content-Encoding header.
+
 Bulk discovery uses separate streaming timeout semantics: a 30-second request
 timeout covers only establishment through response headers, then is cleared.
 A 120-second inactivity timeout resets for every decompressed chunk and detects
