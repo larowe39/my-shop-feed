@@ -112,6 +112,20 @@ acquisition model. Failed enrichments are reported and discovery continues up
 to a conservative bounded attempt limit while seeking the requested number of
 usable records.
 
+Verified product sheets use Product ID, Prod_id, GeneratedIntTitle, Title,
+IntName, and Name attributes. Product ID becomes the Icecat external identity;
+Prod_id becomes the detail MPN/model identifier. Product naming uses the first
+non-empty value in this order: GeneratedIntTitle, Title, IntName, Name. Empty
+localized fields never override these values. Brand identity comes only from
+explicit descendant Supplier Name attributes, never title text or numeric
+Supplier IDs. Repeated identical supplier names are deduplicated; conflicting
+distinct names reject the enrichment. BrandProductCode Identifier values and
+the supplier ID/name remain raw provenance and never become aliases.
+
+The detail Product ID must equal the index Product_ID, and a present detail
+Prod_id must equal a present index Prod_ID. Conflicts produce non-retriable
+structured provider errors rather than silently replacing index identity.
+
 Category, country market, on-market, and Updated-since filters run against the
 index before enrichment. Brand filtering runs after bounded detail enrichment;
 it is not inferred from Supplier_id or M_Prod_ID Supplier_name.

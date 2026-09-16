@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ICECAT-interface>
-  <Product Product_ID="icecat-1001" Brand="Sony" Name="WH-1000XM5" Prod_ID="WH1000XM5/B" EAN_UPC="4548736131133" Model_Name="WH-1000XM5" ProductURL="https://icecat.biz/p/sony/wh1000xm5">
-    <Category Name="Headphones" />
+  <Product Code="1" ID="1399" Name="Cartouche d'encre cyan HP 80 175-ml" IntName="Cartouche d'encre cyan HP 80 175-ml" LocalName="" Prod_id="C4872A" Title="HP Cartouche d'encre cyan 80 175-ml print head" GeneratedIntTitle="HP Cartouche d'encre cyan 80 175-ml print head" GeneratedLocalTitle="" BrandLocalTitle="" HighPic="https://images.icecat.biz/img/gallery/1399.jpg">
+    <Supplier ID="1" Name="HP" />
+    <Category Name="Printers" />
+    <Identifiers>
+      <Identifier Type="BrandProductCode" Value="C4872A#018" />
+    </Identifiers>
+    <RelatedProducts>
+      <Supplier ID="1" Name="HP" />
+    </RelatedProducts>
   </Product>
   <Product Product_ID="icecat-1002" Brand="Example Audio" Name="Desk Speaker" Prod_ID="EA-DS1">
     <Category Name="Unmapped Icecat Category" />

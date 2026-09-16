@@ -7,33 +7,57 @@ const { gzipSync } = require("zlib");
 async function main() {
   const provider = await import("../lib/catalogProviders.ts");
   const acquisition = await import("../lib/catalogAcquisition.ts");
-  const { OpenIcecatProvider, parseIcecatXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages } = provider;
+  const { OpenIcecatProvider, parseIcecatXml, parseIcecatProductsXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages } = provider;
   const fixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-products.xml"), "utf8");
   const indexFixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-files-index.xml"), "utf8");
   const first = normalizeIcecatProduct(parseIcecatXml(fixture));
   assert.deepStrictEqual(new OpenIcecatProvider({ username: "u", password: "p" }).capabilities, { lookup: true, discovery: true });
 
-  assert.strictEqual(first.sourceExternalId, "icecat-1001");
-  assert.strictEqual(first.brand, "Sony");
-  assert.strictEqual(first.modelNumber, "WH-1000XM5");
-  assert.strictEqual(first.mpn, "WH1000XM5/B");
-  assert.strictEqual(first.gtin, "4548736131133");
-  assert.strictEqual(first.subcategory, "Headphones");
+  assert.strictEqual(first.sourceExternalId, "1399");
+  assert.strictEqual(first.brand, "HP");
+  assert.strictEqual(first.productName, "HP Cartouche d'encre cyan 80 175-ml print head");
+  assert.strictEqual(first.modelNumber, "C4872A");
+  assert.strictEqual(first.mpn, "C4872A");
+  assert.strictEqual(first.gtin, null);
+  assert.strictEqual(first.subcategory, null);
   assert.deepStrictEqual(first.aliases, [], "Icecat marketing text must not become aliases");
-  assert.strictEqual(first.raw.providerProductId, "icecat-1001");
+  assert.strictEqual(first.raw.providerProductId, "1399");
+  assert.deepStrictEqual(first.raw.supplier, { id: "1", name: "HP" });
+  assert.deepStrictEqual(first.raw.brandProductCodes, ["C4872A#018"]);
 
-  const unmapped = normalizeIcecatProduct(parseIcecatXml(fixture.replace("icecat-1001", "icecat-1003").replace("Sony", "Example Audio").replace("WH-1000XM5", "Desk Speaker").replace("WH1000XM5/B", "EA-DS1").replace("Headphones", "Unknown")));
+  const unmapped = normalizeIcecatProduct(parseIcecatProductsXml(fixture)[1]);
   assert.strictEqual(unmapped.category, null);
   assert.strictEqual(unmapped.subcategory, null);
-  assert.strictEqual(unmapped.raw.sourceCategory, "Unknown");
+  assert.strictEqual(unmapped.raw.sourceCategory, "Unmapped Icecat Category");
   assert.strictEqual(mapIcecatCategory("Headphones").category, "Electronics");
   assert.strictEqual(mapIcecatCategory("Unknown"), null);
 
   const missingOptional = normalizeIcecatProduct({ Product_ID: "icecat-1004", Brand: "Brand", Name: "Product" });
   assert.strictEqual(missingOptional.gtin, null);
   assert.strictEqual(missingOptional.sourceUrl, null);
-  assert.throws(() => normalizeIcecatProduct({ Product_ID: "bad", Brand: "Brand" }), /product name/);
+  assert.throws(() => normalizeIcecatProduct({ Product_ID: "bad", Brand: "Brand" }), /product title\/name/);
   assert.throws(() => parseIcecatXml("<broken>"), /no products|Unexpected end|Invalid/);
+
+  const titleFallback = normalizeIcecatProduct({
+    ID: "title-1",
+    GeneratedIntTitle: "Generated title",
+    Title: "Title",
+    IntName: "International name",
+    Name: "Name",
+    LocalName: "",
+    Prod_id: "TITLE-MPN",
+    Supplier: [{ ID: "7", Name: "Explicit Brand" }, { ID: "7", Name: "Explicit Brand" }],
+  });
+  assert.strictEqual(titleFallback.productName, "Generated title");
+  assert.strictEqual(titleFallback.brand, "Explicit Brand");
+  assert.strictEqual(titleFallback.mpn, "TITLE-MPN");
+  assert.strictEqual(titleFallback.modelNumber, "TITLE-MPN");
+  assert.strictEqual(normalizeIcecatProduct({ ID: "title-2", Title: "Title", IntName: "International", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "Title");
+  assert.strictEqual(normalizeIcecatProduct({ ID: "title-3", IntName: "International", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "International");
+  assert.strictEqual(normalizeIcecatProduct({ ID: "title-4", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "Name");
+  assert.throws(() => normalizeIcecatProduct({ ID: "conflict", Name: "HP in free text", Prod_id: "M", Supplier: [{ Name: "HP" }, { Name: "Canon" }] }), /conflicting Supplier names/);
+  assert.throws(() => normalizeIcecatProduct({ ID: "no-brand", Title: "HP title text", Prod_id: "M" }), /explicit Supplier\/brand\/manufacturer/);
+  console.log("testLiveProductSheetIdentity passed.");
 
   let calls = 0;
   const mockProvider = new OpenIcecatProvider({
@@ -112,6 +136,7 @@ async function main() {
 
   await testFilesIndexSchemaMismatch(OpenIcecatProvider);
   await testUsableRecordLimitAfterEnrichmentFailure(OpenIcecatProvider);
+  await testEnrichmentIdentityMismatch(OpenIcecatProvider);
 
   await testLargeStreamingDiscovery(OpenIcecatProvider);
   await testTruncatedXmlFailure(OpenIcecatProvider);
@@ -162,7 +187,7 @@ function makeIcecatDiscoveryFetcher(indexFixture, inspectRequest) {
       "1002": { brand: "Example Audio", name: "Desk Speaker", mpn: "EA-DS1", gtin: "1234567890123" },
       "1003": { brand: "Example Controls", name: "XLR Controller", mpn: "XLR-100", gtin: "" },
     }[productId] ?? { brand: "Synthetic", name: `Model ${productId}`, mpn: `MPN-${productId}`, gtin: "" };
-    return new Response(`<?xml version="1.0"?><ICECAT-interface><Product Product_ID="${productId}" Brand="${details.brand}" Name="${details.name}" Model_Name="${details.name}" Prod_ID="${details.mpn}" EAN_UPC="${details.gtin}" /></ICECAT-interface>`);
+    return new Response(`<?xml version="1.0"?><ICECAT-interface><Product ID="${productId}" Name="${details.name}" IntName="${details.name}" Title="${details.name}" GeneratedIntTitle="${details.name}" LocalName="" Prod_id="${details.mpn}" EAN_UPC="${details.gtin}"><Supplier ID="supplier-${productId}" Name="${details.brand}"/><Supplier ID="supplier-${productId}" Name="${details.brand}"/><Identifiers><Identifier Type="BrandProductCode" Value="${details.mpn}"/></Identifiers></Product></ICECAT-interface>`);
   };
 }
 
@@ -338,6 +363,35 @@ async function testUsableRecordLimitAfterEnrichmentFailure(OpenIcecatProvider) {
   console.log("testUsableRecordLimitAfterEnrichmentFailure passed.");
 }
 
+async function testEnrichmentIdentityMismatch(OpenIcecatProvider) {
+  const index = '<ICECAT-interface><files.index><file path="export/freexml/INT/1399.xml" Product_ID="1399" Prod_ID="C4872A" Model_Name="HP 80"/></files.index></ICECAT-interface>';
+  const run = async (productXml) => {
+    const provider = new OpenIcecatProvider({
+      username: "u",
+      password: "p",
+      fetcher: async (url) => String(url).endsWith(".index.xml.gz") ? new Response(index) : new Response(productXml),
+    });
+    const records = [];
+    const errors = [];
+    for await (const page of provider.discoverProducts({ limit: 1, pageSize: 10 })) {
+      records.push(...page.records);
+      errors.push(...page.errors);
+    }
+    return { records, errors };
+  };
+
+  const idMismatch = await run('<ICECAT-interface><Product ID="1400" Prod_id="C4872A" GeneratedIntTitle="HP 80"><Supplier ID="1" Name="HP"/></Product></ICECAT-interface>');
+  assert.strictEqual(idMismatch.records.length, 0);
+  assert.match(idMismatch.errors[0].message, /identity mismatch: index Product_ID 1399 does not match product ID 1400/);
+  assert.strictEqual(idMismatch.errors[0].retriable, false);
+
+  const mpnMismatch = await run('<ICECAT-interface><Product ID="1399" Prod_id="OTHER" GeneratedIntTitle="HP 80"><Supplier ID="1" Name="HP"/></Product></ICECAT-interface>');
+  assert.strictEqual(mpnMismatch.records.length, 0);
+  assert.match(mpnMismatch.errors[0].message, /MPN mismatch: index Prod_ID C4872A does not match product Prod_id OTHER/);
+  assert.strictEqual(mpnMismatch.errors[0].retriable, false);
+  console.log("testEnrichmentIdentityMismatch passed.");
+}
+
 async function testDiscoveryStreamFailures(OpenIcecatProvider) {
   const uncaughtErrors = [];
   const onUncaughtException = (error) => { uncaughtErrors.push(error); };
@@ -432,7 +486,7 @@ async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
   const provider = new OpenIcecatProvider({
     username: "u",
     password: "p",
-    fetcher: makeIcecatDiscoveryFetcher('<ICECAT-interface><files.index><file Product_ID="bad" Model_Name="Missing path"/><file path="export/freexml/INT/1.xml" Product_ID="1" Prod_ID="GOOD-1" Model_Name="Good"/></files.index></ICECAT-interface>'),
+    fetcher: makeIcecatDiscoveryFetcher('<ICECAT-interface><files.index><file Product_ID="bad" Model_Name="Missing path"/><file path="export/freexml/INT/1.xml" Product_ID="1" Prod_ID="MPN-1" Model_Name="Good"/></files.index></ICECAT-interface>'),
   });
   const pages = [];
   for await (const page of provider.discoverProducts({ limit: 1, pageSize: 25 })) pages.push(page);

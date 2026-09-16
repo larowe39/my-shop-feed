@@ -148,6 +148,46 @@ function categoryName(product: IcecatProduct): string | null {
   return first(attr(category, "Name", "name"), text(category));
 }
 
+function collectNamedObjects(value: unknown, name: string, results: Record<string, unknown>[] = []): Record<string, unknown>[] {
+  if (!value || typeof value !== "object") return results;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectNamedObjects(entry, name, results);
+    return results;
+  }
+  const object = value as Record<string, unknown>;
+  for (const [key, child] of Object.entries(object)) {
+    if (key === name) {
+      const entries = Array.isArray(child) ? child : [child];
+      for (const entry of entries) {
+        if (entry && typeof entry === "object") results.push(entry as Record<string, unknown>);
+      }
+    }
+    collectNamedObjects(child, name, results);
+  }
+  return results;
+}
+
+function readProductSupplier(product: IcecatProduct): { id: string | null; name: string } | null {
+  const suppliers = collectNamedObjects(product, "Supplier")
+    .map((supplier) => ({ id: attr(supplier, "ID", "Id", "id"), name: attr(supplier, "Name", "name") }))
+    .filter((supplier): supplier is { id: string | null; name: string } => Boolean(supplier.name));
+  const uniqueNames = new Map<string, { id: string | null; name: string }>();
+  for (const supplier of suppliers) uniqueNames.set(supplier.name.trim().toLowerCase(), supplier);
+  if (uniqueNames.size > 1) {
+    throw new Error(`Icecat product has conflicting Supplier names: ${[...uniqueNames.values()].map((supplier) => supplier.name).sort().join(", ")}`);
+  }
+  return uniqueNames.values().next().value ?? null;
+}
+
+function readBrandProductCodes(product: IcecatProduct): string[] {
+  return [...new Set(
+    collectNamedObjects(product, "Identifier")
+      .filter((identifier) => attr(identifier, "Type") === "BrandProductCode")
+      .map((identifier) => attr(identifier, "Value"))
+      .filter((value): value is string => Boolean(value))
+  )];
+}
+
 function normalizeIcecatBoolean(value: unknown): boolean | null {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 0 ? false : value === 1 ? true : null;
@@ -275,20 +315,25 @@ export function mapIcecatCategory(sourceCategory: string | null | undefined, map
 }
 
 export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRecord, mappings = DEFAULT_ICECAT_TAXONOMY): CatalogCandidateInput {
+  const supplier = readProductSupplier(rawRecord as IcecatProduct);
+  const brandProductCodes = readBrandProductCodes(rawRecord as IcecatProduct);
   const productId = first(
-    attr(rawRecord as Record<string, unknown>, "Product_ID", "ProductId", "id"),
+    attr(rawRecord as Record<string, unknown>, "Product_ID", "ProductId", "ID", "id"),
     text((rawRecord as Record<string, unknown>).Product_ID),
     text((rawRecord as Record<string, unknown>).ProductId),
     typeof (rawRecord as IcecatIndexRecord).sourceExternalId === "string" ? (rawRecord as IcecatIndexRecord).sourceExternalId : null
   );
   const brand = first(
     attr(rawRecord as Record<string, unknown>, "Brand", "Manufacturer"),
-    attr((rawRecord as Record<string, unknown>).Supplier, "Name", "name"),
+    supplier?.name,
     text((rawRecord as Record<string, unknown>).Brand),
     text((rawRecord as Record<string, unknown>).Manufacturer),
     typeof (rawRecord as IcecatIndexRecord).brand === "string" ? (rawRecord as IcecatIndexRecord).brand : null
-  ) ?? "Open Icecat";
+  );
   const productName = first(
+    attr(rawRecord as Record<string, unknown>, "GeneratedIntTitle"),
+    attr(rawRecord as Record<string, unknown>, "Title"),
+    attr(rawRecord as Record<string, unknown>, "IntName"),
     attr(rawRecord as Record<string, unknown>, "Name", "ProductName"),
     text((rawRecord as Record<string, unknown>).Name),
     text((rawRecord as Record<string, unknown>).ProductName),
@@ -298,7 +343,7 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
     typeof (rawRecord as IcecatIndexRecord).sourceExternalId === "string" ? (rawRecord as IcecatIndexRecord).sourceExternalId : null
   );
   const mpn = first(
-    attr(rawRecord as Record<string, unknown>, "Prod_ID", "ProductCode", "MPN", "Model"),
+    attr(rawRecord as Record<string, unknown>, "Prod_ID", "Prod_id", "ProductCode", "MPN", "Model"),
     text((rawRecord as Record<string, unknown>).ProductCode),
     text((rawRecord as Record<string, unknown>).MPN),
     typeof (rawRecord as IcecatIndexRecord).mpn === "string" ? (rawRecord as IcecatIndexRecord).mpn : null
@@ -311,7 +356,7 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
     typeof (rawRecord as IcecatIndexRecord).gtin === "string" ? (rawRecord as IcecatIndexRecord).gtin : null
   );
   const model = first(
-    attr(rawRecord as Record<string, unknown>, "Model_Name", "Model"),
+    attr(rawRecord as Record<string, unknown>, "Model_Name", "Model", "Prod_id"),
     text((rawRecord as Record<string, unknown>).Model_Name),
     text((rawRecord as Record<string, unknown>).Model),
     typeof (rawRecord as IcecatIndexRecord).modelNumber === "string" ? (rawRecord as IcecatIndexRecord).modelNumber : null,
@@ -319,7 +364,7 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
   );
   const sourceCategory = categoryName(rawRecord as IcecatProduct) ?? (rawRecord as IcecatIndexRecord).category ?? null;
   const taxonomy = mapIcecatCategory(sourceCategory, mappings);
-  if (!productId || !brand || !productName) throw new Error("Icecat product is missing Product_ID, brand/manufacturer, or product name");
+  if (!productId || !brand || !productName) throw new Error("Icecat product is missing ID/Product_ID, explicit Supplier/brand/manufacturer, or product title/name");
 
   const rawPayload = "raw" in (rawRecord as Record<string, unknown>) ? (rawRecord as Record<string, unknown>).raw : null;
   const spreadableRaw = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
@@ -348,6 +393,8 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
       taxonomyMapping: taxonomy,
       record: (rawRecord as Record<string, unknown>).record ?? rawRecord,
       sourceType: "open-icecat",
+      supplier,
+      brandProductCodes,
       ...spreadableRaw,
     },
   };
@@ -796,6 +843,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           try {
             const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000);
             const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
+            if (detail.sourceExternalId !== indexRecord.sourceExternalId) {
+              throw new Error(`Icecat enrichment identity mismatch: index Product_ID ${indexRecord.sourceExternalId} does not match product ID ${detail.sourceExternalId}`);
+            }
+            if (indexRecord.mpn && detail.mpn && indexRecord.mpn !== detail.mpn) {
+              throw new Error(`Icecat enrichment MPN mismatch: index Prod_ID ${indexRecord.mpn} does not match product Prod_id ${detail.mpn}`);
+            }
             const enrichedRecord: IcecatIndexRecord = {
               ...indexRecord,
               brand: detail.brand,
@@ -803,7 +856,14 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
               modelNumber: detail.modelNumber ?? indexRecord.modelNumber,
               mpn: detail.mpn ?? indexRecord.mpn,
               gtin: detail.gtin ?? indexRecord.gtin,
-              raw: { ...indexRecord.raw, enrichedProduct: detail.raw },
+              raw: {
+                ...indexRecord.raw,
+                indexProductId: indexRecord.sourceExternalId,
+                detailProductId: detail.sourceExternalId,
+                indexMpn: indexRecord.mpn,
+                detailMpn: detail.mpn,
+                enrichedProduct: detail.raw,
+              },
             };
             if (!matchesDiscoveryFilter(enrichedRecord, options)) continue;
             options.diagnostics?.onRecordQualified?.();
@@ -812,10 +872,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             page.push(enrichedRecord);
             if (page.length >= pageSize || (limit > 0 && emittedCount + page.length >= limit)) flushPage();
           } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const isDataError = /identity mismatch|MPN mismatch|conflicting Supplier names|missing ID\/Product_ID/.test(message);
             pageErrors.push({
               sourceExternalId: indexRecord.sourceExternalId,
-              message: `Icecat product enrichment failed: ${error instanceof Error ? error.message : String(error)}`,
-              retriable: true,
+              message: `Icecat product enrichment failed: ${message}`,
+              retriable: !isDataError,
             });
             if (page.length + pageErrors.length >= pageSize) flushPage();
           }
