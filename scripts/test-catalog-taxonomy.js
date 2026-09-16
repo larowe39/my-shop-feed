@@ -28,6 +28,7 @@ async function main() {
     subcategories: [
       { id: "sub-headphones", categoryId: "cat-electronics", name: "Headphones" },
       { id: "sub-printers", categoryId: "cat-electronics", name: "Printers" },
+      { id: "sub-laptops", categoryId: "cat-electronics", name: "Laptops" },
     ],
   });
 
@@ -93,12 +94,17 @@ async function main() {
   }
   coverageCandidates.push({ ...coverageCandidates[0], id: "foreign-candidate", importRunId: "foreign-run", fingerprint: "foreign-fingerprint" });
   await coverageStore.upsertStagedCandidates(coverageCandidates);
+  const laptopTarget = await store.validateCanonicalTarget("cat-electronics", "sub-laptops");
+  await store.upsertMapping({ identity: { provider: "OPEN-ICECAT", externalId: " 151 ", name: "Laptops" }, status: "verified", method: "manual" }, laptopTarget);
+  await store.upsertMapping({ identity: { provider: "open-icecat", externalId: "847", name: "Photo Paper" }, status: "suggested", method: "automated_suggestion" }, laptopTarget);
+  await store.upsertMapping({ identity: { provider: "open-icecat", externalId: "292", name: "Rejected" }, status: "rejected", method: "manual" }, laptopTarget);
+  await store.upsertMapping({ identity: { provider: "other-provider", externalId: "151", name: "Other Laptops" }, status: "verified", method: "manual" }, laptopTarget);
   const planPath = path.join(__dirname, "..", "docs", "catalog-taxonomy-mapping-plan.json");
-  const computed = await coveragePlanner.computeCoverage({ runId: coverageRun.id, backend: "local", planPath, logger: console }, { store: coverageStore });
+  const computed = await coveragePlanner.computeCoverage({ runId: coverageRun.id, backend: "local", planPath, logger: console }, { store: coverageStore, mappingStore: store });
   assert.strictEqual(computed.totalRunProducts, 100, "coverage planner must compute actual run totals from persisted data");
-  assert.strictEqual(computed.currentlyResolvedProducts, 0, "fixture starts with no persisted verified mappings");
-  assert.strictEqual(computed.currentlyUnresolvedProducts, 100, "all fixture products start unresolved");
-  assert.strictEqual(computed.newlyResolvedProducts, 79, "mapped taxonomy IDs must resolve their product source counts");
+  assert.strictEqual(computed.currentlyResolvedProducts, 9, "persisted verified 151 mapping must resolve its nine products");
+  assert.strictEqual(computed.currentlyUnresolvedProducts, 91, "only products without persisted verified mappings remain currently unresolved");
+  assert.strictEqual(computed.newlyResolvedProducts, 70, "persistently resolved products must not be double-counted as proposed-new");
   assert.strictEqual(computed.resolvedAfterPlanProducts, 79, "resolved-after-plan products must be weighted by source count");
   assert.strictEqual(computed.unresolvedAfterPlanProducts, 21, "unmapped taxonomy IDs must retain their product source counts");
   assert.strictEqual(computed.resolvedAfterPlanProducts + computed.unresolvedAfterPlanProducts, computed.totalRunProducts, "product-level coverage must conserve total products");
@@ -106,6 +112,11 @@ async function main() {
   assert.strictEqual(computed.unresolvedExternalTaxonomyIds, 6, "unresolved taxonomy ID count must remain separate from product count");
   assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "971").sourceCount, 18, "971 must contribute 18 products");
   assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "971").newlyResolvedCount, 18, "971 must contribute 18 newly resolved products");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "151").currentResolution, "resolved", "persisted verified 151 mapping must be current");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "151").currentResolvedCount, 9, "151 current resolution must contribute nine products");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "151").newlyResolvedCount, 0, "151 must contribute zero proposed-new products");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "847").currentResolution, "unresolved", "suggested mappings must not count as current resolution");
+  assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "292").currentResolution, "unresolved", "rejected mappings must not count as current resolution");
   assert.strictEqual(computed.byExternalCategory.find((row) => row.externalId === "847").afterPlanState, "unresolved", "847 must remain unresolved");
 
   const verifiedRun = await coverageStore.createImportRun({ id: "source-verified-test", name: "verified-source", type: "open-icecat", baseUrl: null, trustClassification: "staged", active: true, notes: null, metadata: {} }, {

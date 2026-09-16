@@ -74,6 +74,10 @@ function destinationExists(mapping, canonicalTree) {
   });
 }
 
+function mappingKey(provider, externalId) {
+  return `${String(provider || "").trim().toLowerCase()}:${String(externalId || "").trim()}`;
+}
+
 async function resolveRunCandidates(stagingStore, runId) {
   const rows = await stagingStore.listStagedCandidates();
   const filtered = rows.filter((candidate) => !runId || candidate.importRunId === runId);
@@ -83,8 +87,13 @@ async function resolveRunCandidates(stagingStore, runId) {
   });
 }
 
-async function buildCoverageReport({ runId, planFile, logger = console } = {}, sourceRows, normalizedPlan, canonicalTree) {
+async function buildCoverageReport({ runId, planFile, logger = console } = {}, sourceRows, normalizedPlan, canonicalTree, persistedMappings = []) {
   const planByKey = new Map(normalizedPlan.mappings.map((entry) => [`${entry.provider}:${entry.externalId}`, entry]));
+  const persistedVerifiedByKey = new Map(
+    persistedMappings
+      .filter((entry) => String(entry.status || "").trim().toLowerCase() === "verified")
+      .map((entry) => [mappingKey(entry.provider, entry.externalTaxonomyId), entry])
+  );
   const byId = new Map();
 
   for (const candidate of sourceRows) {
@@ -94,9 +103,11 @@ async function buildCoverageReport({ runId, planFile, logger = console } = {}, s
     const externalId = String(identity.externalId || "").trim();
     const key = `${provider}:${externalId}`;
     const mapping = planByKey.get(key) || null;
+    const persistedMapping = persistedVerifiedByKey.get(key) || null;
     const currentResolved = Boolean(
       (candidate.category && candidate.subcategory) ||
-      (candidate.rawPayload && candidate.rawPayload.taxonomyMapping && candidate.rawPayload.taxonomyMapping.status === "verified")
+      (candidate.rawPayload && candidate.rawPayload.taxonomyMapping && candidate.rawPayload.taxonomyMapping.status === "verified") ||
+      persistedMapping
     );
     const row = byId.get(key) || {
       provider,
@@ -110,8 +121,9 @@ async function buildCoverageReport({ runId, planFile, logger = console } = {}, s
       unresolvedAfterPlanCount: 0,
       currentResolved: false,
       wouldResolve: Boolean(mapping),
-      destination: mapping ? mapping.canonicalPath || mapping.canonicalSubcategory || mapping.canonicalCategory : null,
-      destinationExists: destinationExists(mapping, canonicalTree),
+      persistedMapping: Boolean(persistedMapping),
+      destination: (mapping || persistedMapping) ? (mapping?.canonicalPath || mapping?.canonicalSubcategory || mapping?.canonicalCategory || persistedMapping?.canonicalSubcategoryName || persistedMapping?.canonicalCategoryName) : null,
+      destinationExists: destinationExists(mapping, canonicalTree) || Boolean(persistedMapping?.canonicalSubcategoryId || persistedMapping?.canonicalCategoryId),
       sampleProducts: [],
       resolved: false,
       afterPlanState: "unresolved",
@@ -183,7 +195,9 @@ async function computeCoverage({ runId, backend, planFile, logger = console } = 
 
   const sourceRows = candidateRows.filter((candidate) => !runId || candidate.importRunId === runId);
   const canonicalTree = await loadCanonicalTree();
-  return buildCoverageReport({ runId, planFile: resolvedPlanFile, logger }, sourceRows, normalizedPlan, canonicalTree);
+  const mappingStore = extra.mappingStore || (await import("../lib/catalogTaxonomyMappings.ts")).resolveTaxonomyMappingStore({ backend });
+  const persistedMappings = await mappingStore.listMappings();
+  return buildCoverageReport({ runId, planFile: resolvedPlanFile, logger }, sourceRows, normalizedPlan, canonicalTree, persistedMappings);
 }
 
 async function main() {
@@ -192,7 +206,10 @@ async function main() {
   const sourceRows = await resolveRunCandidates(store, runId);
   const normalizedPlan = loadPlan(planPath);
   const canonicalTree = await loadCanonicalTree();
-  await buildCoverageReport({ runId, planFile: planPath, logger: console }, sourceRows, normalizedPlan, canonicalTree);
+  const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
+  const mappingStore = resolveTaxonomyMappingStore({ backend });
+  const persistedMappings = await mappingStore.listMappings();
+  await buildCoverageReport({ runId, planFile: planPath, logger: console }, sourceRows, normalizedPlan, canonicalTree, persistedMappings);
 }
 
 module.exports = { computeCoverage: computeCoverage, loadPlan, main };
