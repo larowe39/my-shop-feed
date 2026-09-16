@@ -148,6 +148,19 @@ function categoryName(product: IcecatProduct): string | null {
   return first(attr(category, "Name", "name"), text(category));
 }
 
+function externalCategoryRecord(rawRecord: IcecatProduct | IcecatIndexRecord): { id: string | null; name: string | null } {
+  const record = rawRecord as Record<string, unknown>;
+  const raw = record.raw && typeof record.raw === "object" ? record.raw as Record<string, unknown> : {};
+  const enrichedProduct = raw.enrichedProduct && typeof raw.enrichedProduct === "object" ? raw.enrichedProduct as Record<string, unknown> : null;
+  const category = first(
+    categoryName({ Category: record.Category } as IcecatProduct),
+    categoryName(enrichedProduct ?? {}),
+    categoryName(enrichedProduct?.record as IcecatProduct ?? {}),
+  );
+  const sourceCategoryId = first(raw.categoryId, attr(raw.record, "Catid", "CategoryId"), (rawRecord as IcecatIndexRecord).category);
+  return { id: sourceCategoryId, name: category };
+}
+
 function collectNamedObjects(value: unknown, name: string, results: Record<string, unknown>[] = []): Record<string, unknown>[] {
   if (!value || typeof value !== "object") return results;
   if (Array.isArray(value)) {
@@ -314,6 +327,17 @@ export function mapIcecatCategory(sourceCategory: string | null | undefined, map
   return mappings[sourceCategory.trim().toLowerCase()] ?? null;
 }
 
+function externalCategoryPath(rawRecord: IcecatProduct | IcecatIndexRecord): string | null {
+  const record = rawRecord as Record<string, unknown>;
+  const raw = record.raw && typeof record.raw === "object" ? record.raw as Record<string, unknown> : {};
+  const enrichedProduct = raw.enrichedProduct && typeof raw.enrichedProduct === "object" ? raw.enrichedProduct as Record<string, unknown> : null;
+  return first(
+    attr(record.Category, "Path", "path", "CategoryPath"),
+    attr(enrichedProduct?.Category, "Path", "path", "CategoryPath"),
+    attr((enrichedProduct?.record as Record<string, unknown> | undefined)?.Category, "Path", "path", "CategoryPath")
+  );
+}
+
 export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRecord, mappings = DEFAULT_ICECAT_TAXONOMY): CatalogCandidateInput {
   const supplier = readProductSupplier(rawRecord as IcecatProduct);
   const brandProductCodes = readBrandProductCodes(rawRecord as IcecatProduct);
@@ -362,7 +386,8 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
     typeof (rawRecord as IcecatIndexRecord).modelNumber === "string" ? (rawRecord as IcecatIndexRecord).modelNumber : null,
     mpn
   );
-  const sourceCategory = categoryName(rawRecord as IcecatProduct) ?? (rawRecord as IcecatIndexRecord).category ?? null;
+  const externalCategory = { ...externalCategoryRecord(rawRecord), path: externalCategoryPath(rawRecord) };
+  const sourceCategory = externalCategory.name ?? (rawRecord as IcecatIndexRecord).category ?? null;
   const taxonomy = mapIcecatCategory(sourceCategory, mappings);
   if (!productId || !brand || !productName) throw new Error("Icecat product is missing ID/Product_ID, explicit Supplier/brand/manufacturer, or product title/name");
 
@@ -385,11 +410,17 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
       text((rawRecord as Record<string, unknown>).URL),
       typeof (rawRecord as IcecatIndexRecord).sourceUrl === "string" ? (rawRecord as IcecatIndexRecord).sourceUrl : null
     ),
+    imageUrl: first(
+      attr(rawRecord as Record<string, unknown>, "HighPic"),
+      text((rawRecord as Record<string, unknown>).HighPic),
+      typeof (rawRecord as IcecatIndexRecord).imageUrl === "string" ? (rawRecord as IcecatIndexRecord).imageUrl : null
+    ),
     sourceType: "open-icecat",
     raw: {
       provider: "open-icecat",
       providerProductId: productId,
       sourceCategory,
+      externalCategory,
       taxonomyMapping: taxonomy,
       record: (rawRecord as Record<string, unknown>).record ?? rawRecord,
       sourceType: "open-icecat",
@@ -856,6 +887,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
               modelNumber: detail.modelNumber ?? indexRecord.modelNumber,
               mpn: detail.mpn ?? indexRecord.mpn,
               gtin: detail.gtin ?? indexRecord.gtin,
+              imageUrl: detail.imageUrl ?? indexRecord.imageUrl,
               raw: {
                 ...indexRecord.raw,
                 indexProductId: indexRecord.sourceExternalId,

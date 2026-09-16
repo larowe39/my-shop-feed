@@ -83,6 +83,7 @@ async function main() {
       errors: 0,
     };
     const persistence = new Set();
+    let persistedRunId;
 
     await processDiscoveredPages(provider, discoveryOptions, async (page) => {
       fetched += page.records.length;
@@ -102,11 +103,12 @@ async function main() {
         adapter: "open-icecat",
         sourcePath: options.source,
       }, store);
+      persistedRunId = pageRun.runId || persistedRunId;
       for (const key of Object.keys(summary)) summary[key] += pageRun.summary[key];
       for (const entry of pageRun.persistence) persistence.add(entry);
     });
     summary.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, summary, { discovered: fetched, providerErrors: providerErrors.length });
-    run = { summary, persistence: [...persistence] };
+    run = { runId: persistedRunId, summary, persistence: [...persistence] };
   } else if (options.source) {
     const sourcePath = path.resolve(options.source);
     const xml = fs.readFileSync(sourcePath, "utf8");

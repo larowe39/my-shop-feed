@@ -288,6 +288,20 @@ existing/duplicate records, NEW records, GTIN, image, model/MPN, trustworthy
 brand, provider errors, and manual-review share. Raw payloads remain available
 for audit but are not shown by default.
 
+The quality model distinguishes four states: externally valid means required
+source identity and payload fields are present; duplicate-safe means the
+candidate classified as `NEW` under the existing matcher protections; review
+required includes duplicate ambiguity and any unmapped external Icecat
+hierarchy; promotion-ready requires external validity, duplicate safety, and a
+resolved canonical hierarchy. A valid external record is not automatically
+promotion-ready.
+
+Icecat `Catid` and detail category name/path remain external provenance. Numeric
+Catid values are never treated as PENCHANT taxonomy IDs. Configured unambiguous
+name mappings may populate canonical category/subcategory fields; otherwise
+the candidate is marked `HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED` and
+promotion is blocked without creating taxonomy rows.
+
 ## First production batch
 
 The first bounded Open Icecat production batch is intentionally staging-only:

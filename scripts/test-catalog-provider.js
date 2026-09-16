@@ -19,7 +19,9 @@ async function main() {
   assert.strictEqual(first.modelNumber, "C4872A");
   assert.strictEqual(first.mpn, "C4872A");
   assert.strictEqual(first.gtin, null);
+  assert.strictEqual(first.imageUrl, "https://images.icecat.biz/img/gallery/1399.jpg");
   assert.strictEqual(first.subcategory, null);
+  assert.deepStrictEqual(first.raw.externalCategory, { id: null, name: "Printers", path: null });
   assert.deepStrictEqual(first.aliases, [], "Icecat marketing text must not become aliases");
   assert.strictEqual(first.raw.providerProductId, "1399");
   assert.deepStrictEqual(first.raw.supplier, { id: "1", name: "HP" });
@@ -29,6 +31,7 @@ async function main() {
   assert.strictEqual(unmapped.category, null);
   assert.strictEqual(unmapped.subcategory, null);
   assert.strictEqual(unmapped.raw.sourceCategory, "Unmapped Icecat Category");
+  assert.deepStrictEqual(unmapped.raw.externalCategory, { id: null, name: "Unmapped Icecat Category", path: null });
   assert.strictEqual(mapIcecatCategory("Headphones").category, "Electronics");
   assert.strictEqual(mapIcecatCategory("Unknown"), null);
 
@@ -114,7 +117,32 @@ async function main() {
   assert.strictEqual(dailyDiscoveryPages[0].records[0].raw.supplierId, "42");
   assert.strictEqual(dailyDiscoveryPages[0].records[0].updated, "2026-09-16T06:02:02Z");
   assert.strictEqual(dailyDiscoveryPages[0].records[0].dateAdded, "2020-01-02T03:04:05Z");
-  assert.strictEqual(dailyDiscoveryPages[0].records[0].imageUrl, "https://images.icecat.biz/img/gallery/1002.jpg");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].imageUrl, "https://images.icecat.biz/img/gallery/detail-1002.jpg");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].raw.record.HighPic, "https://images.icecat.biz/img/gallery/1002.jpg", "index HighPic must remain in raw provenance");
+
+  const enrichedCandidate = normalizeIcecatProduct(dailyDiscoveryPages[0].records[0]);
+  assert.strictEqual(enrichedCandidate.imageUrl, "https://images.icecat.biz/img/gallery/detail-1002.jpg", "detail HighPic must be preferred over index HighPic");
+  assert.deepStrictEqual(enrichedCandidate.raw.externalCategory, { id: "456", name: "Headphones", path: null });
+  const indexFallbackCandidate = normalizeIcecatProduct({
+    sourceExternalId: "fallback-1",
+    brand: "Brand",
+    productName: "Product",
+    modelNumber: "MODEL-1",
+    mpn: "MODEL-1",
+    gtin: null,
+    sourceUrl: "https://data.icecat.biz/export/freexml/INT/fallback-1.xml",
+    category: "846",
+    subcategory: null,
+    onMarket: true,
+    country: null,
+    updated: null,
+    supplierId: null,
+    dateAdded: null,
+    imageUrl: "https://images.icecat.biz/img/gallery/index-fallback.jpg",
+    countryMarkets: [],
+    raw: { provider: "open-icecat", categoryId: "846" },
+  });
+  assert.strictEqual(indexFallbackCandidate.imageUrl, "https://images.icecat.biz/img/gallery/index-fallback.jpg");
 
   const filteredRecords = [];
   const filteredProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: makeIcecatDiscoveryFetcher(indexFixture) });
@@ -183,11 +211,11 @@ function makeIcecatDiscoveryFetcher(indexFixture, inspectRequest) {
     if (String(url).endsWith(".index.xml.gz")) return new Response(indexFixture);
     const productId = String(url).match(/\/(\d+)\.xml$/)?.[1] ?? "1";
     const details = {
-      "1001": { brand: "Sony", name: "WH-1000XM5", mpn: "WH1000XM5/B", gtin: "4548736131133" },
-      "1002": { brand: "Example Audio", name: "Desk Speaker", mpn: "EA-DS1", gtin: "1234567890123" },
-      "1003": { brand: "Example Controls", name: "XLR Controller", mpn: "XLR-100", gtin: "" },
+      "1001": { brand: "Sony", name: "WH-1000XM5", mpn: "WH1000XM5/B", gtin: "4548736131133", highPic: "https://images.icecat.biz/img/gallery/detail-1001.jpg" },
+      "1002": { brand: "Example Audio", name: "Desk Speaker", mpn: "EA-DS1", gtin: "1234567890123", highPic: "https://images.icecat.biz/img/gallery/detail-1002.jpg" },
+      "1003": { brand: "Example Controls", name: "XLR Controller", mpn: "XLR-100", gtin: "", highPic: "https://images.icecat.biz/img/gallery/detail-1003.jpg" },
     }[productId] ?? { brand: "Synthetic", name: `Model ${productId}`, mpn: `MPN-${productId}`, gtin: "" };
-    return new Response(`<?xml version="1.0"?><ICECAT-interface><Product ID="${productId}" Name="${details.name}" IntName="${details.name}" Title="${details.name}" GeneratedIntTitle="${details.name}" LocalName="" Prod_id="${details.mpn}" EAN_UPC="${details.gtin}"><Supplier ID="supplier-${productId}" Name="${details.brand}"/><Supplier ID="supplier-${productId}" Name="${details.brand}"/><Identifiers><Identifier Type="BrandProductCode" Value="${details.mpn}"/></Identifiers></Product></ICECAT-interface>`);
+    return new Response(`<?xml version="1.0"?><ICECAT-interface><Product ID="${productId}" Name="${details.name}" IntName="${details.name}" Title="${details.name}" GeneratedIntTitle="${details.name}" LocalName="" Prod_id="${details.mpn}" EAN_UPC="${details.gtin}" HighPic="${details.highPic}"><Supplier ID="supplier-${productId}" Name="${details.brand}"/><Supplier ID="supplier-${productId}" Name="${details.brand}"/><Category Name="Headphones"/><Identifiers><Identifier Type="BrandProductCode" Value="${details.mpn}"/></Identifiers></Product></ICECAT-interface>`);
   };
 }
 

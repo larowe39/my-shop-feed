@@ -56,7 +56,8 @@ export function calculateAcquisitionQualityMetrics(
   options: { discovered?: number; providerErrors?: number } = {}
 ): AcquisitionQualityMetrics {
   const validRecords = records.filter((record) => validateCatalogCandidate(record).valid);
-  const reviewCount = summary.likelyExisting + summary.possibleExisting + summary.conflict;
+  const hierarchyReviewCount = validRecords.filter((record) => !assessCandidateReadiness(record, "NEW").promotionReady).length;
+  const reviewCount = summary.likelyExisting + summary.possibleExisting + summary.conflict + hierarchyReviewCount;
   return {
     enrichmentSuccessRate: options.discovered === undefined ? null : rate(records.length, options.discovered),
     validRecordRate: rate(summary.valid, summary.processed),
@@ -68,6 +69,41 @@ export function calculateAcquisitionQualityMetrics(
     modelRate: rate(validRecords.filter((record) => Boolean(record.modelNumber || record.mpn)).length, validRecords.length),
     trustworthyBrandRate: rate(validRecords.filter((record) => Boolean(record.brand?.trim())).length, validRecords.length),
     manualReviewRate: rate(reviewCount, summary.valid),
+  };
+}
+
+export type CandidateReadiness = {
+  externallyValid: boolean;
+  duplicateSafe: boolean;
+  reviewRequired: boolean;
+  promotionReady: boolean;
+  reasons: string[];
+};
+
+export function assessCandidateReadiness(
+  candidate: Partial<CatalogCandidateInput>,
+  classification: CandidateClassification = "NEW"
+): CandidateReadiness {
+  const validation = validateCatalogCandidate(candidate);
+  const reasons = validation.errors.slice();
+  const duplicateSafe = classification === "NEW";
+  if (!duplicateSafe) reasons.push(`classification ${classification} requires duplicate review`);
+
+  const raw = candidate.raw && typeof candidate.raw === "object" ? candidate.raw : {};
+  const externalCategory = raw.externalCategory && typeof raw.externalCategory === "object"
+    ? raw.externalCategory as { id?: unknown; name?: unknown }
+    : null;
+  const taxonomyMapping = raw.taxonomyMapping && typeof raw.taxonomyMapping === "object" ? raw.taxonomyMapping : null;
+  const hierarchyUnresolved = raw.provider === "open-icecat" && Boolean(externalCategory && (externalCategory.id || externalCategory.name)) && !taxonomyMapping;
+  if (hierarchyUnresolved) reasons.push("HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED");
+
+  const reviewRequired = !validation.valid || !duplicateSafe || hierarchyUnresolved;
+  return {
+    externallyValid: validation.valid,
+    duplicateSafe,
+    reviewRequired,
+    promotionReady: validation.valid && duplicateSafe && !hierarchyUnresolved,
+    reasons,
   };
 }
 
@@ -439,8 +475,8 @@ export async function acquireFromRecords(
     else if (classification === "NEW") summary.new += 1;
     else if (classification === "CONFLICT") summary.conflict += 1;
 
-    const status: ReviewStatus =
-      classification === "LIKELY_EXISTING" || classification === "POSSIBLE_EXISTING" || classification === "CONFLICT" ? "needs_review" : "pending";
+    const readiness = assessCandidateReadiness(rawRecord, classification);
+    const status: ReviewStatus = readiness.reviewRequired ? "needs_review" : "pending";
     const fingerprint = sourceFingerprint({
       sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
       sourceExternalId: rawRecord.sourceExternalId ?? null,
@@ -485,6 +521,8 @@ export async function acquireFromRecords(
     });
     summary.staged += 1;
   }
+
+  summary.qualityMetrics = calculateAcquisitionQualityMetrics(records, summary);
 
   const persistenceMessages: string[] = [];
   let source: SourceRegistryEntry | undefined;
@@ -585,6 +623,18 @@ export function candidateReviewView(candidate: StagedCatalogCandidate): Record<s
     confidence: candidate.confidence,
     classification: candidate.classification,
     possibleCanonicalDuplicate: candidate.duplicateOfCatalogProductId,
+    externalCategory: candidate.rawPayload.externalCategory ?? null,
+    promotionReadiness: assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      family: candidate.family,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification),
     provenance: { sourceId: candidate.sourceId, sourceExternalId: candidate.sourceExternalId, sourceUrl: candidate.sourceUrl },
     importRunId: candidate.importRunId,
     createdAt: candidate.createdAt,
@@ -718,6 +768,22 @@ export async function promoteApprovedCandidates(
     });
     if (!revalidation.valid) {
       entries.push({ candidateId: candidate.id, ok: false, dryRun, message: `Revalidation failed: ${revalidation.errors.join(", ")}. Skipped.` });
+      continue;
+    }
+
+    const readiness = assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification);
+    if (!readiness.promotionReady) {
+      entries.push({ candidateId: candidate.id, ok: false, dryRun, message: `${readiness.reasons.join("; ") || "Candidate is not promotion-ready"}. Skipped.` });
       continue;
     }
 
