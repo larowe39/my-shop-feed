@@ -981,8 +981,8 @@ export function rankTaxonomyGaps(
   runId: string | null | undefined,
   stagedCandidates: StagedCatalogCandidate[] = [],
   mappingRecords: Array<{ provider?: string; externalId?: string; externalTaxonomyId?: string; name?: string | null; externalName?: string | null; status?: string; canonicalCategoryId?: string | null; canonicalSubcategoryId?: string | null; }> = []
-): Array<{ provider: string; externalId: string; name: string | null; candidateCount: number; sampleBrands: string[]; sampleProducts: string[]; suggestedMapping: boolean; verifiedMapping: boolean; }> {
-  const rows = new Map<string, { provider: string; externalId: string; name: string | null; candidateCount: number; sampleBrands: Set<string>; sampleProducts: Set<string>; suggestedMapping: boolean; verifiedMapping: boolean; }>();
+): Array<{ provider: string; externalId: string; name: string | null; path: string | null; candidateCount: number; sampleBrands: string[]; sampleProducts: string[]; suggestedMapping: boolean; verifiedMapping: boolean; }> {
+  const rows = new Map<string, { provider: string; externalId: string; name: string | null; path: string | null; candidateCount: number; sampleBrands: Set<string>; sampleProducts: Set<string>; suggestedMapping: boolean; verifiedMapping: boolean; }>();
 
   for (const candidate of stagedCandidates) {
     if (runId && candidate.importRunId !== runId) continue;
@@ -1002,7 +1002,8 @@ export function rankTaxonomyGaps(
     const existing = rows.get(key) ?? {
       provider,
       externalId,
-      name: (identity as Record<string, unknown>).name ? String((identity as Record<string, unknown>).name) : (mapping?.name ?? mapping?.externalName ?? null),
+      name: (identity as Record<string, unknown>).name ? String((identity as Record<string, unknown>).name) : null,
+      path: (identity as Record<string, unknown>).path ? String((identity as Record<string, unknown>).path) : null,
       candidateCount: 0,
       sampleBrands: new Set<string>(),
       sampleProducts: new Set<string>(),
@@ -1022,6 +1023,7 @@ export function rankTaxonomyGaps(
       provider: row.provider,
       externalId: row.externalId,
       name: row.name || null,
+      path: row.path || null,
       candidateCount: row.candidateCount,
       sampleBrands: [...row.sampleBrands].slice(0, 3),
       sampleProducts: [...row.sampleProducts].slice(0, 3),

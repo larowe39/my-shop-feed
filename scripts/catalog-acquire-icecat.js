@@ -31,12 +31,14 @@ function args() {
 async function main() {
   const options = args();
   const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
+  const { loadOpenIcecatTaxonomyCache } = await import("../lib/catalogProviderTaxonomy.ts");
   const { acquireDiscoveredProducts, acquireFromRecords, calculateAcquisitionQualityMetrics, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
   const provider = new OpenIcecatProvider({
     apiToken: process.env.ICECAT_API_TOKEN,
     username: process.env.ICECAT_USERNAME,
     password: process.env.ICECAT_PASSWORD,
     indexBaseUrl: process.env.ICECAT_INDEX_URL || undefined,
+    externalTaxonomy: loadOpenIcecatTaxonomyCache(),
   });
   if (options.discover) {
     assertProviderSupports(provider, "discovery");

@@ -62,6 +62,7 @@ export type ExternalTaxonomyIdentity = {
   name?: string | null;
   path?: string | null;
   parentId?: string | null;
+  parentName?: string | null;
   parentPath?: string | null;
 };
 

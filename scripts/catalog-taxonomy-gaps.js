@@ -23,13 +23,13 @@ const limit = Math.max(1, Number(getFlagValue(args, "--limit") || 10));
   const mappings = await mappingStore.listMappings();
   const gaps = rankTaxonomyGaps(runId, candidates, mappings);
   console.log("UNRESOLVED TAXONOMY");
-  console.log(`Provider       External ID    Name              Candidates`);
+  console.log(`Provider       External ID    Name              Candidates  Official path`);
   for (const gap of gaps.slice(0, limit)) {
     const name = gap.name || "-";
     const provider = gap.provider.padEnd(13, " ");
     const externalId = String(gap.externalId).padEnd(14, " ");
     const count = String(gap.candidateCount).padEnd(10, " ");
-    console.log(`${provider} ${externalId} ${name.padEnd(16, " ")} ${count}`);
+    console.log(`${provider} ${externalId} ${name.padEnd(16, " ")} ${count} ${gap.path || "-"}`);
   }
   if (!gaps.length) console.log("No unresolved taxonomy gaps for this run.");
 })();

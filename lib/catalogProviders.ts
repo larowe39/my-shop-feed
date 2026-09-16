@@ -345,7 +345,11 @@ function externalCategoryPath(rawRecord: IcecatProduct | IcecatIndexRecord): str
   );
 }
 
-export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRecord, mappings = DEFAULT_ICECAT_TAXONOMY): CatalogCandidateInput {
+export function normalizeIcecatProduct(
+  rawRecord: IcecatProduct | IcecatIndexRecord,
+  mappings = DEFAULT_ICECAT_TAXONOMY,
+  externalTaxonomy: ReadonlyMap<string, ExternalTaxonomyIdentity> = new Map()
+): CatalogCandidateInput {
   const supplier = readProductSupplier(rawRecord as IcecatProduct);
   const brandProductCodes = readBrandProductCodes(rawRecord as IcecatProduct);
   const productId = first(
@@ -393,8 +397,18 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
     typeof (rawRecord as IcecatIndexRecord).modelNumber === "string" ? (rawRecord as IcecatIndexRecord).modelNumber : null,
     mpn
   );
-  const externalCategory = { ...externalCategoryRecord(rawRecord), path: externalCategoryPath(rawRecord) };
-  const sourceCategory = externalCategory.name ?? (rawRecord as IcecatIndexRecord).category ?? null;
+  const productCategory = { ...externalCategoryRecord(rawRecord), path: externalCategoryPath(rawRecord) };
+  const authoritativeCategory = productCategory.id ? externalTaxonomy.get(productCategory.id) ?? null : null;
+  const externalCategory: ExternalTaxonomyIdentity = authoritativeCategory ?? {
+    provider: "open-icecat",
+    externalId: productCategory.id ?? productCategory.name ?? "",
+    name: productCategory.name,
+    path: productCategory.path,
+    parentId: null,
+    parentName: null,
+    parentPath: null,
+  };
+  const sourceCategory = productCategory.name ?? (rawRecord as IcecatIndexRecord).category ?? null;
   const taxonomy = mapIcecatCategory(sourceCategory, mappings);
   if (!productId || !brand || !productName) throw new Error("Icecat product is missing ID/Product_ID, explicit Supplier/brand/manufacturer, or product title/name");
 
@@ -423,28 +437,32 @@ export function normalizeIcecatProduct(rawRecord: IcecatProduct | IcecatIndexRec
       typeof (rawRecord as IcecatIndexRecord).imageUrl === "string" ? (rawRecord as IcecatIndexRecord).imageUrl : null
     ),
     sourceType: "open-icecat",
-    externalTaxonomy: externalCategory.id || externalCategory.name
-      ? {
-          provider: "open-icecat",
-          externalId: externalCategory.id ?? externalCategory.name!,
-          name: externalCategory.name,
-          path: externalCategory.path,
-        } satisfies ExternalTaxonomyIdentity
+    externalTaxonomy: externalCategory.externalId
+      ? externalCategory
       : null,
     raw: {
+      ...spreadableRaw,
       provider: "open-icecat",
       providerProductId: productId,
       sourceCategory,
-      externalCategory,
-      externalTaxonomy: externalCategory.id || externalCategory.name
-        ? { provider: "open-icecat", externalId: externalCategory.id ?? externalCategory.name!, name: externalCategory.name, path: externalCategory.path }
+      externalCategory: authoritativeCategory
+        ? {
+            id: authoritativeCategory.externalId,
+            name: authoritativeCategory.name ?? null,
+            path: authoritativeCategory.path ?? null,
+            parentId: authoritativeCategory.parentId ?? null,
+            parentName: authoritativeCategory.parentName ?? null,
+            parentPath: authoritativeCategory.parentPath ?? null,
+          }
+        : productCategory,
+      externalTaxonomy: externalCategory.externalId
+        ? externalCategory
         : null,
       taxonomyMapping: taxonomy,
       record: (rawRecord as Record<string, unknown>).record ?? rawRecord,
       sourceType: "open-icecat",
       supplier,
       brandProductCodes,
-      ...spreadableRaw,
     },
   };
 }
@@ -480,9 +498,10 @@ export type OpenIcecatProviderOptions = {
   password?: string;
   fetcher?: typeof fetch;
   taxonomy?: Record<string, TaxonomyMapping>;
+  externalTaxonomy?: ReadonlyMap<string, ExternalTaxonomyIdentity>;
 };
 
-function buildIcecatAuthHeaders(config: OpenIcecatProviderOptions): Record<string, string> {
+export function buildIcecatAuthHeaders(config: OpenIcecatProviderOptions): Record<string, string> {
   const apiToken = config.apiToken?.trim();
   const username = config.username?.trim();
   const password = config.password?.trim();
@@ -639,7 +658,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
   }
 
   normalizeProduct(rawRecord: IcecatProduct | IcecatIndexRecord): CatalogCandidateInput {
-    return normalizeIcecatProduct(rawRecord, this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
+    return normalizeIcecatProduct(rawRecord, this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY, this.config.externalTaxonomy);
   }
 
   async *discoverProducts(options: ProviderDiscoveryOptions = {}): AsyncIterable<ProviderDiscoveryPage<IcecatIndexRecord>> {

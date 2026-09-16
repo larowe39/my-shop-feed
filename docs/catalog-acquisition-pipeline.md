@@ -1,5 +1,34 @@
 # Catalog Acquisition & Staging Pipeline
 
+## Open Icecat external taxonomy
+
+Open Icecat category provenance comes from the official authenticated reference export:
+
+`https://data.icecat.biz/export/freexml/refs/CategoriesList.xml.gz`
+
+The export is streamed through a gzip decoder and SAX parser. Only normalized English category identities (`ID`, `Name`, parent ID, and constructed authoritative path) are retained in the gitignored cache at `.catalog-staging/open-icecat-categories.en.json`; the raw export is never committed. Refreshing is explicit and never occurs from ordinary acquisition or report commands:
+
+```bash
+npm run catalog:taxonomy:external -- --source open-icecat --external-id 971 --refresh-cache
+```
+
+Subsequent inspector calls and acquisitions read the local cache without network access. The cache enriches `externalTaxonomy` provider provenance only. It does not create or verify a PENCHANT taxonomy mapping, alter canonical taxonomy, approve candidates, or promote products. Historical staged rows that contain only an external ID remain unnamed in deterministic gap reports.
+
+The 100-product gate produced the following non-binding operator review. `A` means an existing canonical classification is clear, `B` means the provider category exposes a legitimate missing canonical branch, and `C` means placement remains ambiguous. These are evidence for review, not mappings.
+
+| Icecat ID | Official category | Official parent | Review | Evidence |
+| --- | --- | --- | --- | --- |
+| 971 | Large Format Media | Printing Media | B | No printing-media branch exists in the canonical taxonomy. |
+| 846 | Print Heads | Printing Supplies | B | No printer-supplies branch exists in the canonical taxonomy. |
+| 847 | Photo Paper | Photographic Filmmaking Supplies | C | The official hierarchy is photographic supplies, while the current canonical camera branch contains camera types only. |
+| 853 | Printing Films | Printing Media | B | No printing-media branch exists in the canonical taxonomy. |
+| 377 | Ink Cartridges | Printing Supplies | B | No printer-supplies branch exists in the canonical taxonomy. |
+| 151 | Laptops | Computers | A | `Electronics > Computers > Laptops` already exists exactly. |
+| 714 | Printing Paper | Printing Media | B | No printing-media branch exists in the canonical taxonomy. |
+| 845 | Printable Textiles | Printing Media | B | No printing-media branch exists in the canonical taxonomy. |
+| 702 | Plotter Paper | Printing Media | B | No printing-media branch exists in the canonical taxonomy. |
+| 905 | Printer Ribbons | Printing Supplies | B | No printer-supplies branch exists in the canonical taxonomy. |
+
 ## Overview
 
 This pipeline intentionally separates three trust levels:
