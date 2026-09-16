@@ -485,7 +485,10 @@ function buildIcecatAuthHeaders(config: OpenIcecatProviderOptions): Record<strin
   const apiToken = config.apiToken?.trim();
   const username = config.username?.trim();
   const password = config.password?.trim();
-  if (apiToken && !(username && password)) return { "Api-Token": apiToken };
+  const envToken = (process.env.ICECAT_API_TOKEN ?? "").trim();
+
+  if (apiToken) return { "Api-Token": apiToken };
+  if (envToken) return { "Api-Token": envToken };
   if (username && password) {
     return { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` };
   }
@@ -610,6 +613,8 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
   constructor(options: OpenIcecatProviderOptions = {}) {
     this.config = {
       ...options,
+      username: options.username ?? process.env.ICECAT_USERNAME,
+      password: options.password ?? process.env.ICECAT_PASSWORD,
       baseUrl: options.baseUrl ?? process.env.ICECAT_API_URL ?? "https://live.icecat.biz/api",
       indexBaseUrl: options.indexBaseUrl ?? process.env.ICECAT_INDEX_URL ?? "https://data.icecat.biz/export/freexml",
       shopName: options.shopName ?? process.env.ICECAT_SHOPNAME ?? "OpenIcecat-live",

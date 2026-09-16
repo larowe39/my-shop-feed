@@ -596,6 +596,20 @@ export async function acquireFromRecords(
     runId = run.id;
     for (const candidate of candidates) candidate.importRunId = run.id;
     stagedResult = await store.upsertStagedCandidates(candidates);
+    summary.staged = stagedResult.length;
+    await store.updateImportRun(run.id, {
+      processed: summary.processed,
+      valid: summary.valid,
+      invalid: summary.invalid,
+      exactExisting: summary.exactExisting,
+      likelyExisting: summary.likelyExisting,
+      possibleExisting: summary.possibleExisting,
+      newRecords: summary.new,
+      conflictRecords: summary.conflict,
+      staged: summary.staged,
+      errors: summary.errors,
+      summary,
+    });
     persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
 

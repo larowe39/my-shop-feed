@@ -3,6 +3,11 @@ const assert = require("assert");
 const path = require("path");
 const fs = require("fs");
 
+function makeId(prefix) {
+  const crypto = require("crypto");
+  return `${prefix}_${crypto.createHash("sha1").update(`${Date.now()}-${Math.random()}-${prefix}`).digest("hex").slice(0, 12)}`;
+}
+
 async function main() {
   const ledgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.test.json");
   process.env.CATALOG_STAGING_LEDGER_PATH = ledgerPath;
@@ -326,8 +331,8 @@ async function main() {
     localStore
   );
   const stagedAfterSecondRun = await localStore.listStagedCandidates();
-  assert.strictEqual(secondRun.summary.staged, 1, "same source re-acquired should classify the same candidates again");
-  assert.strictEqual(stagedAfterSecondRun.length, stagedAfterFirstRun.length, "idempotency: no duplicate staged rows across repeated acquisition runs");
+  assert.strictEqual(secondRun.summary.staged, 1, "same source re-acquired should classify the same candidates again in the new run");
+  assert.strictEqual(stagedAfterSecondRun.length, stagedAfterFirstRun.length + 1, "run-scoped idempotency: prior run rows remain visible while same-run duplicates are not duplicated");
 
   // ---------------------------------------------------------------------
   // 4. show/approve/reject use the selected backend; cannot write canonical
@@ -541,6 +546,18 @@ async function main() {
             }
             return { select: () => ({ single: async () => ({ data: { id: "unused" }, error: null }) }) };
           },
+          update(row) {
+            if (table === "catalog_import_runs") {
+              return {
+                eq: (_column, value) => ({
+                  select: () => ({
+                    single: async () => ({ data: { id: value, ...row, created_at: new Date().toISOString() }, error: null }),
+                  }),
+                }),
+              };
+            }
+            return { eq: () => ({ select: () => ({ single: async () => ({ data: null, error: null }) }) }) };
+          },
           select() {
             if (table === "catalog_staged_aliases") {
               return {
@@ -732,8 +749,101 @@ async function main() {
   const explicitLocal = resolveStagingStore({ backend: "local" });
   assert.strictEqual(explicitLocal.kind, "local");
 
+  const multiPageLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-multipage-regression.json");
+  const multiPageStore = new LocalStagingStore(multiPageLedgerPath);
+  multiPageStore.reset();
+  const source = await multiPageStore.upsertSource({ name: "multi-page-source", type: "external-provider" });
+  const run = await multiPageStore.createImportRun(source, {
+    adapter: "open-icecat",
+    dryRun: false,
+    processed: 100,
+    valid: 100,
+    invalid: 0,
+    exactExisting: 0,
+    likelyExisting: 0,
+    possibleExisting: 0,
+    newRecords: 100,
+    conflictRecords: 0,
+    approved: 0,
+    rejected: 0,
+    promoted: 0,
+    staged: 0,
+    errors: 0,
+    summary: {},
+  });
+
+  const pageBatches = Array.from({ length: 4 }, (_, pageIndex) =>
+    Array.from({ length: 25 }, (_, rowIndex) => ({
+      id: makeId("candidate"),
+      sourceId: source.id,
+      sourceExternalId: `icecat-distinct-${pageIndex * 25 + rowIndex + 1}`,
+      importRunId: run.id,
+      fingerprint: sourceFingerprint({
+        sourceId: source.id,
+        sourceExternalId: `icecat-distinct-${pageIndex * 25 + rowIndex + 1}`,
+        brand: `Brand ${pageIndex + 1}`,
+        productName: `Distinct Product ${(pageIndex * 25) + rowIndex + 1}`,
+        modelNumber: `MOD-${pageIndex + 1}-${rowIndex + 1}`,
+        family: `Family ${pageIndex + 1}`,
+        category: "Electronics",
+      }),
+      status: "pending",
+      classification: "NEW",
+      brand: `Brand ${pageIndex + 1}`,
+      productName: `Distinct Product ${(pageIndex * 25) + rowIndex + 1}`,
+      modelNumber: `MOD-${pageIndex + 1}-${rowIndex + 1}`,
+      family: `Family ${pageIndex + 1}`,
+      category: "Electronics",
+      aliases: [],
+      sourceUrl: null,
+      imageUrl: null,
+      sourceType: "open-icecat",
+      upc: null,
+      gtin: null,
+      mpn: null,
+      externalTaxonomy: { provider: "open-icecat", externalId: `taxonomy-${pageIndex + 1}`, name: `Category ${pageIndex + 1}` },
+      rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: `taxonomy-${pageIndex + 1}`, name: `Category ${pageIndex + 1}` } },
+      normalizedBrand: `Brand ${pageIndex + 1}`,
+      normalizedName: `Distinct Product ${(pageIndex * 25) + rowIndex + 1}`,
+      normalizedModel: `MOD-${pageIndex + 1}-${rowIndex + 1}`,
+      confidence: 0.88,
+      duplicateOfCatalogProductId: null,
+      promotedCatalogProductId: null,
+      promotedAt: null,
+      reviewNotes: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }))
+  );
+
+  const pageCandidates = pageBatches.flat();
+  const inserted = await multiPageStore.upsertStagedCandidates(pageCandidates);
+  assert.strictEqual(inserted.length, 100, "100 distinct Icecat products must remain 100 persisted staging rows across multiple pages");
+  assert.strictEqual(new Set(inserted.map((candidate) => candidate.fingerprint)).size, 100, "all 100 candidates must keep distinct staging fingerprints");
+  assert.strictEqual(inserted.every((candidate) => candidate.importRunId === run.id), true, "all persisted rows must belong to the same import run");
+  await multiPageStore.updateImportRun(run.id, { staged: inserted.length, processed: inserted.length, valid: inserted.length, invalid: 0, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, newRecords: inserted.length, conflictRecords: 0, summary: { staged: inserted.length, processed: inserted.length } });
+  const multiPagePersisted = await multiPageStore.listStagedCandidates();
+  const multiPageReport = buildCatalogRunReport(run.id, await multiPageStore.listImportRuns(), multiPagePersisted);
+  assert.strictEqual(multiPageReport.metrics.processed, 100);
+  assert.strictEqual(multiPageReport.metrics.valid, 100);
+  assert.strictEqual(multiPageReport.metrics.staged, 100);
+  assert.strictEqual(multiPageReport.candidates.length, 100);
+  const taxonomyGapTotal = rankTaxonomyGaps(run.id, multiPagePersisted, []).reduce((sum, row) => sum + row.candidateCount, 0);
+  assert.strictEqual(taxonomyGapTotal, 100, "taxonomy-gap totals must reconcile to the full persisted run population");
+
+  const reprocessed = await multiPageStore.upsertStagedCandidates([
+    {
+      ...pageCandidates[41],
+      id: pageCandidates[41].id,
+      updatedAt: new Date().toISOString(),
+    },
+  ]);
+  const multiPagePersistedAfterDuplicate = await multiPageStore.listStagedCandidates();
+  assert.strictEqual(multiPagePersistedAfterDuplicate.length, 100, "reprocessing the exact same source product in the same run must remain idempotent");
+  assert.strictEqual(reprocessed.length, 1, "duplicate same-run reprocessing must update in place without adding a second row");
+
   reportStore.reset();
-  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath]) {
+  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath, multiPageLedgerPath]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
   console.log("Catalog acquisition tests passed.");

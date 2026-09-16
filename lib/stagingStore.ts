@@ -67,8 +67,9 @@ export interface StagingStore {
   readonly kind: StagingBackendKind;
   upsertSource(entry: SourceRegistryEntry): Promise<SourceRegistryEntry>;
   createImportRun(source: SourceRegistryEntry, input: CreateImportRunInput): Promise<ImportRunRecord>;
+  updateImportRun(runId: string, updates: Partial<ImportRunRecord>): Promise<ImportRunRecord | null>;
   listImportRuns(): Promise<ImportRunRecord[]>;
-  /** Idempotent by fingerprint: re-submitting the same candidate updates it in place instead of duplicating. */
+  /** Idempotent within a run by fingerprint: re-submitting the same candidate updates it in place instead of duplicating. */
   upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]>;
   listStagedCandidates(): Promise<StagedCatalogCandidate[]>;
   getStagedCandidateById(id: string): Promise<StagedCatalogCandidate | null>;
@@ -200,6 +201,15 @@ export class LocalStagingStore implements StagingStore {
     return run;
   }
 
+  async updateImportRun(runId: string, updates: Partial<ImportRunRecord>): Promise<ImportRunRecord | null> {
+    const ledger = this.read();
+    const index = ledger.importRuns.findIndex((row) => row.id === runId);
+    if (index === -1) return null;
+    ledger.importRuns[index] = { ...ledger.importRuns[index], ...updates, updatedAt: new Date().toISOString() } as ImportRunRecord;
+    this.write(ledger);
+    return ledger.importRuns[index];
+  }
+
   async listImportRuns(): Promise<ImportRunRecord[]> {
     return this.read().importRuns;
   }
@@ -208,9 +218,12 @@ export class LocalStagingStore implements StagingStore {
     const ledger = this.read();
     const results: StagedCatalogCandidate[] = [];
     for (const candidate of candidates) {
-      const existingIndex = ledger.stagedProducts.findIndex(
-        (row) => row.fingerprint === candidate.fingerprint && (row.sourceExternalId ?? "") === (candidate.sourceExternalId ?? "")
-      );
+      const existingIndex = ledger.stagedProducts.findIndex((row) => {
+        const sameRun = (row.importRunId ?? null) === (candidate.importRunId ?? null);
+        const sameFingerprint = row.fingerprint === candidate.fingerprint;
+        const sameSourceExternalId = (row.sourceExternalId ?? "") === (candidate.sourceExternalId ?? "");
+        return sameRun && sameFingerprint && sameSourceExternalId;
+      });
       if (existingIndex >= 0) {
         ledger.stagedProducts[existingIndex] = {
           ...ledger.stagedProducts[existingIndex],
@@ -422,6 +435,54 @@ export class SupabaseStagingStore implements StagingStore {
     };
   }
 
+  async updateImportRun(runId: string, updates: Partial<ImportRunRecord>): Promise<ImportRunRecord | null> {
+    const { data, error } = await this.client
+      .from("catalog_import_runs")
+      .update({
+        processed: updates.processed,
+        valid: updates.valid,
+        invalid: updates.invalid,
+        exact_existing: updates.exactExisting,
+        likely_existing: updates.likelyExisting,
+        possible_existing: updates.possibleExisting,
+        new_records: updates.newRecords,
+        conflict_records: updates.conflictRecords,
+        approved: updates.approved,
+        rejected: updates.rejected,
+        promoted: updates.promoted,
+        staged: updates.staged,
+        errors: updates.errors,
+        summary: updates.summary,
+      })
+      .eq("id", runId)
+      .select("*")
+      .single();
+    if (error) throw new StagingBackendError(`Failed to update catalog_import_runs row ${runId}: ${error.message}`);
+    return {
+      id: String(data.id),
+      sourceId: (data.source_id as string) ?? null,
+      adapter: String(data.adapter ?? ""),
+      sourcePath: (data.source_path as string) ?? null,
+      dryRun: Boolean(data.dry_run),
+      processed: Number(data.processed ?? 0),
+      valid: Number(data.valid ?? 0),
+      invalid: Number(data.invalid ?? 0),
+      exactExisting: Number(data.exact_existing ?? 0),
+      likelyExisting: Number(data.likely_existing ?? 0),
+      possibleExisting: Number(data.possible_existing ?? 0),
+      newRecords: Number(data.new_records ?? 0),
+      conflictRecords: Number(data.conflict_records ?? 0),
+      approved: Number(data.approved ?? 0),
+      rejected: Number(data.rejected ?? 0),
+      promoted: Number(data.promoted ?? 0),
+      staged: Number(data.staged ?? 0),
+      errors: Number(data.errors ?? 0),
+      status: String(data.status ?? "completed"),
+      summary: (data.summary as Record<string, unknown>) ?? {},
+      createdAt: String(data.created_at ?? new Date().toISOString()),
+    };
+  }
+
   async listImportRuns(): Promise<ImportRunRecord[]> {
     const { data, error } = await this.client
       .from("catalog_import_runs")
@@ -482,7 +543,7 @@ export class SupabaseStagingStore implements StagingStore {
       }));
       const { data, error } = await this.client
         .from("catalog_staged_products")
-        .upsert(rows, { onConflict: "fingerprint" })
+        .upsert(rows, { onConflict: "import_run_id,fingerprint" })
         .select("id, fingerprint");
       if (error) throw new StagingBackendError(`Failed to upsert catalog_staged_products batch: ${error.message}`);
 
