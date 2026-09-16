@@ -31,6 +31,13 @@ async function main() {
   const raw = fs.readFileSync(sourcePath, "utf8");
   const records = args.adapter === "csv" ? parseCsvAdapterRecords(raw) : parseJsonAdapterRecords(raw);
 
+  // Classification must run against the REAL canonical catalog, not an empty
+  // list -- otherwise every candidate looks "NEW" no matter how good the
+  // dedup logic is (the exact bug found in the PR #21 production smoke test).
+  const { resolveCanonicalCatalogEntries } = await import("../lib/catalogCanonicalLookup.ts");
+  const canonicalCatalog = await resolveCanonicalCatalogEntries({ backend: args.backend ?? undefined });
+  console.log(`CANONICAL CATALOG: ${canonicalCatalog.length} product(s) loaded for classification.`);
+
   let store;
   if (args.apply) {
     const { resolveStagingStore } = await import("../lib/stagingStore.ts");
@@ -40,7 +47,7 @@ async function main() {
 
   const run = await acquireFromRecords(
     records,
-    [],
+    canonicalCatalog,
     { name: path.basename(sourcePath), type: args.adapter },
     { apply: args.apply, adapter: args.adapter, sourcePath },
     store

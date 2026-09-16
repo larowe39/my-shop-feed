@@ -50,6 +50,16 @@ async function main() {
   assert.match(migrationSql, /canonical family .* does not belong to brand/i);
   assert.match(migrationSql, /requires non-empty brand, slug, and product name/i);
 
+  // Root-cause regression guard: the CLI must load the REAL canonical catalog
+  // for classification, never hardcode `[]` (that was the smoke-test bug).
+  const acquireCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire.js"), "utf8");
+  assert.match(acquireCliSource, /resolveCanonicalCatalogEntries/, "catalog-acquire.js must load the real canonical catalog before classifying");
+  assert.doesNotMatch(
+    acquireCliSource,
+    /acquireFromRecords\(\s*records,\s*\[\]/,
+    "catalog-acquire.js must not classify against a hardcoded empty canonical catalog"
+  );
+
   // ---------------------------------------------------------------------
   // 1. Pure parsing / normalization / validation / classification / fingerprint
   // ---------------------------------------------------------------------
@@ -105,6 +115,84 @@ async function main() {
   const fpC = sourceFingerprint({ sourceId: "src-1", sourceExternalId: "abc-2", brand: "JBL", productName: "Boombox 3" });
   assert.strictEqual(fpA, fpB);
   assert.notStrictEqual(fpA, fpC);
+
+  // ---------------------------------------------------------------------
+  // 1b. PR #21 production smoke-test regression: real canonical catalog
+  // rows (mirroring catalog-data/electronics/{sony,jbl,gopro}.json) must be
+  // recognized by acquisition, not classified NEW. This is the exact bug
+  // found in production: sample-products.json's Sony/JBL/GoPro candidates
+  // were staged as NEW even though all three already exist canonically.
+  // ---------------------------------------------------------------------
+  const realCanonicalCatalog = [
+    { brand: "Sony", productName: "WH-1000XM5", modelNumber: "WH1000XM5/B", family: "wh-1000x", subcategory: "headphones", aliases: ["WH1000XM5"] },
+    { brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", family: "portable-speaker", subcategory: "portable-speakers", aliases: ["JBL Boombox 3"] },
+    { brand: "GoPro", productName: "Hero 12 Black", modelNumber: "CHDHX-121", family: "hero", subcategory: "action-cameras", aliases: ["GoPro Hero 12"] },
+    { brand: "GoPro", productName: "Hero 13 Black", modelNumber: "CHDHX-131", family: "hero", subcategory: "action-cameras", aliases: ["GoPro Hero 13"] },
+  ];
+  const smokeTestSampleRecords = parseJsonAdapterRecords(fs.readFileSync(jsonSource, "utf8"));
+  const sonySmokeCandidate = smokeTestSampleRecords.find((row) => row.brand === "Sony");
+  const jblSmokeCandidate = smokeTestSampleRecords.find((row) => row.brand === "JBL");
+  const goproSmokeCandidate = smokeTestSampleRecords.find((row) => row.brand === "GoPro");
+
+  assert.strictEqual(
+    classifyCandidate(sonySmokeCandidate, realCanonicalCatalog),
+    "EXACT_EXISTING",
+    "Sony WH-1000XM5 must resolve to the existing canonical identity, not NEW"
+  );
+  assert.strictEqual(
+    classifyCandidate(jblSmokeCandidate, realCanonicalCatalog),
+    "EXACT_EXISTING",
+    "JBL Boombox 3 must resolve to the existing canonical identity, not NEW"
+  );
+  assert.strictEqual(
+    classifyCandidate(goproSmokeCandidate, realCanonicalCatalog),
+    "EXACT_EXISTING",
+    "GoPro HERO13 must resolve to the existing Hero 13 Black canonical identity, not NEW " +
+      "(unambiguous: catalog_aliases explicitly encodes 'GoPro Hero 13' for this exact SKU)"
+  );
+
+  // Near-miss protection must survive the fix: classifying against the SAME
+  // real canonical catalog must never conflate adjacent/near-miss identities.
+  assert.notStrictEqual(
+    classifyCandidate(
+      { brand: "Sony", productName: "Sony WH-1000XM4", modelNumber: "WH-1000XM4", sourceExternalId: "near-miss-1", raw: {} },
+      realCanonicalCatalog
+    ),
+    "EXACT_EXISTING",
+    "Sony WH-1000XM4 must NOT match the WH-1000XM5 canonical identity"
+  );
+  assert.strictEqual(
+    classifyCandidate(
+      { brand: "GoPro", productName: "GoPro HERO12", modelNumber: "HERO12", sourceExternalId: "near-miss-2", raw: {} },
+      realCanonicalCatalog
+    ),
+    "EXACT_EXISTING",
+    "GoPro HERO12 must resolve to its own distinct Hero 12 Black canonical identity, not be absorbed into HERO13 or left unmatched"
+  );
+  assert.notStrictEqual(
+    classifyCandidate(
+      { brand: "New Balance", productName: "New Balance 990v6", modelNumber: "990v6", sourceExternalId: "near-miss-3", raw: {} },
+      [{ brand: "New Balance", productName: "990v5", modelNumber: "990v5" }]
+    ),
+    "EXACT_EXISTING",
+    "New Balance 990v6 must NOT match a 990v5 canonical identity"
+  );
+  assert.notStrictEqual(
+    classifyCandidate(
+      { brand: "DeWalt", productName: "DeWalt DCD999", modelNumber: "DCD999", sourceExternalId: "near-miss-4", raw: {} },
+      [{ brand: "DeWalt", productName: "DCD998", modelNumber: "DCD998" }]
+    ),
+    "EXACT_EXISTING",
+    "DeWalt DCD999 must NOT match a DCD998 canonical identity"
+  );
+  assert.notStrictEqual(
+    classifyCandidate(
+      { brand: "Apple", productName: "iPhone 15 Pro Max", sourceExternalId: "near-miss-5", raw: {} },
+      [{ brand: "Apple", productName: "iPhone 15 Pro" }]
+    ),
+    "EXACT_EXISTING",
+    "iPhone 15 Pro Max must NOT match the plain iPhone 15 Pro canonical identity"
+  );
 
   // ---------------------------------------------------------------------
   // 2. Dry-run acquisition -> zero store calls / zero writes

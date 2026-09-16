@@ -187,6 +187,25 @@ export function validateCatalogCandidate(candidate: Partial<CatalogCandidateInpu
   };
 }
 
+// Deterministic acquisition-candidate identity evidence, distinct from Matcher
+// V2's seller-listing fuzzy scoring. compactComparable() strips ALL whitespace
+// in addition to punctuation, so "WH-1000XM5" (normalizes with an internal
+// space, since the hyphen becomes a separator) and "WH1000XM5" (no separator
+// to begin with) compare equal instead of silently missing each other only
+// because one source used punctuation and another didn't. This must stay
+// exact-token comparison (no fuzzy/substring logic) so near-miss identities
+// (990v5 vs 990v6, HERO12 vs HERO13, DCD998 vs DCD999, Pro vs Pro Max) never
+// collapse together.
+function compactEquals(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = compactComparable(a);
+  const right = compactComparable(b);
+  return Boolean(left) && Boolean(right) && left === right;
+}
+
+function identityTokenMatches(candidateValue: string | null | undefined, canonicalValue: string | null | undefined): boolean {
+  return compactEquals(candidateValue, canonicalValue);
+}
+
 export function classifyCandidate(
   candidate: Partial<CatalogCandidateInput>,
   canonicalCatalog: CanonicalCatalogEntry[] = []
@@ -198,32 +217,41 @@ export function classifyCandidate(
   const productName = validation.normalized.productName;
   const modelNumber = validation.normalized.modelNumber;
 
-  const exactNameOrAliasMatch = canonicalCatalog.some((entry) => {
-    const normalizedBrand = normalizeAcquisitionText(entry.brand);
-    const normalizedEntryName = normalizeAcquisitionText(entry.productName);
-    const normalizedEntryModel = normalizeAcquisitionText(entry.modelNumber ?? "");
-    const entryAliases = (entry.aliases ?? []).map((alias) => normalizeAcquisitionText(alias)).filter(Boolean);
-    return (
-      normalizedBrand === brand &&
-      ((compactComparable(productName) === compactComparable(normalizedEntryName) &&
-        (!modelNumber || !normalizedEntryModel || compactComparable(modelNumber) === compactComparable(normalizedEntryModel))) ||
-        entryAliases.some((alias) => alias === productName || alias === modelNumber || alias === brand))
-    );
+  const exactMatch = canonicalCatalog.some((entry) => {
+    const sameBrand = identityTokenMatches(brand, entry.brand);
+    if (!sameBrand) return false;
+
+    // 1. EXACT brand + normalized model/reference -- the strongest signal:
+    // two different sellers listing the same brand + model number/SKU are
+    // the same real-world product regardless of how the name is phrased.
+    if (modelNumber && identityTokenMatches(modelNumber, entry.modelNumber)) return true;
+
+    // 2. EXACT normalized canonical name (brand + name, or name alone --
+    // canonical product names in this catalog don't repeat the brand).
+    if (identityTokenMatches(productName, entry.productName)) return true;
+    if (identityTokenMatches(`${brand} ${productName}`, entry.productName)) return true;
+
+    // 3. EXACT normalized alias -- catalog_aliases / staged aliases exist
+    // specifically to capture "how sellers actually phrase this" (e.g. "GoPro
+    // Hero 13", "JBL Boombox 3"), so alias equality to the candidate's own
+    // brand+name or model number is exact identity evidence, not a fuzzy hit.
+    const entryAliases = entry.aliases ?? [];
+    const candidateAliasCombos = [productName, modelNumber, `${brand} ${productName}`].filter(Boolean) as string[];
+    if (entryAliases.some((alias) => candidateAliasCombos.some((value) => identityTokenMatches(value, alias)))) return true;
+
+    return false;
   });
-  if (exactNameOrAliasMatch) return "EXACT_EXISTING";
+  if (exactMatch) return "EXACT_EXISTING";
 
   const sameBrandSimilar = canonicalCatalog.some((entry) => {
-    const normalizedBrand = normalizeAcquisitionText(entry.brand);
-    const normalizedEntryName = normalizeAcquisitionText(entry.productName);
-    const normalizedEntryModel = normalizeAcquisitionText(entry.modelNumber ?? "");
-    const sameBrand = normalizedBrand === brand;
-    const sameName = compactComparable(productName) === compactComparable(normalizedEntryName);
-    const sameModel = Boolean(modelNumber && normalizedEntryModel && compactComparable(modelNumber) === compactComparable(normalizedEntryModel));
-    const aliasOverlap = (entry.aliases ?? []).some((alias) => {
-      const normalizedAlias = normalizeAcquisitionText(alias);
-      return normalizedAlias && (normalizedAlias === productName || normalizedAlias === modelNumber || normalizedAlias === brand);
-    });
-    return sameBrand && (sameName || sameModel || aliasOverlap);
+    const sameBrand = identityTokenMatches(brand, entry.brand);
+    if (!sameBrand) return false;
+    const sameName = identityTokenMatches(productName, entry.productName);
+    const sameModel = Boolean(modelNumber && entry.modelNumber && identityTokenMatches(modelNumber, entry.modelNumber));
+    const aliasOverlap = (entry.aliases ?? []).some(
+      (alias) => identityTokenMatches(productName, alias) || identityTokenMatches(modelNumber, alias) || identityTokenMatches(brand, alias)
+    );
+    return sameName || sameModel || aliasOverlap;
   });
   if (sameBrandSimilar) return "LIKELY_EXISTING";
 
