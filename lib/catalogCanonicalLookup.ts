@@ -37,7 +37,17 @@ async function fetchAllRows<T>(client: SupabaseClient, table: string, select: st
 type BrandRow = { id: string; name: string };
 type SubcategoryRow = { id: string; name: string };
 type FamilyRow = { id: string; name: string };
-type ProductRow = { id: string; brand_id: string; family_id: string | null; subcategory_id: string | null; name: string; model_number: string | null };
+type ProductRow = {
+  id: string;
+  brand_id: string;
+  family_id: string | null;
+  subcategory_id: string | null;
+  name: string;
+  model_number: string | null;
+  upc: string | null;
+  gtin: string | null;
+  mpn: string | null;
+};
 type AliasRow = { entity_id: string; alias: string };
 
 /** Reads the entire canonical catalog (paginated, read-only) and maps it into CanonicalCatalogEntry[] for classifyCandidate(). */
@@ -46,7 +56,7 @@ export async function loadCanonicalCatalogEntries(client: SupabaseClient): Promi
     fetchAllRows<BrandRow>(client, "catalog_brands", "id, name"),
     fetchAllRows<SubcategoryRow>(client, "catalog_subcategories", "id, name"),
     fetchAllRows<FamilyRow>(client, "catalog_product_families", "id, name"),
-    fetchAllRows<ProductRow>(client, "catalog_products", "id, brand_id, family_id, subcategory_id, name, model_number"),
+    fetchAllRows<ProductRow>(client, "catalog_products", "id, brand_id, family_id, subcategory_id, name, model_number, upc, gtin, mpn"),
     fetchAllRows<AliasRow>(client, "catalog_aliases", "entity_id, alias", (query) => query.eq("entity_type", "product")),
   ]);
 
@@ -65,6 +75,9 @@ export async function loadCanonicalCatalogEntries(client: SupabaseClient): Promi
     family: product.family_id ? familyNameById.get(product.family_id) ?? null : null,
     subcategory: product.subcategory_id ? subcategoryNameById.get(product.subcategory_id) ?? null : null,
     aliases: aliasesByProductId.get(product.id) ?? [],
+    upc: product.upc,
+    gtin: product.gtin,
+    mpn: product.mpn,
   }));
 }
 

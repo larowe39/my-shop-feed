@@ -57,6 +57,63 @@ export type CatalogCandidateInput = {
 
 Adapters should convert source-specific rows into this common schema and return candidate records for validation and staging.
 
+The provider boundary lives in `lib/catalogProviders.ts`. A provider owns only
+source access and mapping; it must return `CatalogCandidateInput` records and
+must never write canonical tables. `OpenIcecatProvider` is the first adapter.
+This keeps future GS1, manufacturer, retailer, or supplier adapters independent
+of classification and staging.
+
+Providers advertise capabilities explicitly:
+
+- **Lookup/enrichment:** known GTIN, EAN, UPC, MPN, or product code -> provider
+  lookup -> normalization -> the existing PENCHANT acquisition pipeline.
+- **Discovery/enumeration:** external catalog, feed, or API -> bounded pages or
+  cursors -> normalization -> the same acquisition pipeline.
+
+Discovery is optional. Its generic contract is an async iterable of bounded
+pages containing records, errors, `nextCursor`, completion state, and an
+optional checkpoint. A future caller can process each page immediately through
+`acquireFromRecords` and persist its cursor, so a provider need not hold
+100,000-plus records in memory. Providers supporting both operations advertise
+both capabilities.
+
+### Open Icecat
+
+Open Icecat uses the documented product lookup API at
+`https://live.icecat.biz/api` with `shopname`, `lang`, and `productcode` query
+parameters and HTTP Basic credentials. Set `ICECAT_USERNAME`,
+`ICECAT_PASSWORD`, and optionally `ICECAT_SHOPNAME`, `ICECAT_API_URL`, and
+`ICECAT_PRODUCT_CODES` in `.env.local`. Product codes or GTINs must be supplied
+explicitly; the adapter refuses an unbounded crawl. `--limit` is capped at 100
+and `--pages` bounds the requested code batches. Requests have a timeout and
+individual failures are reported without discarding successful records.
+
+Open Icecat currently advertises `lookup: true, discovery: false`. Therefore
+`--limit 10` means at most 10 supplied Icecat identifiers; it does **not** mean
+discover 10 arbitrary Icecat products. Requesting `--discover` fails clearly
+instead of being reinterpreted as lookup. Icecat discovery must not be added
+until an official and authorized bulk mechanism is confirmed.
+
+Run a fixture-only dry run with an intentionally empty local canonical catalog:
+
+```sh
+npm run catalog:acquire:icecat -- --source scripts/__fixtures__/catalog-acquisition/open-icecat-products.xml --backend=local --limit 10
+```
+
+For a live, read-only run against the real canonical catalog:
+
+```sh
+npm run catalog:acquire:icecat -- --product-code YOUR-MPN --limit 10
+```
+
+`--apply` is required to write only staged rows. Approval and promotion remain
+separate existing commands. Icecat identifiers are retained as provenance and
+mapped to `gtin`/`mpn` when explicitly present; Icecat's internal product ID is
+never treated as a universal identifier. Category mapping is explicit and
+conservative. Unmapped Icecat categories remain in `raw_payload` for review,
+without creating canonical taxonomy rows. Marketing text is not converted into
+aliases, and the existing bare-brand alias protection remains in force.
+
 ## JSON and CSV adapters
 
 ### JSON adapter
