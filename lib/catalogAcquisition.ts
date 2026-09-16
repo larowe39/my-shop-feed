@@ -50,6 +50,27 @@ export type AcquisitionRunResult = {
   persistence: string[];
 };
 
+export type ScaleProfile = {
+  key: string;
+  label: string;
+  limit: number;
+  pageSize: number;
+  dryRun: boolean;
+  description: string;
+};
+
+export type ControlledScaleGateStatus = "PASS" | "REVIEW" | "FAIL";
+
+export type ControlledScaleGateReport = {
+  discoveryHealth: ControlledScaleGateStatus;
+  identityQuality: ControlledScaleGateStatus;
+  taxonomyCoverage: ControlledScaleGateStatus;
+  stagingSafety: ControlledScaleGateStatus;
+  canonicalSafety: ControlledScaleGateStatus;
+  overall: ControlledScaleGateStatus;
+  notes: string[];
+};
+
 export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   fetched: number;
   pages: number;
@@ -853,6 +874,57 @@ export type CatalogRunReport = {
     externalTaxonomy: unknown;
   }>;
 };
+
+export function resolveScaleProfile(value: number | string, pageSize: number = 25): ScaleProfile {
+  const normalized = typeof value === "string" ? value.trim() : String(value);
+  const parsed = Number(normalized.replace(/[^0-9]/g, ""));
+  const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+  const profileKey = limit <= 100 ? "100" : limit <= 500 ? "500" : "1000";
+  const label = String(limit);
+  return {
+    key: profileKey,
+    label,
+    limit,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.max(1, Math.min(pageSize, limit || 25)) : 25,
+    dryRun: true,
+    description: `Dry-run controlled acquisition profile for ${label} products; this never writes to production staging unless --apply is explicitly supplied.`,
+  };
+}
+
+export function evaluateControlledScaleGates(report: CatalogRunReport): ControlledScaleGateReport {
+  const metrics = report.metrics;
+  const notes: string[] = [];
+
+  const discoveryHealth = metrics.requested > 0 && metrics.requested === metrics.fetched && metrics.providerErrors === 0 ? "PASS" : "REVIEW";
+  if (metrics.providerErrors !== 0) notes.push("Provider errors are present and should be reviewed");
+  if (metrics.requested !== metrics.fetched) notes.push("Requested product count does not equal discovered records");
+
+  const identityQuality = metrics.invalid === 0 || metrics.invalid <= Math.max(0.05 * metrics.valid, 5) ? "PASS" : "REVIEW";
+  if (metrics.invalid > 0) notes.push(`Invalid or unusable records: ${metrics.invalid}`);
+  if (metrics.conflict > 0) notes.push(`Conflict records surfaced: ${metrics.conflict}`);
+
+  const taxonomyCoverage = metrics.unresolvedTaxonomy <= Math.max(0.1 * metrics.valid, 10) ? "PASS" : "REVIEW";
+  if (metrics.unresolvedTaxonomy > 0) notes.push(`Unresolved taxonomy products require review: ${metrics.unresolvedTaxonomy}`);
+
+  const stagingSafety = metrics.staged === 0 || metrics.staged <= metrics.requested ? "PASS" : "REVIEW";
+  if (metrics.staged > metrics.requested) notes.push("Staging estimate exceeds requested output and should be inspected");
+
+  const canonicalSafety = report.currentRunId !== null && report.run?.dryRun !== false ? "PASS" : "REVIEW";
+  if (report.run && report.run.dryRun === false) notes.push("A non-dry-run run should not be used for controlled scale-up validation");
+
+  const statuses = [discoveryHealth, identityQuality, taxonomyCoverage, stagingSafety, canonicalSafety];
+  const overall = statuses.some((status) => status === "FAIL") ? "FAIL" : statuses.some((status) => status === "REVIEW") ? "REVIEW" : "PASS";
+
+  return {
+    discoveryHealth,
+    identityQuality,
+    taxonomyCoverage,
+    stagingSafety,
+    canonicalSafety,
+    overall,
+    notes,
+  };
+}
 
 export function buildCatalogRunReport(runId: string | null | undefined, importRuns: ImportRunRecord[] = [], stagedCandidates: StagedCatalogCandidate[] = []): CatalogRunReport {
   const currentRun = typeof runId === "string" ? (importRuns.find((row) => row.id === runId) ?? null) : null;
