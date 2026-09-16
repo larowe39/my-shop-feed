@@ -1,0 +1,14 @@
+[
+  {
+    "sourceExternalId": "penchant-promotion-smoke-test-002",
+    "brand": "JBL",
+    "productName": "JBL PENCHANT Catalog Pipeline Test Model 002",
+    "modelNumber": "PENCHANT-TEST-002",
+    "family": "Portable Speaker",
+    "category": "Electronics",
+    "subcategory": "Portable Speakers",
+    "aliases": ["PENCHANT Test Speaker 002"],
+    "sourceUrl": "https://example.com/penchant-promotion-smoke-test-002",
+    "raw": { "notes": "Synthetic PENCHANT catalog pipeline promotion smoke-test fixture (002). Not a real product. Safe to promote/delete." }
+  }
+]
