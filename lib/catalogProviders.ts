@@ -343,11 +343,20 @@ export type OpenIcecatProviderOptions = {
   baseUrl?: string;
   indexBaseUrl?: string;
   shopName?: string;
+  apiToken?: string;
   username?: string;
   password?: string;
   fetcher?: typeof fetch;
   taxonomy?: Record<string, TaxonomyMapping>;
 };
+
+function buildIcecatAuthHeaders(config: OpenIcecatProviderOptions): Record<string, string> {
+  if (config.apiToken) return { "Api-Token": config.apiToken };
+  if (config.username && config.password) {
+    return { Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString("base64")}` };
+  }
+  throw new Error("Open Icecat credentials are required. Set ICECAT_API_TOKEN or ICECAT_USERNAME and ICECAT_PASSWORD.");
+}
 
 function buildIndexUrl(baseUrl: string, mode: string): string {
   const url = new URL(baseUrl);
@@ -455,11 +464,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
 
   constructor(options: OpenIcecatProviderOptions = {}) {
     this.config = {
+      ...options,
       baseUrl: options.baseUrl ?? process.env.ICECAT_API_URL ?? "https://live.icecat.biz/api",
       indexBaseUrl: options.indexBaseUrl ?? process.env.ICECAT_INDEX_URL ?? "https://data.icecat.biz/export/freexml",
       shopName: options.shopName ?? process.env.ICECAT_SHOPNAME ?? "OpenIcecat-live",
+      apiToken: options.apiToken ?? process.env.ICECAT_API_TOKEN,
       fetcher: options.fetcher ?? fetch,
-      ...options,
     };
   }
 
@@ -482,17 +492,13 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
   }
 
   async *discoverProducts(options: ProviderDiscoveryOptions = {}): AsyncIterable<ProviderDiscoveryPage<IcecatIndexRecord>> {
-    if (!this.config.username || !this.config.password) {
-      throw new Error("Open Icecat credentials are required for discovery. Set ICECAT_USERNAME, ICECAT_PASSWORD, and optionally ICECAT_INDEX_URL.");
-    }
-
     const mode = (options.mode ?? "initial").toString().toLowerCase() === "daily" ? "daily" : "initial";
     const pageSize = Math.max(1, Math.min(options.pageSize ?? 25, 5000));
     const limit = Math.max(0, Math.min(options.limit ?? 100, 100000));
     const checkpoint = options.checkpoint ?? {};
     const url = buildIndexUrl(this.config.indexBaseUrl, mode);
     const headers = {
-      Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}`,
+      ...buildIcecatAuthHeaders(this.config),
       Accept: "application/xml, application/gzip, */*",
     };
 
@@ -722,14 +728,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       ...(options.productCodes ?? []).filter(Boolean).map((code) => ({ code, parameter: "productcode" as const })),
       ...(options.gtins ?? []).filter(Boolean).map((code) => ({ code, parameter: "ean_upc" as const })),
     ];
-    if (!this.config.username || !this.config.password) {
-      throw new Error("Open Icecat credentials are required for live access. Set ICECAT_USERNAME, ICECAT_PASSWORD, and optionally ICECAT_SHOPNAME.");
-    }
+    const authHeaders = buildIcecatAuthHeaders(this.config);
     if (!lookups.length) throw new Error("Open Icecat requires product codes or GTINs; pass --product-code or set ICECAT_PRODUCT_CODES. Refusing an unbounded crawl.");
     const limit = Math.max(0, Math.min(options.limit ?? 10, 100));
     const pages = Math.max(1, Math.min(options.pages ?? Math.ceil(Math.max(limit, 1) / 10), 10));
     const selected = lookups.slice(0, Math.min(limit || lookups.length, pages * 10));
-    const headers = { Authorization: `Basic ${Buffer.from(`${this.config.username}:${this.config.password}`).toString("base64")}`, Accept: "application/xml" };
+    const headers = { ...authHeaders, Accept: "application/xml" };
     const records: IcecatProduct[] = [];
     const errors: ProviderFetchError[] = [];
     for (const lookup of selected) {

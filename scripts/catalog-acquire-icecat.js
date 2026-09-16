@@ -32,7 +32,12 @@ async function main() {
   const options = args();
   const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports, processDiscoveredPages } = await import("../lib/catalogProviders.ts");
   const { acquireFromRecords, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
-  const provider = new OpenIcecatProvider({ username: process.env.ICECAT_USERNAME, password: process.env.ICECAT_PASSWORD, indexBaseUrl: process.env.ICECAT_INDEX_URL || undefined });
+  const provider = new OpenIcecatProvider({
+    apiToken: process.env.ICECAT_API_TOKEN,
+    username: process.env.ICECAT_USERNAME,
+    password: process.env.ICECAT_PASSWORD,
+    indexBaseUrl: process.env.ICECAT_INDEX_URL || undefined,
+  });
   if (options.discover) {
     assertProviderSupports(provider, "discovery");
   }

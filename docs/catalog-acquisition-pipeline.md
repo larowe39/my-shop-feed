@@ -81,12 +81,16 @@ both capabilities.
 
 Open Icecat uses the documented product lookup API at
 `https://live.icecat.biz/api` with `shopname`, `lang`, and `productcode` query
-parameters and HTTP Basic credentials. Set `ICECAT_USERNAME`,
-`ICECAT_PASSWORD`, and optionally `ICECAT_SHOPNAME`, `ICECAT_API_URL`, and
-`ICECAT_PRODUCT_CODES` in `.env.local`. Product codes or GTINs must be supplied
-explicitly; the adapter refuses an unbounded crawl. `--limit` is capped at 100
-and `--pages` bounds the requested code batches. Requests have a timeout and
-individual failures are reported without discarding successful records.
+parameters. Set `ICECAT_API_TOKEN` in `.env.local` to authenticate with the
+`Api-Token` request header. API-token authentication takes precedence when both
+token and Basic credentials are configured. `ICECAT_USERNAME` and
+`ICECAT_PASSWORD` remain supported as a Basic-auth fallback. Optional settings
+include `ICECAT_SHOPNAME`, `ICECAT_API_URL`, and `ICECAT_PRODUCT_CODES`. Product
+codes or GTINs must be supplied explicitly; the adapter refuses an unbounded
+crawl. `--limit` is capped at 100 and `--pages` bounds the requested code
+batches. Requests have a timeout and individual failures are reported without
+discarding successful records. Credentials are never included in source
+metadata, checkpoints, or CLI output.
 
 Open Icecat advertises `lookup: true, discovery: true`. Discovery reads the
 documented `files.index.xml.gz` or `daily.index.xml.gz` index through a
@@ -105,9 +109,11 @@ rather than silently continuing against a different snapshot.
 
 The synthetic streaming tests verify bounded read-ahead, early cancellation,
 first-page delivery before source completion, malformed-record reporting, and
-truncated-XML failure. The real authenticated Icecat index shape, response
-headers, gzip behavior, ordering, and server-side cancellation remain live
-unverified until credentials are available.
+truncated-XML failure. The Open Icecat full index endpoint has been verified to
+accept `Api-Token` authentication and return gzip content with ETag and
+Last-Modified headers. Its complete XML shape, ordering, sustained streaming
+behavior, and server-side cancellation remain live-unverified pending a bounded
+authenticated dry run.
 
 Run a fixture-only dry run with an intentionally empty local canonical catalog:
 

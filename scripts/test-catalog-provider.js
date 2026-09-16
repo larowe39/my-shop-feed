@@ -64,6 +64,7 @@ async function main() {
   assert.strictEqual(partial.errors.length, 2);
   await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
+  await testIcecatAuthentication(OpenIcecatProvider, fixture, indexFixture);
   const discoveryProviderInstance = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(indexFixture) });
   const discoveryRecords = [];
   for await (const page of discoveryProviderInstance.discoverProducts({ mode: "initial", limit: 2, pageSize: 1, brand: "Sony" })) {
@@ -124,6 +125,74 @@ async function main() {
   assertProviderSupports(bothProvider, "discovery");
 
   console.log("Catalog provider fixture tests passed.");
+}
+
+async function testIcecatAuthentication(OpenIcecatProvider, productFixture, indexFixture) {
+  const token = "fixture-api-token-never-expose";
+  const previousToken = process.env.ICECAT_API_TOKEN;
+  let discoveryHeaders;
+  let discoveryCheckpoint;
+  try {
+    process.env.ICECAT_API_TOKEN = token;
+    const environmentTokenProvider = new OpenIcecatProvider({
+      username: "basic-user",
+      password: "basic-password",
+      fetcher: async (_url, init) => {
+        discoveryHeaders = new Headers(init.headers);
+        return new Response(indexFixture, { headers: { ETag: '"fixture-etag"', "Last-Modified": "Tue, 01 Sep 2026 00:00:00 GMT" } });
+      },
+    });
+    for await (const page of environmentTokenProvider.discoverProducts({ limit: 1, pageSize: 1 })) {
+      discoveryCheckpoint = page.checkpoint;
+    }
+    assert.strictEqual(discoveryHeaders.get("Api-Token"), token, "ICECAT_API_TOKEN must produce the Api-Token header");
+    assert.strictEqual(discoveryHeaders.has("Authorization"), false, "API token must take precedence over Basic authentication");
+    assert.doesNotMatch(JSON.stringify(environmentTokenProvider.getSourceMetadata()), new RegExp(token));
+    assert.doesNotMatch(JSON.stringify(discoveryCheckpoint), new RegExp(token));
+  } finally {
+    if (previousToken === undefined) delete process.env.ICECAT_API_TOKEN;
+    else process.env.ICECAT_API_TOKEN = previousToken;
+  }
+
+  let lookupHeaders;
+  const tokenLookupProvider = new OpenIcecatProvider({
+    apiToken: token,
+    username: "basic-user",
+    password: "basic-password",
+    fetcher: async (_url, init) => {
+      lookupHeaders = new Headers(init.headers);
+      return new Response(productFixture);
+    },
+  });
+  await tokenLookupProvider.lookupProducts({ productCodes: ["TOKEN-CODE"], limit: 1 });
+  assert.strictEqual(lookupHeaders.get("Api-Token"), token);
+  assert.strictEqual(lookupHeaders.has("Authorization"), false);
+
+  let basicHeaders;
+  const basicProvider = new OpenIcecatProvider({
+    username: "basic-user",
+    password: "basic-password",
+    fetcher: async (_url, init) => {
+      basicHeaders = new Headers(init.headers);
+      return new Response(productFixture);
+    },
+  });
+  await basicProvider.lookupProducts({ productCodes: ["BASIC-CODE"], limit: 1 });
+  assert.strictEqual(basicHeaders.get("Api-Token"), null);
+  assert.strictEqual(basicHeaders.get("Authorization"), `Basic ${Buffer.from("basic-user:basic-password").toString("base64")}`);
+
+  const rejectedProvider = new OpenIcecatProvider({
+    apiToken: token,
+    fetcher: async () => new Response("denied", { status: 401, statusText: "Unauthorized" }),
+  });
+  await assert.rejects(async () => {
+    for await (const page of rejectedProvider.discoverProducts({ limit: 1 })) void page;
+  }, (error) => {
+    assert.doesNotMatch(String(error), new RegExp(token));
+    return /Icecat HTTP 401 Unauthorized/.test(String(error));
+  });
+
+  console.log("testIcecatAuthentication passed.");
 }
 
 async function testTruncatedXmlFailure(OpenIcecatProvider) {
