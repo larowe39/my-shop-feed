@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 import { createGunzip, gunzipSync } from "node:zlib";
 import { XMLParser } from "fast-xml-parser";
@@ -25,6 +26,8 @@ export type IcecatDiscoveryMode = "initial" | "daily";
 export type ProviderDiscoveryOptions = {
   limit?: number;
   pageSize?: number;
+  requestTimeoutMs?: number;
+  inactivityTimeoutMs?: number;
   cursor?: string | null;
   checkpoint?: Record<string, unknown>;
   signal?: AbortSignal;
@@ -53,6 +56,18 @@ export type ProviderFetchError = {
   sourceExternalId?: string;
   retriable?: boolean;
 };
+
+export class CatalogProviderRequestError extends Error {
+  readonly code: string;
+  readonly retriable: boolean;
+
+  constructor(message: string, code: string, retriable = true, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CatalogProviderRequestError";
+    this.code = code;
+    this.retriable = retriable;
+  }
+}
 
 export type ProviderFetchResult<TRaw> = {
   records: TRaw[];
@@ -406,13 +421,24 @@ async function* streamIcecatIndex(url: string, headers: Headers, source: Readabl
   if (shouldGunzip && isGzipPayload) {
     const compressedStream = Readable.from(replaySource());
     const gunzip = createGunzip();
-    compressedStream.pipe(gunzip);
+    const pipelineResult = pipeline(compressedStream, gunzip).then(
+      () => null,
+      (error: unknown) => error
+    );
+    let iterationError: unknown;
+    let completedNaturally = false;
     try {
       for await (const chunk of gunzip) yield normalizeChunk(chunk);
+      completedNaturally = true;
+    } catch (error) {
+      iterationError = error;
+      throw error;
     } finally {
       gunzip.destroy();
       compressedStream.destroy();
       await sourceIterator.return?.();
+      const pipelineError = await pipelineResult;
+      if (!iterationError && completedNaturally && pipelineError) throw pipelineError;
     }
     return;
   }
@@ -503,13 +529,30 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? 30000);
+    const inactivityTimeoutMs = Math.max(1, options.inactivityTimeoutMs ?? 120000);
+    const requestTimeout = setTimeout(() => controller.abort(), requestTimeoutMs);
     const resumeCursor = decodeDiscoveryCursor(options.cursor ?? (typeof checkpoint.cursor === "string" ? checkpoint.cursor : null));
     const resumeEnabled = Boolean(resumeCursor.productId || resumeCursor.updated);
-    let cleanup: (() => void) | undefined;
+    let cleanup: (() => Promise<void>) | undefined;
 
     try {
-      const response = await this.config.fetcher(url, { headers, signal: controller.signal });
+      let response: Response;
+      try {
+        response = await this.config.fetcher(url, { headers, signal: controller.signal });
+      } catch (error) {
+        if (controller.signal.aborted && !options.signal?.aborted) {
+          throw new CatalogProviderRequestError(
+            `Open Icecat discovery request timed out before response headers after ${requestTimeoutMs}ms`,
+            "ICECAT_DISCOVERY_REQUEST_TIMEOUT",
+            true,
+            { cause: error }
+          );
+        }
+        throw error;
+      } finally {
+        clearTimeout(requestTimeout);
+      }
       if (!response.ok) throw new Error(`Icecat HTTP ${response.status} ${response.statusText}`);
 
       const checkpointUrl = typeof checkpoint.sourceUrl === "string" ? checkpoint.sourceUrl : null;
@@ -580,9 +623,11 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         return nextPage;
       };
 
-      cleanup = () => {
-        void decompressedStream.return(undefined);
+      cleanup = async () => {
         if (!bodyStream.destroyed) bodyStream.destroy();
+        try {
+          await decompressedStream.return(undefined);
+        } catch {}
       };
 
       parser.on("opentag", (node) => {
@@ -692,11 +737,29 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         }
       };
 
-      for await (const chunk of decompressedStream) {
+      const decompressedIterator = decompressedStream[Symbol.asyncIterator]();
+      for (;;) {
+        let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
+        const nextChunk = await Promise.race([
+          decompressedIterator.next(),
+          new Promise<never>((_resolve, reject) => {
+            inactivityTimer = setTimeout(() => {
+              const error = new CatalogProviderRequestError(
+                `Open Icecat discovery stream made no progress for ${inactivityTimeoutMs}ms`,
+                "ICECAT_DISCOVERY_INACTIVITY_TIMEOUT",
+                true
+              );
+              controller.abort(error);
+              reject(error);
+            }, inactivityTimeoutMs);
+          }),
+        ]).finally(() => clearTimeout(inactivityTimer));
+        if (nextChunk.done) break;
+        const chunk = nextChunk.value;
         for await (const readyPage of feedParser(decoder.write(chunk))) {
           yield readyPage;
           if (readyPage.done) {
-            cleanup();
+            await cleanup();
             return;
           }
         }
@@ -713,13 +776,13 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         yield pageToYield;
         if (pageToYield.done) {
           limitReached = true;
-          cleanup();
+          await cleanup();
           return;
         }
       }
     } finally {
-      cleanup?.();
-      clearTimeout(timeout);
+      await cleanup?.();
+      clearTimeout(requestTimeout);
     }
   }
 

@@ -100,6 +100,13 @@ does not retain the complete discovery result. `--limit` is enforced per
 qualifying record, so a limit smaller than the page size produces a partial
 final page.
 
+Bulk discovery uses separate streaming timeout semantics: a 30-second request
+timeout covers only establishment through response headers, then is cleared.
+A 120-second inactivity timeout resets for every decompressed chunk and detects
+a genuinely stalled body without imposing a wall-clock deadline on the full
+index. Timeouts are reported as retriable provider request errors. Individual
+product lookup retains its independent per-request timeout.
+
 Discovery checkpoints retain the source URL, mode, ETag, Last-Modified value,
 content metadata, last source identity and Updated value, processed count, and
 checkpoint version. Resume is a **STREAMING RE-SCAN FROM BEGINNING**, not

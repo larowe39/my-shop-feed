@@ -2,6 +2,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const { gzipSync } = require("zlib");
 
 async function main() {
   const provider = await import("../lib/catalogProviders.ts");
@@ -65,6 +66,7 @@ async function main() {
   await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
   await testIcecatAuthentication(OpenIcecatProvider, fixture, indexFixture);
+  await testDiscoveryStreamFailures(OpenIcecatProvider);
   const discoveryProviderInstance = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(indexFixture) });
   const discoveryRecords = [];
   for await (const page of discoveryProviderInstance.discoverProducts({ mode: "initial", limit: 2, pageSize: 1, brand: "Sony" })) {
@@ -205,6 +207,87 @@ async function testTruncatedXmlFailure(OpenIcecatProvider) {
     for await (const page of provider.discoverProducts({ limit: 20, pageSize: 10 })) void page;
   }, /unclosed tag|unexpected end|closed root|documents may contain only one root/i, "natural truncated XML must fail");
   console.log("testTruncatedXmlFailure passed.");
+}
+
+async function testDiscoveryStreamFailures(OpenIcecatProvider) {
+  const uncaughtErrors = [];
+  const onUncaughtException = (error) => { uncaughtErrors.push(error); };
+  process.on("uncaughtException", onUncaughtException);
+  try {
+    const timeoutProvider = new OpenIcecatProvider({
+      username: "u",
+      password: "p",
+      fetcher: async (_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+      }),
+    });
+    await assert.rejects(async () => {
+      for await (const page of timeoutProvider.discoverProducts({ limit: 1, requestTimeoutMs: 5 })) void page;
+    }, (error) => {
+      assert.strictEqual(error.name, "CatalogProviderRequestError");
+      assert.strictEqual(error.code, "ICECAT_DISCOVERY_REQUEST_TIMEOUT");
+      assert.strictEqual(error.retriable, true);
+      return /timed out before response headers/.test(error.message);
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepStrictEqual(uncaughtErrors, [], "request timeout must not emit an uncaught Readable error");
+
+    const encoder = new TextEncoder();
+    const progressingSource = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        controller.enqueue(encoder.encode('<Product Product_ID="1" Brand="Brand" Model_Name="Model"/>'));
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        controller.enqueue(encoder.encode("</file></ICECAT-interface>"));
+        controller.close();
+      },
+    });
+    const progressingProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(progressingSource) });
+    const progressingRecords = [];
+    for await (const page of progressingProvider.discoverProducts({ limit: 2, pageSize: 1, requestTimeoutMs: 5, inactivityTimeoutMs: 25 })) progressingRecords.push(...page.records);
+    assert.strictEqual(progressingRecords.length, 1, "an established slow stream must not be subject to the request timeout");
+
+    const stalledSource = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+      },
+      cancel() {},
+    });
+    const stalledProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(stalledSource) });
+    await assert.rejects(async () => {
+      for await (const page of stalledProvider.discoverProducts({ limit: 2, requestTimeoutMs: 5, inactivityTimeoutMs: 5 })) void page;
+    }, (error) => {
+      assert.strictEqual(error.name, "CatalogProviderRequestError");
+      assert.strictEqual(error.code, "ICECAT_DISCOVERY_INACTIVITY_TIMEOUT");
+      assert.strictEqual(error.retriable, true);
+      return /made no progress/.test(error.message);
+    });
+
+    const networkSource = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        controller.error(new Error("synthetic network interruption"));
+      },
+    });
+    const networkProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(networkSource) });
+    await assert.rejects(async () => {
+      for await (const page of networkProvider.discoverProducts({ limit: 2 })) void page;
+    }, /synthetic network interruption/);
+
+    const corruptGzip = Buffer.from(gzipSync('<ICECAT-interface><file><Product Product_ID="1" Brand="Brand" Model_Name="Model"/></file></ICECAT-interface>'));
+    corruptGzip[corruptGzip.length - 8] ^= 0xff;
+    const gzipProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(corruptGzip) });
+    await assert.rejects(async () => {
+      for await (const page of gzipProvider.discoverProducts({ limit: 2 })) void page;
+    }, /incorrect data check|checksum/i);
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepStrictEqual(uncaughtErrors, [], "network and gzip failures must remain handled promise rejections");
+  } finally {
+    process.off("uncaughtException", onUncaughtException);
+  }
+  console.log("testDiscoveryRequestTimeout, testDiscoveryInactivityTimeout, testSlowEstablishedStream, testNetworkStreamFailure, and testGzipFailure passed.");
 }
 
 async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
