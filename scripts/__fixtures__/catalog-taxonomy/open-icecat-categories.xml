@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ICECAT-interface>
+  <Response>
+    <CategoriesList>
+      <Category ID="1">
+        <Names>
+          <Name ID="root-fr" Value="Racine" langid="2" Updated="2026-01-01 00:00:00"/>
+        </Names>
+        <ParentCategory ID="1"/>
+      </Category>
+      <Category ID="2833">
+        <Names>
+          <Name ID="computers" Value="Computers &amp; Peripherals" langid="1" Updated="2026-01-01 00:00:00"/>
+        </Names>
+        <ParentCategory ID="1"/>
+      </Category>
+      <Category ID="225">
+        <Names>
+          <Name ID="printers" Value="Printers &amp; Scanners" langid="1" Updated="2026-01-01 00:00:00"/>
+        </Names>
+        <ParentCategory ID="2833"/>
+      </Category>
+      <Category ID="692">
+        <Names>
+          <Name ID="media" Value="Printing Media" langid="1" Updated="2026-01-01 00:00:00"/>
+        </Names>
+        <ParentCategory ID="225"/>
+      </Category>
+      <Category ID="971">
+        <Names>
+          <Name ID="large-format" Value="Large Format Media" langid="1" Updated="2026-01-01 00:00:00"/>
+        </Names>
+        <ParentCategory ID="692"/>
+        <VirtualCategories>
+          <VirtualCategory>
+            <Category ID="692"/>
+          </VirtualCategory>
+        </VirtualCategories>
+      </Category>
+      <Category ID="9999">
+        <Names>
+          <Name ID="missing-en" Value="Sans nom anglais" langid="2" Updated="2026-01-01 00:00:00"/>
+        </Names>
+        <ParentCategory ID="692"/>
+      </Category>
+    </CategoriesList>
+  </Response>
+</ICECAT-interface>

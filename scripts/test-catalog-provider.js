@@ -59,6 +59,16 @@ async function main() {
   assert.strictEqual(normalizeIcecatProduct({ ID: "title-3", IntName: "International", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "International");
   assert.strictEqual(normalizeIcecatProduct({ ID: "title-4", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "Name");
   assert.throws(() => normalizeIcecatProduct({ ID: "conflict", Name: "HP in free text", Prod_id: "M", Supplier: [{ Name: "HP" }, { Name: "Canon" }] }), /conflicting Supplier names/);
+  const nestedSupplierConflict = normalizeIcecatProduct({
+    ID: "nested-supplier-1",
+    Name: "HP Tray",
+    Prod_id: "M",
+    Supplier: [{ ID: "1", Name: "HP" }],
+    RelatedProducts: [{ Supplier: [{ ID: "2", Name: "Neomounts" }] }],
+  });
+  assert.strictEqual(nestedSupplierConflict.brand, "HP");
+  assert.strictEqual(nestedSupplierConflict.productName, "HP Tray");
+  assert.throws(() => normalizeIcecatProduct({ ID: "ambiguous-primary", Name: "Ambiguous Tray", Prod_id: "M", Supplier: [{ Name: "HP" }, { Name: "HPE" }] }), /conflicting Supplier names/);
   assert.throws(() => normalizeIcecatProduct({ ID: "no-brand", Title: "HP title text", Prod_id: "M" }), /explicit Supplier\/brand\/manufacturer/);
   console.log("testLiveProductSheetIdentity passed.");
 
@@ -190,9 +200,11 @@ async function main() {
   await testMalformedDiscoveryRecord(OpenIcecatProvider);
 
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
-  assert.match(icecatCliSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "discovery CLI must process one page at a time");
+  assert.match(icecatCliSource, /acquireDiscoveredProducts\(provider, discoveryOptions/, "discovery CLI must use the single-run streaming acquisition orchestrator");
   assert.doesNotMatch(icecatCliSource, /const discoveryPages = \[\]/, "discovery CLI must not retain every page");
-  assert.match(icecatCliSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the existing acquisition pipeline immediately");
+  const acquisitionSource = fs.readFileSync(path.join(__dirname, "..", "lib", "catalogAcquisition.ts"), "utf8");
+  assert.match(acquisitionSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "the discovery orchestrator must process provider pages incrementally");
+  assert.match(acquisitionSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the acquisition pipeline immediately");
 
   assert.doesNotThrow(() => assertProviderSupports(new OpenIcecatProvider({ username: "u", password: "p" }), "discovery"));
 

@@ -19,10 +19,12 @@ import type {
   StagedCatalogCandidate,
 } from "./catalogStagingTypes.ts";
 import type { CreateImportRunInput, StagingStore } from "./stagingStore.ts";
-import type { AcquisitionQualityMetrics, AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
+import type { AcquisitionQualityMetrics, AcquisitionSummary, ImportRunRecord, SourceRegistryEntry } from "./catalogStagingTypes.ts";
 import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
 import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
+import { processDiscoveredPages } from "./catalogProviders.ts";
+import type { CatalogProvider, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
 
 export type {
   CandidateClassification,
@@ -46,6 +48,28 @@ export type AcquisitionRunResult = {
   }>;
   summary: AcquisitionSummary;
   persistence: string[];
+};
+
+export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
+  fetched: number;
+  pages: number;
+  providerErrors: ProviderFetchError[];
+  enriched: number;
+  elapsedMs: number;
+};
+
+type ExistingImportRun = {
+  id: string;
+  source: SourceRegistryEntry;
+};
+
+type AcquisitionOptions = {
+  apply?: boolean;
+  adapter?: string;
+  sourcePath?: string | null;
+  taxonomyResolver?: TaxonomyMappingResolver;
+  existingRun?: ExistingImportRun;
+  deferRunFinalization?: boolean;
 };
 
 export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
@@ -433,7 +457,7 @@ export async function acquireFromRecords(
   records: Partial<CatalogCandidateInput>[],
   canonicalCatalog: CanonicalCatalogEntry[] = [],
   sourceInfo: Partial<SourceRegistryEntry> = {},
-  options: { apply?: boolean; adapter?: string; sourcePath?: string | null; taxonomyResolver?: TaxonomyMappingResolver } = {},
+  options: AcquisitionOptions = {},
   store?: StagingStore
 ): Promise<AcquisitionRunResult> {
   const apply = options.apply ?? false;
@@ -561,22 +585,46 @@ export async function acquireFromRecords(
   let stagedResult = candidates;
 
   if (apply && store) {
-    source = await store.upsertSource({
-      id: sourceInfo.id,
-      name: sourceInfo.name ?? "fixture-source",
-      type: sourceType,
-      baseUrl: sourceInfo.baseUrl ?? null,
-      trustClassification: sourceInfo.trustClassification ?? "staged",
-      active: sourceInfo.active ?? true,
-      notes: sourceInfo.notes ?? null,
-      metadata: sourceInfo.metadata ?? {},
-    });
+    source = options.existingRun?.source ?? await store.upsertSource({
+        id: sourceInfo.id,
+        name: sourceInfo.name ?? "fixture-source",
+        type: sourceType,
+        baseUrl: sourceInfo.baseUrl ?? null,
+        trustClassification: sourceInfo.trustClassification ?? "staged",
+        active: sourceInfo.active ?? true,
+        notes: sourceInfo.notes ?? null,
+        metadata: sourceInfo.metadata ?? {},
+      });
     for (const candidate of candidates) candidate.sourceId = source.id ?? candidate.sourceId;
 
-    const runInput: CreateImportRunInput = {
-      adapter: options.adapter ?? "json",
-      sourcePath: options.sourcePath ?? null,
-      dryRun: false,
+    if (options.existingRun) {
+      runId = options.existingRun.id;
+    } else {
+      const runInput: CreateImportRunInput = {
+        adapter: options.adapter ?? "json",
+        sourcePath: options.sourcePath ?? null,
+        dryRun: false,
+        processed: summary.processed,
+        valid: summary.valid,
+        invalid: summary.invalid,
+        exactExisting: summary.exactExisting,
+        likelyExisting: summary.likelyExisting,
+        possibleExisting: summary.possibleExisting,
+        newRecords: summary.new,
+        conflictRecords: summary.conflict,
+        approved: 0,
+        rejected: 0,
+        promoted: 0,
+        staged: summary.staged,
+        errors: summary.errors,
+        summary,
+      };
+      runId = (await store.createImportRun(source, runInput)).id;
+    }
+    for (const candidate of candidates) candidate.importRunId = runId;
+    stagedResult = await store.upsertStagedCandidates(candidates);
+    summary.staged = stagedResult.length;
+    if (!options.deferRunFinalization) await store.updateImportRun(runId, {
       processed: summary.processed,
       valid: summary.valid,
       invalid: summary.invalid,
@@ -585,17 +633,10 @@ export async function acquireFromRecords(
       possibleExisting: summary.possibleExisting,
       newRecords: summary.new,
       conflictRecords: summary.conflict,
-      approved: 0,
-      rejected: 0,
-      promoted: 0,
       staged: summary.staged,
       errors: summary.errors,
       summary,
-    };
-    const run = await store.createImportRun(source, runInput);
-    runId = run.id;
-    for (const candidate of candidates) candidate.importRunId = run.id;
-    stagedResult = await store.upsertStagedCandidates(candidates);
+    });
     persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
 
@@ -608,6 +649,439 @@ export async function acquireFromRecords(
     summary,
     persistence: persistenceMessages,
   };
+}
+
+export async function acquireDiscoveredProducts<TRaw>(
+  provider: CatalogProvider<TRaw>,
+  discoveryOptions: ProviderDiscoveryOptions,
+  canonicalCatalog: CanonicalCatalogEntry[] = [],
+  sourceInfo: Partial<SourceRegistryEntry> = {},
+  options: Omit<AcquisitionOptions, "existingRun" | "deferRunFinalization"> = {},
+  store?: StagingStore
+): Promise<DiscoveryAcquisitionResult> {
+  const apply = options.apply ?? false;
+  if (apply && !store) throw new Error("acquireDiscoveredProducts: a StagingStore is required when apply=true.");
+
+  const startedAt = Date.now();
+  const aggregate: AcquisitionSummary = {
+    processed: 0,
+    valid: 0,
+    invalid: 0,
+    exactExisting: 0,
+    likelyExisting: 0,
+    possibleExisting: 0,
+    new: 0,
+    conflict: 0,
+    staged: 0,
+    errors: 0,
+  };
+  const metricRecords: Partial<CatalogCandidateInput>[] = [];
+  const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
+  const staged: StagedCatalogCandidate[] = [];
+  const providerErrors: ProviderFetchError[] = [];
+  const persistence = new Set<string>();
+  let fetched = 0;
+  let pages = 0;
+  let indexCandidatesExamined: number | null = null;
+  let enrichmentAttempts: number | null = null;
+  let existingRun: ExistingImportRun | undefined;
+
+  if (apply && store) {
+    const source = await store.upsertSource({
+      id: sourceInfo.id,
+      name: sourceInfo.name ?? "fixture-source",
+      type: sourceInfo.type ?? "manual import",
+      baseUrl: sourceInfo.baseUrl ?? null,
+      trustClassification: sourceInfo.trustClassification ?? "staged",
+      active: sourceInfo.active ?? true,
+      notes: sourceInfo.notes ?? null,
+      metadata: sourceInfo.metadata ?? {},
+    });
+    const run = await store.createImportRun(source, {
+      adapter: options.adapter ?? "json",
+      sourcePath: options.sourcePath ?? null,
+      dryRun: false,
+      processed: 0,
+      valid: 0,
+      invalid: 0,
+      exactExisting: 0,
+      likelyExisting: 0,
+      possibleExisting: 0,
+      newRecords: 0,
+      conflictRecords: 0,
+      approved: 0,
+      rejected: 0,
+      promoted: 0,
+      staged: 0,
+      errors: 0,
+      status: "partial",
+      summary: { requestedLimit: discoveryOptions.limit ?? null },
+    });
+    existingRun = { id: run.id, source };
+  }
+
+  await processDiscoveredPages(provider, discoveryOptions, async (page) => {
+    fetched += page.records.length;
+    pages += 1;
+    providerErrors.push(...page.errors);
+    const processedCount = Number(page.checkpoint?.processedCount);
+    const attemptCount = Number(page.checkpoint?.enrichmentAttempts);
+    if (Number.isFinite(processedCount)) indexCandidatesExamined = Math.max(indexCandidatesExamined ?? 0, processedCount);
+    if (Number.isFinite(attemptCount)) enrichmentAttempts = Math.max(enrichmentAttempts ?? 0, attemptCount);
+
+    const pageRecords: CatalogCandidateInput[] = [];
+    for (const record of page.records) {
+      try {
+        pageRecords.push(provider.normalizeProduct(record));
+      } catch (error) {
+        providerErrors.push({
+          message: error instanceof Error ? error.message : String(error),
+          sourceExternalId: (record as { sourceExternalId?: string })?.sourceExternalId,
+        });
+      }
+    }
+    metricRecords.push(...pageRecords);
+    const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
+      ...options,
+      existingRun,
+      deferRunFinalization: Boolean(existingRun),
+    }, store);
+    for (const key of ["processed", "valid", "invalid", "exactExisting", "likelyExisting", "possibleExisting", "new", "conflict", "errors"] as const) {
+      aggregate[key] += pageRun.summary[key];
+    }
+    staged.push(...pageRun.staged);
+    invalidRecords.push(...pageRun.invalidRecords);
+    for (const entry of pageRun.persistence) persistence.add(entry);
+  });
+
+  aggregate.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, aggregate, {
+    discovered: fetched,
+    providerErrors: providerErrors.length,
+  });
+  const elapsedMs = Date.now() - startedAt;
+  if (existingRun && store) {
+    aggregate.staged = await store.countStagedCandidatesByRun(existingRun.id);
+    const persistedSummary = {
+      ...aggregate,
+      requestedLimit: discoveryOptions.limit ?? null,
+      sourceRecords: fetched,
+      successfulEnrichments: metricRecords.length,
+      providerErrors: providerErrors.length,
+      elapsedMs,
+      providerPages: pages,
+      indexCandidatesExamined,
+      enrichmentAttempts,
+    };
+    await store.updateImportRun(existingRun.id, {
+      processed: aggregate.processed,
+      valid: aggregate.valid,
+      invalid: aggregate.invalid,
+      exactExisting: aggregate.exactExisting,
+      likelyExisting: aggregate.likelyExisting,
+      possibleExisting: aggregate.possibleExisting,
+      newRecords: aggregate.new,
+      conflictRecords: aggregate.conflict,
+      staged: aggregate.staged,
+      errors: aggregate.errors,
+      status: "completed",
+      summary: persistedSummary,
+    });
+  } else {
+    aggregate.staged = staged.length;
+  }
+
+  return {
+    source: existingRun?.source,
+    sourceId: existingRun?.source.id,
+    runId: existingRun?.id,
+    staged,
+    invalidRecords,
+    summary: aggregate,
+    persistence: [...persistence],
+    fetched,
+    pages,
+    providerErrors,
+    enriched: metricRecords.length,
+    elapsedMs,
+  };
+}
+
+export type CatalogRunReportMetrics = {
+  requested: number;
+  fetched: number;
+  enriched: number;
+  processed: number;
+  valid: number;
+  invalid: number;
+  exactExisting: number;
+  likelyExisting: number;
+  possibleExisting: number;
+  new: number;
+  conflict: number;
+  staged: number;
+  errors: number;
+  providerErrors: number | null;
+  elapsedMs: number | null;
+  providerPages: number | null;
+  indexCandidatesExamined: number | null;
+  enrichmentAttempts: number | null;
+  imageCoverage: number;
+  gtinCoverage: number;
+  modelCoverage: number;
+  brandCoverage: number;
+  externalTaxonomyCoverage: number;
+  trustedMappingCoverage: number;
+  unresolvedTaxonomy: number;
+  manualReviewRequired: number;
+  promotionReady: number;
+};
+
+export type CatalogRunReport = {
+  currentRunId: string | null;
+  run: ImportRunRecord | null;
+  candidates: StagedCatalogCandidate[];
+  metrics: CatalogRunReportMetrics;
+  sample: Array<{
+    id: string;
+    sourceExternalId: string | null;
+    brand: string;
+    productName: string;
+    modelNumber: string | null;
+    classification: CandidateClassification;
+    manualReviewRequired: boolean;
+    promotionReady: boolean;
+    externalTaxonomy: unknown;
+  }>;
+};
+
+export function buildCatalogRunReport(runId: string | null | undefined, importRuns: ImportRunRecord[] = [], stagedCandidates: StagedCatalogCandidate[] = []): CatalogRunReport {
+  const currentRun = typeof runId === "string" ? (importRuns.find((row) => row.id === runId) ?? null) : null;
+  const runCandidates = stagedCandidates.filter((candidate) => !runId || candidate.importRunId === runId);
+  const validRecords = runCandidates.filter((candidate) => {
+    const validation = validateCatalogCandidate({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      aliases: candidate.aliases,
+      raw: candidate.rawPayload ?? {},
+    });
+    return validation.valid;
+  });
+
+  const persistedMetrics = currentRun?.summary && typeof currentRun.summary === "object" && "qualityMetrics" in currentRun.summary
+    ? (currentRun.summary as Record<string, unknown>).qualityMetrics as Record<string, number | null | undefined> | undefined
+    : undefined;
+  const persistedProviderErrors = currentRun?.summary && typeof currentRun.summary === "object" && "providerErrors" in currentRun.summary
+    ? (currentRun.summary as Record<string, unknown>).providerErrors as number | null | undefined
+    : undefined;
+  const persistedElapsedMs = currentRun?.summary && typeof currentRun.summary === "object" && "elapsedMs" in currentRun.summary
+    ? (currentRun.summary as Record<string, unknown>).elapsedMs as number | null | undefined
+    : undefined;
+  const persistedSummary = currentRun?.summary && typeof currentRun.summary === "object"
+    ? currentRun.summary as Record<string, unknown>
+    : {};
+  const persistedNumber = (key: string): number | null => typeof persistedSummary[key] === "number" ? persistedSummary[key] as number : null;
+
+  const metrics: CatalogRunReportMetrics = {
+    requested: persistedNumber("requestedLimit") ?? currentRun?.processed ?? runCandidates.length,
+    fetched: persistedNumber("sourceRecords") ?? currentRun?.processed ?? runCandidates.length,
+    enriched: persistedNumber("successfulEnrichments") ?? currentRun?.valid ?? validRecords.length,
+    processed: currentRun?.processed ?? runCandidates.length,
+    valid: currentRun?.valid ?? validRecords.length,
+    invalid: currentRun?.invalid ?? Math.max(runCandidates.length - validRecords.length, 0),
+    exactExisting: currentRun?.exactExisting ?? runCandidates.filter((candidate) => candidate.classification === "EXACT_EXISTING").length,
+    likelyExisting: currentRun?.likelyExisting ?? runCandidates.filter((candidate) => candidate.classification === "LIKELY_EXISTING").length,
+    possibleExisting: currentRun?.possibleExisting ?? runCandidates.filter((candidate) => candidate.classification === "POSSIBLE_EXISTING").length,
+    new: currentRun?.newRecords ?? runCandidates.filter((candidate) => candidate.classification === "NEW").length,
+    conflict: currentRun?.conflictRecords ?? runCandidates.filter((candidate) => candidate.classification === "CONFLICT").length,
+    staged: currentRun?.staged ?? runCandidates.length,
+    errors: currentRun?.errors ?? 0,
+    providerErrors: persistedProviderErrors ?? null,
+    elapsedMs: persistedElapsedMs ?? null,
+    providerPages: persistedNumber("providerPages"),
+    indexCandidatesExamined: persistedNumber("indexCandidatesExamined"),
+    enrichmentAttempts: persistedNumber("enrichmentAttempts"),
+    imageCoverage: typeof persistedMetrics?.imageRate === "number" ? persistedMetrics.imageRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.imageUrl)).length / validRecords.length : 0),
+    gtinCoverage: typeof persistedMetrics?.gtinRate === "number" ? persistedMetrics.gtinRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / validRecords.length : 0),
+    modelCoverage: typeof persistedMetrics?.modelRate === "number" ? persistedMetrics.modelRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / validRecords.length : 0),
+    brandCoverage: typeof persistedMetrics?.trustworthyBrandRate === "number" ? persistedMetrics.trustworthyBrandRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.brand && candidate.brand.trim())).length / validRecords.length : 0),
+    externalTaxonomyCoverage: validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy)).length / validRecords.length : 0,
+    trustedMappingCoverage: validRecords.length ? validRecords.filter((candidate) => {
+      const mapping = candidate.rawPayload?.taxonomyMapping as Record<string, unknown> | null | undefined;
+      return Boolean(mapping && (
+        mapping.status === "verified" ||
+        mapping.method === "manual" ||
+        Boolean(mapping.canonicalCategoryId) ||
+        Boolean(mapping.canonicalSubcategoryId)
+      ));
+    }).length / validRecords.length : 0,
+    unresolvedTaxonomy: validRecords.filter((candidate) => {
+      const identity = candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy;
+      const mapping = candidate.rawPayload?.taxonomyMapping;
+      return Boolean(identity) && !mapping && !candidate.category && !candidate.subcategory && !candidate.family;
+    }).length,
+    manualReviewRequired: validRecords.filter((candidate) => assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification).reviewRequired).length,
+    promotionReady: validRecords.filter((candidate) => assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification).promotionReady).length,
+  };
+
+  const sample = runCandidates.slice(0, 3).map((candidate) => {
+    const readiness = assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification);
+    return {
+      id: candidate.id,
+      sourceExternalId: candidate.sourceExternalId ?? null,
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber ?? null,
+      classification: candidate.classification,
+      manualReviewRequired: readiness.reviewRequired,
+      promotionReady: readiness.promotionReady,
+      externalTaxonomy: candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy ?? null,
+    };
+  });
+
+  return { currentRunId: runId ?? currentRun?.id ?? null, run: currentRun, candidates: runCandidates, metrics, sample };
+}
+
+export function rankTaxonomyGaps(
+  runId: string | null | undefined,
+  stagedCandidates: StagedCatalogCandidate[] = [],
+  mappingRecords: Array<{ provider?: string; externalId?: string; externalTaxonomyId?: string; name?: string | null; externalName?: string | null; status?: string; canonicalCategoryId?: string | null; canonicalSubcategoryId?: string | null; }> = []
+): Array<{ provider: string; externalId: string; name: string | null; path: string | null; candidateCount: number; sampleBrands: string[]; sampleProducts: string[]; suggestedMapping: boolean; verifiedMapping: boolean; }> {
+  const rows = new Map<string, { provider: string; externalId: string; name: string | null; path: string | null; candidateCount: number; sampleBrands: Set<string>; sampleProducts: Set<string>; suggestedMapping: boolean; verifiedMapping: boolean; }>();
+
+  for (const candidate of stagedCandidates) {
+    if (runId && candidate.importRunId !== runId) continue;
+    const identity = candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy;
+    if (!identity || typeof identity !== "object") continue;
+    const provider = String((identity as Record<string, unknown>).provider ?? "unknown");
+    const externalId = String((identity as Record<string, unknown>).externalId ?? "");
+    if (!provider || !externalId) continue;
+    const key = `${provider}:${externalId}`;
+    const mapping = mappingRecords.find((entry) => {
+      const mappingProvider = String(entry.provider ?? "").trim().toLowerCase();
+      const mappingExternalId = String(entry.externalId ?? entry.externalTaxonomyId ?? "");
+      return mappingProvider === provider.trim().toLowerCase() && mappingExternalId === externalId;
+    });
+    const status = String(mapping?.status ?? "").toLowerCase();
+    if (mapping && (status === "verified" || Boolean(mapping.canonicalCategoryId) || Boolean(mapping.canonicalSubcategoryId))) continue;
+    const existing = rows.get(key) ?? {
+      provider,
+      externalId,
+      name: (identity as Record<string, unknown>).name ? String((identity as Record<string, unknown>).name) : null,
+      path: (identity as Record<string, unknown>).path ? String((identity as Record<string, unknown>).path) : null,
+      candidateCount: 0,
+      sampleBrands: new Set<string>(),
+      sampleProducts: new Set<string>(),
+      suggestedMapping: Boolean(mapping && status === "suggested"),
+      verifiedMapping: false,
+    };
+    existing.candidateCount += 1;
+    if (candidate.brand) existing.sampleBrands.add(candidate.brand);
+    if (candidate.productName) existing.sampleProducts.add(candidate.productName);
+    existing.suggestedMapping = existing.suggestedMapping || Boolean(mapping && status === "suggested");
+    existing.verifiedMapping = existing.verifiedMapping || Boolean(mapping && status === "verified" && (Boolean(mapping.canonicalCategoryId) || Boolean(mapping.canonicalSubcategoryId)));
+    rows.set(key, existing);
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      provider: row.provider,
+      externalId: row.externalId,
+      name: row.name || null,
+      path: row.path || null,
+      candidateCount: row.candidateCount,
+      sampleBrands: [...row.sampleBrands].slice(0, 3),
+      sampleProducts: [...row.sampleProducts].slice(0, 3),
+      suggestedMapping: row.suggestedMapping,
+      verifiedMapping: row.verifiedMapping,
+    }))
+    .sort((left, right) => right.candidateCount - left.candidateCount);
+}
+
+export function formatCatalogRunReport(report: CatalogRunReport): string {
+  const metrics = report.metrics;
+  const lines = [
+    "CATALOG ACQUISITION RUN",
+    `Provider: open-icecat`,
+    `Run: ${report.currentRunId ?? "n/a"}`,
+    `Requested: ${metrics.requested}`,
+    `Source records: ${metrics.fetched}`,
+    `Successful enrichments: ${metrics.enriched}`,
+    `Processed: ${metrics.processed}`,
+    `Valid: ${metrics.valid}`,
+    `Invalid: ${metrics.invalid}`,
+    "",
+    "IDENTITY",
+    `Exact existing: ${metrics.exactExisting}`,
+    `Likely existing: ${metrics.likelyExisting}`,
+    `Possible existing: ${metrics.possibleExisting}`,
+    `New: ${metrics.new}`,
+    `Conflict: ${metrics.conflict}`,
+    "",
+    "QUALITY",
+    `GTIN: ${formatRate(metrics.gtinCoverage)}`,
+    `Image: ${formatRate(metrics.imageCoverage)}`,
+    `Model/MPN: ${formatRate(metrics.modelCoverage)}`,
+    `Trustworthy brand: ${formatRate(metrics.brandCoverage)}`,
+    "",
+    "TAXONOMY",
+    `External taxonomy present: ${formatRate(metrics.externalTaxonomyCoverage)}`,
+    `Trusted mapping: ${formatRate(metrics.trustedMappingCoverage)}`,
+    `Unresolved: ${formatRate(metrics.unresolvedTaxonomy ? (metrics.unresolvedTaxonomy / Math.max(metrics.valid, 1)) : 0)}`,
+    "",
+    "READINESS",
+    `Manual review required: ${metrics.manualReviewRequired}`,
+    `Promotion ready: ${metrics.promotionReady}`,
+    "",
+    "PROVIDER",
+    `Pages: ${metrics.providerPages === null ? "unavailable" : metrics.providerPages}`,
+    `Index candidates examined: ${metrics.indexCandidatesExamined === null ? "unavailable" : metrics.indexCandidatesExamined}`,
+    `Enrichment attempts: ${metrics.enrichmentAttempts === null ? "unavailable" : metrics.enrichmentAttempts}`,
+    `Errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
+    `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,
+  ];
+  if (report.sample.length) {
+    lines.push("", "SAMPLE");
+    for (const row of report.sample) {
+      lines.push(`- ${row.brand} / ${row.productName}${row.modelNumber ? ` (${row.modelNumber})` : ""} | ${row.classification}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 export function printAcquisitionSummary(run: AcquisitionRunResult): string {

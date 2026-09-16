@@ -3,6 +3,11 @@ const assert = require("assert");
 const path = require("path");
 const fs = require("fs");
 
+function makeId(prefix) {
+  const crypto = require("crypto");
+  return `${prefix}_${crypto.createHash("sha1").update(`${Date.now()}-${Math.random()}-${prefix}`).digest("hex").slice(0, 12)}`;
+}
+
 async function main() {
   const ledgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.test.json");
   process.env.CATALOG_STAGING_LEDGER_PATH = ledgerPath;
@@ -20,6 +25,7 @@ async function main() {
     classifyCandidate,
     sourceFingerprint,
     acquireFromRecords,
+    acquireDiscoveredProducts,
     showCandidate,
     approveCandidate,
     rejectCandidate,
@@ -29,6 +35,8 @@ async function main() {
     candidateReviewView,
     formatApprovalPreview,
     reviewCandidatesSequentially,
+    buildCatalogRunReport,
+    rankTaxonomyGaps,
   } = acquisition;
 
   const stagingStoreModule = await import("../lib/stagingStore.ts");
@@ -66,8 +74,8 @@ async function main() {
   );
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(icecatCliSource, /resolveStagingStore/, "Icecat apply must resolve the staging backend");
-  assert.match(icecatCliSource, /persistedRunId = pageRun\.runId/, "Icecat discovery must retain the persisted import run ID");
-  assert.match(icecatCliSource, /runId: persistedRunId/, "Icecat discovery output must expose the persisted import run ID");
+  assert.match(icecatCliSource, /acquireDiscoveredProducts/, "Icecat discovery must use the single-run multi-page orchestrator");
+  assert.doesNotMatch(icecatCliSource, /acquireFromRecords\(pageRecords/, "Icecat discovery must not create a complete import run per provider page");
   assert.doesNotMatch(icecatCliSource, /approveCandidate|rejectCandidate|promoteApprovedCandidates|resolveCanonicalPromotionStore/, "Icecat acquisition must not approve or promote");
   const approveCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-approve.js"), "utf8");
   const showCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-show.js"), "utf8");
@@ -324,8 +332,8 @@ async function main() {
     localStore
   );
   const stagedAfterSecondRun = await localStore.listStagedCandidates();
-  assert.strictEqual(secondRun.summary.staged, 1, "same source re-acquired should classify the same candidates again");
-  assert.strictEqual(stagedAfterSecondRun.length, stagedAfterFirstRun.length, "idempotency: no duplicate staged rows across repeated acquisition runs");
+  assert.strictEqual(secondRun.summary.staged, 1, "same source re-acquired should classify the same candidates again in the new run");
+  assert.strictEqual(stagedAfterSecondRun.length, stagedAfterFirstRun.length + 1, "run-scoped idempotency: prior run rows remain visible while same-run duplicates are not duplicated");
 
   // ---------------------------------------------------------------------
   // 4. show/approve/reject use the selected backend; cannot write canonical
@@ -539,10 +547,30 @@ async function main() {
             }
             return { select: () => ({ single: async () => ({ data: { id: "unused" }, error: null }) }) };
           },
-          select() {
+          update(row) {
+            if (table === "catalog_import_runs") {
+              return {
+                eq: (_column, value) => ({
+                  select: () => ({
+                    single: async () => ({ data: { id: value, ...row, created_at: new Date().toISOString() }, error: null }),
+                  }),
+                }),
+              };
+            }
+            return { eq: () => ({ select: () => ({ single: async () => ({ data: null, error: null }) }) }) };
+          },
+          select(_columns, options) {
             if (table === "catalog_staged_aliases") {
               return {
                 in: async (_column, ids) => ({ data: stagedAliasRows.filter((row) => ids.includes(row.staged_product_id)), error: null }),
+              };
+            }
+            if (table === "catalog_staged_products" && options?.head) {
+              return {
+                eq: async (_column, value) => ({
+                  count: [...stagedRowsById.values()].filter((row) => row.import_run_id === value).length,
+                  error: null,
+                }),
               };
             }
             return {
@@ -570,6 +598,7 @@ async function main() {
   assert.ok(recordedCalls.includes("catalog_import_runs"), "Supabase apply path must call catalog_import_runs");
   assert.ok(recordedCalls.includes("catalog_staged_products"), "Supabase apply path must call catalog_staged_products");
   assert.ok(supabaseRun.persistence.every((entry) => entry.startsWith("supabase:")));
+  assert.strictEqual(await supabaseStagingStore.countStagedCandidatesByRun(supabaseRun.runId), 1, "Supabase STAGED reconciliation must use a run-scoped persisted count");
 
   // ---------------------------------------------------------------------
   // 9b. Alias-propagation regression (PR #21 production smoke-test bug):
@@ -632,7 +661,93 @@ async function main() {
   assert.strictEqual(normalizedAliasSet.size, rpcCallArgs.p_aliases.length, "duplicate normalized aliases must be collapsed before promotion");
 
   // ---------------------------------------------------------------------
-  // 10. Fail-closed: Supabase backend with missing credentials never falls
+  // 10. Paging/run isolation for >500-row and >1000-row staging datasets.
+  // ---------------------------------------------------------------------
+  const paginationLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-pagination.test.json");
+  const paginationStore = new LocalStagingStore(paginationLedgerPath);
+  paginationStore.reset();
+  const paginationRows = Array.from({ length: 1200 }, (_, index) => ({
+    sourceExternalId: `page-${index + 1}`,
+    brand: `Brand ${index % 17}`,
+    productName: `Pagination Model ${index + 1}`,
+    modelNumber: `MOD-${index + 1}`,
+    raw: { provider: "open-icecat" },
+  }));
+  const paginationRun = await acquireFromRecords(
+    paginationRows,
+    [],
+    { name: "pagination-source", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    paginationStore
+  );
+  assert.strictEqual(paginationRun.staged.length, 1200, "bulk staging must preserve all rows across page boundaries");
+  assert.strictEqual((await paginationStore.listStagedCandidates()).length, 1200, "listStagedCandidates must not silently truncate a >1000-row run");
+  const paginationReport = buildCatalogRunReport(paginationRun.runId, await paginationStore.listImportRuns(), await paginationStore.listStagedCandidates());
+  assert.strictEqual(paginationReport.metrics.processed, 1200);
+  assert.strictEqual(paginationReport.metrics.valid, 1200);
+  paginationStore.reset();
+  if (fs.existsSync(paginationLedgerPath)) fs.unlinkSync(paginationLedgerPath);
+
+  // ---------------------------------------------------------------------
+  // 11. Run-scoped reporting must remain isolated to the selected import run.
+  // ---------------------------------------------------------------------
+  const reportLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-report.test.json");
+  const reportStore = new LocalStagingStore(reportLedgerPath);
+  reportStore.reset();
+
+  const runA = await acquireFromRecords(
+    [
+      { sourceExternalId: "run-a-1", brand: "HP", productName: "LaserJet Pro", modelNumber: "MFP 123", imageUrl: "https://example.test/hp.jpg", gtin: "1234567890123", sourceUrl: "https://example.test/a", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" } } },
+      { sourceExternalId: "run-a-2", brand: "Sony", productName: "WH-1000XM5", modelNumber: "WH1000XM5", gtin: "9998887776665", imageUrl: "https://example.test/sony.jpg", raw: { provider: "open-icecat" } },
+      { sourceExternalId: "run-a-3", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "88", name: "Speakers" } } },
+      { sourceExternalId: "run-a-4", brand: "", productName: "bad", raw: { provider: "open-icecat" } },
+    ],
+    [{ brand: "Sony", productName: "Sony WH-1000XM5", modelNumber: "WH1000XM5" }],
+    { name: "scale-run-a", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    reportStore
+  );
+
+  const runB = await acquireFromRecords(
+    [
+      { sourceExternalId: "run-b-1", brand: "Dell", productName: "XPS 13", modelNumber: "XPS13", imageUrl: "https://example.test/dell.jpg", raw: { provider: "open-icecat" } },
+      { sourceExternalId: "run-b-2", brand: "Bose", productName: "QuietComfort Ultra", modelNumber: "QC Ultra", raw: { provider: "open-icecat" } },
+    ],
+    [],
+    { name: "scale-run-b", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    reportStore
+  );
+
+  const aReport = buildCatalogRunReport(runA.runId, await reportStore.listImportRuns(), await reportStore.listStagedCandidates());
+  const bReport = buildCatalogRunReport(runB.runId, await reportStore.listImportRuns(), await reportStore.listStagedCandidates());
+  assert.strictEqual(aReport.metrics.processed, 4);
+  assert.strictEqual(aReport.metrics.valid, 3, "requested/fetched/enriched semantics: valid count must reflect only valid records");
+  assert.strictEqual(aReport.metrics.invalid, 1);
+  assert.strictEqual(aReport.metrics.imageCoverage, 0.6667, "image coverage must reflect the run-scoped valid candidate set");
+  assert.strictEqual(aReport.metrics.gtinCoverage, 0.6667, "GTIN coverage must be calculated on valid records only");
+  assert.strictEqual(aReport.metrics.modelCoverage, 1);
+  assert.strictEqual(aReport.metrics.providerErrors, null, "missing historical provider-error metrics must remain unavailable, never be fabricated as 0");
+  assert.strictEqual(aReport.metrics.unresolvedTaxonomy, 2, "every valid candidate with provider taxonomy but no trusted mapping and no canonical hierarchy is unresolved in the run");
+  assert.ok(aReport.sample.length <= 3, "samples must remain bounded");
+  assert.strictEqual(bReport.metrics.processed, 2);
+  assert.ok(bReport.metrics.imageCoverage >= 0.5);
+  assert.strictEqual(aReport.currentRunId, runA.runId);
+  assert.strictEqual(bReport.currentRunId, runB.runId);
+  assert.notStrictEqual(aReport.currentRunId, bReport.currentRunId);
+  assert.ok(!aReport.candidates.some((entry) => entry.sourceExternalId === "run-b-1"), "old run rows must not contaminate a new run report");
+
+  const taxonomyGaps = rankTaxonomyGaps(runA.runId, await reportStore.listStagedCandidates(), [
+    { provider: "open-icecat", externalId: "846", name: "Printers", path: "Electronics > Printers", status: "suggested", canonicalCategoryId: null, canonicalSubcategoryId: null },
+    { provider: "open-icecat", externalId: "88", name: "Speakers", path: "Electronics > Speakers", status: "verified", canonicalCategoryId: "cat-electronics", canonicalSubcategoryId: "sub-speakers" },
+  ]);
+  assert.strictEqual(taxonomyGaps[0].externalId, "846");
+  assert.strictEqual(taxonomyGaps[0].candidateCount, 1);
+  assert.strictEqual(taxonomyGaps[0].verifiedMapping, false);
+  assert.strictEqual(taxonomyGaps[0].name, "Printers");
+
+  // ---------------------------------------------------------------------
+  // 12. Fail-closed: Supabase backend with missing credentials never falls
   //     back to the local ledger.
   // ---------------------------------------------------------------------
   assert.throws(() => resolveStagingStore({ backend: "supabase" }), StagingBackendError);
@@ -644,8 +759,76 @@ async function main() {
   const explicitLocal = resolveStagingStore({ backend: "local" });
   assert.strictEqual(explicitLocal.kind, "local");
 
-  localStore.reset();
-  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath]) {
+  const multiPageLedgerPaths = [100, 101].map((total) => path.join(__dirname, "..", ".catalog-staging", `catalog-run-multipage-${total}.json`));
+  const makeDiscoveryProvider = (total) => ({
+    capabilities: { lookup: false, discovery: true },
+    getSourceMetadata: () => ({ name: `multi-page-source-${total}`, type: "external-provider", baseUrl: "https://example.test", metadata: {} }),
+    normalizeProduct: (record) => record,
+    async *discoverProducts(options) {
+      const pageSize = options.pageSize;
+      for (let offset = 0; offset < total; offset += pageSize) {
+        const records = Array.from({ length: Math.min(pageSize, total - offset) }, (_, index) => {
+          const sequence = offset + index + 1;
+          const externalTaxonomy = { provider: "open-icecat", externalId: `taxonomy-${Math.floor(offset / pageSize) + 1}`, name: `Category ${Math.floor(offset / pageSize) + 1}` };
+          return {
+            sourceExternalId: `icecat-distinct-${sequence}`,
+            brand: `Brand ${Math.floor(offset / pageSize) + 1}`,
+            productName: `Distinct Product ${sequence}`,
+            modelNumber: `MOD-${sequence}`,
+            imageUrl: `https://example.test/${sequence}.jpg`,
+            gtin: sequence <= Math.floor(total * 0.79) ? `GTIN-${sequence}` : null,
+            externalTaxonomy,
+            raw: { provider: "open-icecat", externalTaxonomy },
+          };
+        });
+        yield {
+          records,
+          errors: [],
+          nextCursor: String(offset + records.length),
+          done: offset + records.length >= total,
+          checkpoint: { processedCount: offset + records.length, enrichmentAttempts: offset + records.length },
+        };
+      }
+    },
+  });
+
+  for (const total of [100, 101]) {
+    const multiPageStore = new LocalStagingStore(multiPageLedgerPaths[total === 100 ? 0 : 1]);
+    multiPageStore.reset();
+    const provider = makeDiscoveryProvider(total);
+    const discoveryRun = await acquireDiscoveredProducts(provider, { limit: total, pageSize: 25 }, [], provider.getSourceMetadata(), { apply: true, adapter: "open-icecat" }, multiPageStore);
+    const runs = await multiPageStore.listImportRuns();
+    const persisted = await multiPageStore.listStagedCandidates();
+    const report = buildCatalogRunReport(discoveryRun.runId, runs, persisted);
+    assert.strictEqual(runs.length, 1, `${total} records must create exactly one logical import run`);
+    assert.strictEqual(discoveryRun.pages, Math.ceil(total / 25));
+    assert.strictEqual(persisted.length, total);
+    assert.strictEqual(new Set(persisted.map((candidate) => candidate.sourceExternalId)).size, total, "page boundaries must not overwrite earlier source records");
+    assert.ok(persisted.some((candidate) => candidate.sourceExternalId === "icecat-distinct-1"));
+    assert.ok(persisted.some((candidate) => candidate.sourceExternalId === `icecat-distinct-${total}`));
+    assert.strictEqual(persisted.every((candidate) => candidate.importRunId === discoveryRun.runId), true, "every provider page must persist into the same run");
+    assert.strictEqual(runs[0].status, "completed");
+    assert.strictEqual(report.metrics.requested, total);
+    assert.strictEqual(report.metrics.fetched, total);
+    assert.strictEqual(report.metrics.enriched, total);
+    assert.strictEqual(report.metrics.processed, total);
+    assert.strictEqual(report.metrics.staged, total);
+    assert.strictEqual(report.metrics.providerPages, Math.ceil(total / 25));
+    assert.strictEqual(report.metrics.providerErrors, 0);
+    assert.strictEqual(report.metrics.indexCandidatesExamined, total);
+    assert.strictEqual(report.metrics.enrichmentAttempts, total);
+    assert.strictEqual(report.metrics.gtinCoverage, Number((Math.floor(total * 0.79) / total).toFixed(4)));
+    assert.strictEqual(rankTaxonomyGaps(discoveryRun.runId, persisted, []).reduce((sum, row) => sum + row.candidateCount, 0), total);
+  }
+
+  const idempotencyStore = new LocalStagingStore(multiPageLedgerPaths[0]);
+  const idempotencyRows = await idempotencyStore.listStagedCandidates();
+  const reprocessed = await idempotencyStore.upsertStagedCandidates([{ ...idempotencyRows[41], updatedAt: new Date().toISOString() }]);
+  assert.strictEqual((await idempotencyStore.listStagedCandidates()).length, 100, "same-run duplicate encounter must update in place");
+  assert.strictEqual(reprocessed.length, 1);
+
+  reportStore.reset();
+  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath, ...multiPageLedgerPaths]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
   console.log("Catalog acquisition tests passed.");

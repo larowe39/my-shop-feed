@@ -30,13 +30,15 @@ function args() {
 
 async function main() {
   const options = args();
-  const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports, processDiscoveredPages } = await import("../lib/catalogProviders.ts");
-  const { acquireFromRecords, calculateAcquisitionQualityMetrics, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
+  const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
+  const { loadOpenIcecatTaxonomyCache } = await import("../lib/catalogProviderTaxonomy.ts");
+  const { acquireDiscoveredProducts, acquireFromRecords, calculateAcquisitionQualityMetrics, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
   const provider = new OpenIcecatProvider({
     apiToken: process.env.ICECAT_API_TOKEN,
     username: process.env.ICECAT_USERNAME,
     password: process.env.ICECAT_PASSWORD,
     indexBaseUrl: process.env.ICECAT_INDEX_URL || undefined,
+    externalTaxonomy: loadOpenIcecatTaxonomyCache(),
   });
   if (options.discover) {
     assertProviderSupports(provider, "discovery");
@@ -56,9 +58,9 @@ async function main() {
   let records = [];
   let providerErrors = [];
   let fetched = 0;
+  let enriched = 0;
   let pages = 0;
   let run;
-  const metricRecords = [];
   const startedAt = Date.now();
 
   if (options.discover) {
@@ -72,46 +74,17 @@ async function main() {
       onMarket: options.onMarket === null ? undefined : options.onMarket,
       updatedSince: options.updatedSince || undefined,
     };
-    const summary = {
-      processed: 0,
-      valid: 0,
-      invalid: 0,
-      exactExisting: 0,
-      likelyExisting: 0,
-      possibleExisting: 0,
-      new: 0,
-      conflict: 0,
-      staged: 0,
-      errors: 0,
-    };
-    const persistence = new Set();
-    let persistedRunId;
-
-    await processDiscoveredPages(provider, discoveryOptions, async (page) => {
-      fetched += page.records.length;
-      pages += 1;
-      providerErrors.push(...page.errors);
-      const pageRecords = [];
-      for (const record of page.records) {
-        try {
-          pageRecords.push(provider.normalizeProduct(record));
-        } catch (error) {
-          providerErrors.push({ message: error instanceof Error ? error.message : String(error), sourceExternalId: record.sourceExternalId });
-        }
-      }
-      metricRecords.push(...pageRecords);
-      const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, metadata, {
-        apply: options.apply,
-        adapter: "open-icecat",
-        sourcePath: options.source,
-        taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
-      }, store);
-      persistedRunId = pageRun.runId || persistedRunId;
-      for (const key of Object.keys(summary)) summary[key] += pageRun.summary[key];
-      for (const entry of pageRun.persistence) persistence.add(entry);
-    });
-    summary.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, summary, { discovered: fetched, providerErrors: providerErrors.length });
-    run = { runId: persistedRunId, summary, persistence: [...persistence] };
+    const discoveryRun = await acquireDiscoveredProducts(provider, discoveryOptions, canonicalCatalog, metadata, {
+      apply: options.apply,
+      adapter: "open-icecat",
+      sourcePath: options.source,
+      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
+    }, store);
+    fetched = discoveryRun.fetched;
+    pages = discoveryRun.pages;
+    providerErrors = discoveryRun.providerErrors;
+    enriched = discoveryRun.enriched;
+    run = discoveryRun;
   } else if (options.source) {
     const sourcePath = path.resolve(options.source);
     const xml = fs.readFileSync(sourcePath, "utf8");
@@ -149,10 +122,10 @@ async function main() {
   console.log(`MODE: ${options.discover ? options.mode : "lookup"}`);
   console.log(`REQUESTED LIMIT: ${options.limit}`);
   console.log(`RECORDS FETCHED: ${fetched}`);
-  console.log(`RECORDS ENRICHED: ${options.discover ? metricRecords.length : records.length}`);
+  console.log(`RECORDS ENRICHED: ${options.discover ? enriched : records.length}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
-  console.log(`ELAPSED MS: ${Date.now() - startedAt}`);
+  console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
