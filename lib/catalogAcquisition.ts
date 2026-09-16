@@ -624,7 +624,7 @@ export type CatalogRunReportMetrics = {
   conflict: number;
   staged: number;
   errors: number;
-  providerErrors: number;
+  providerErrors: number | null;
   elapsedMs: number | null;
   imageCoverage: number;
   gtinCoverage: number;
@@ -677,6 +677,12 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
   const persistedMetrics = currentRun?.summary && typeof currentRun.summary === "object" && "qualityMetrics" in currentRun.summary
     ? (currentRun.summary as Record<string, unknown>).qualityMetrics as Record<string, number | null | undefined> | undefined
     : undefined;
+  const persistedProviderErrors = currentRun?.summary && typeof currentRun.summary === "object" && "providerErrors" in currentRun.summary
+    ? (currentRun.summary as Record<string, unknown>).providerErrors as number | null | undefined
+    : undefined;
+  const persistedElapsedMs = currentRun?.summary && typeof currentRun.summary === "object" && "elapsedMs" in currentRun.summary
+    ? (currentRun.summary as Record<string, unknown>).elapsedMs as number | null | undefined
+    : undefined;
 
   const metrics: CatalogRunReportMetrics = {
     requested: currentRun?.processed ?? runCandidates.length,
@@ -692,8 +698,8 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     conflict: currentRun?.conflictRecords ?? runCandidates.filter((candidate) => candidate.classification === "CONFLICT").length,
     staged: currentRun?.staged ?? runCandidates.length,
     errors: currentRun?.errors ?? 0,
-    providerErrors: Number(currentRun?.summary?.providerErrors ?? 0),
-    elapsedMs: currentRun ? null : null,
+    providerErrors: persistedProviderErrors ?? null,
+    elapsedMs: persistedElapsedMs ?? null,
     imageCoverage: typeof persistedMetrics?.imageRate === "number" ? persistedMetrics.imageRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.imageUrl)).length / validRecords.length : 0),
     gtinCoverage: typeof persistedMetrics?.gtinRate === "number" ? persistedMetrics.gtinRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / validRecords.length : 0),
     modelCoverage: typeof persistedMetrics?.modelRate === "number" ? persistedMetrics.modelRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / validRecords.length : 0),
@@ -852,8 +858,8 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     `Promotion ready: ${metrics.promotionReady}`,
     "",
     "PROVIDER",
-    `Errors: ${metrics.providerErrors}`,
-    `Elapsed: ${metrics.elapsedMs === null ? "n/a" : `${metrics.elapsedMs}ms`}`,
+    `Errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
+    `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,
   ];
   if (report.sample.length) {
     lines.push("", "SAMPLE");

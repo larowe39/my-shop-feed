@@ -59,6 +59,16 @@ async function main() {
   assert.strictEqual(normalizeIcecatProduct({ ID: "title-3", IntName: "International", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "International");
   assert.strictEqual(normalizeIcecatProduct({ ID: "title-4", Name: "Name", Prod_id: "M", Supplier: { Name: "Brand" } }).productName, "Name");
   assert.throws(() => normalizeIcecatProduct({ ID: "conflict", Name: "HP in free text", Prod_id: "M", Supplier: [{ Name: "HP" }, { Name: "Canon" }] }), /conflicting Supplier names/);
+  const nestedSupplierConflict = normalizeIcecatProduct({
+    ID: "nested-supplier-1",
+    Name: "HP Tray",
+    Prod_id: "M",
+    Supplier: [{ ID: "1", Name: "HP" }],
+    RelatedProducts: [{ Supplier: [{ ID: "2", Name: "Neomounts" }] }],
+  });
+  assert.strictEqual(nestedSupplierConflict.brand, "HP");
+  assert.strictEqual(nestedSupplierConflict.productName, "HP Tray");
+  assert.throws(() => normalizeIcecatProduct({ ID: "ambiguous-primary", Name: "Ambiguous Tray", Prod_id: "M", Supplier: [{ Name: "HP" }, { Name: "HPE" }] }), /conflicting Supplier names/);
   assert.throws(() => normalizeIcecatProduct({ ID: "no-brand", Title: "HP title text", Prod_id: "M" }), /explicit Supplier\/brand\/manufacturer/);
   console.log("testLiveProductSheetIdentity passed.");
 

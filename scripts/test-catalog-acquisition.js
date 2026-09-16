@@ -634,7 +634,35 @@ async function main() {
   assert.strictEqual(normalizedAliasSet.size, rpcCallArgs.p_aliases.length, "duplicate normalized aliases must be collapsed before promotion");
 
   // ---------------------------------------------------------------------
-  // 10. Run-scoped reporting must remain isolated to the selected import run.
+  // 10. Paging/run isolation for >500-row and >1000-row staging datasets.
+  // ---------------------------------------------------------------------
+  const paginationLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-pagination.test.json");
+  const paginationStore = new LocalStagingStore(paginationLedgerPath);
+  paginationStore.reset();
+  const paginationRows = Array.from({ length: 1200 }, (_, index) => ({
+    sourceExternalId: `page-${index + 1}`,
+    brand: `Brand ${index % 17}`,
+    productName: `Pagination Model ${index + 1}`,
+    modelNumber: `MOD-${index + 1}`,
+    raw: { provider: "open-icecat" },
+  }));
+  const paginationRun = await acquireFromRecords(
+    paginationRows,
+    [],
+    { name: "pagination-source", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    paginationStore
+  );
+  assert.strictEqual(paginationRun.staged.length, 1200, "bulk staging must preserve all rows across page boundaries");
+  assert.strictEqual((await paginationStore.listStagedCandidates()).length, 1200, "listStagedCandidates must not silently truncate a >1000-row run");
+  const paginationReport = buildCatalogRunReport(paginationRun.runId, await paginationStore.listImportRuns(), await paginationStore.listStagedCandidates());
+  assert.strictEqual(paginationReport.metrics.processed, 1200);
+  assert.strictEqual(paginationReport.metrics.valid, 1200);
+  paginationStore.reset();
+  if (fs.existsSync(paginationLedgerPath)) fs.unlinkSync(paginationLedgerPath);
+
+  // ---------------------------------------------------------------------
+  // 11. Run-scoped reporting must remain isolated to the selected import run.
   // ---------------------------------------------------------------------
   const reportLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-report.test.json");
   const reportStore = new LocalStagingStore(reportLedgerPath);
@@ -672,7 +700,7 @@ async function main() {
   assert.strictEqual(aReport.metrics.imageCoverage, 0.6667, "image coverage must reflect the run-scoped valid candidate set");
   assert.strictEqual(aReport.metrics.gtinCoverage, 0.6667, "GTIN coverage must be calculated on valid records only");
   assert.strictEqual(aReport.metrics.modelCoverage, 1);
-  assert.strictEqual(aReport.metrics.providerErrors, 0);
+  assert.strictEqual(aReport.metrics.providerErrors, null, "missing historical provider-error metrics must remain unavailable, never be fabricated as 0");
   assert.strictEqual(aReport.metrics.unresolvedTaxonomy, 2, "every valid candidate with provider taxonomy but no trusted mapping and no canonical hierarchy is unresolved in the run");
   assert.ok(aReport.sample.length <= 3, "samples must remain bounded");
   assert.strictEqual(bReport.metrics.processed, 2);
@@ -692,7 +720,7 @@ async function main() {
   assert.strictEqual(taxonomyGaps[0].name, "Printers");
 
   // ---------------------------------------------------------------------
-  // 11. Fail-closed: Supabase backend with missing credentials never falls
+  // 12. Fail-closed: Supabase backend with missing credentials never falls
   //     back to the local ledger.
   // ---------------------------------------------------------------------
   assert.throws(() => resolveStagingStore({ backend: "supabase" }), StagingBackendError);

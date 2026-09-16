@@ -181,7 +181,13 @@ function collectNamedObjects(value: unknown, name: string, results: Record<strin
 }
 
 function readProductSupplier(product: IcecatProduct): { id: string | null; name: string } | null {
-  const suppliers = collectNamedObjects(product, "Supplier")
+  const directSuppliers = (() => {
+    const candidate = (product.Supplier ?? product.supplier) as unknown;
+    if (!candidate) return [] as Record<string, unknown>[];
+    return Array.isArray(candidate) ? candidate.filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object")) : [candidate as Record<string, unknown>];
+  })();
+
+  const suppliers = directSuppliers
     .map((supplier) => ({ id: attr(supplier, "ID", "Id", "id"), name: attr(supplier, "Name", "name") }))
     .filter((supplier): supplier is { id: string | null; name: string } => Boolean(supplier.name));
   const uniqueNames = new Map<string, { id: string | null; name: string }>();
@@ -479,7 +485,7 @@ function buildIcecatAuthHeaders(config: OpenIcecatProviderOptions): Record<strin
   const apiToken = config.apiToken?.trim();
   const username = config.username?.trim();
   const password = config.password?.trim();
-  if (apiToken) return { "Api-Token": apiToken };
+  if (apiToken && !(username && password)) return { "Api-Token": apiToken };
   if (username && password) {
     return { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` };
   }
