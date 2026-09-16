@@ -15,7 +15,7 @@ const backend = getFlagValue(args, "--backend") || process.env.CATALOG_STAGING_B
 
 (async () => {
   const { resolveStagingStore } = await import("../lib/stagingStore.ts");
-  const { showCandidate } = await import("../lib/catalogAcquisition.ts");
+  const { candidateReviewView, showCandidate } = await import("../lib/catalogAcquisition.ts");
   const store = resolveStagingStore({ backend });
   console.log(`STAGING BACKEND: ${store.kind}`);
   const result = await showCandidate(store, candidateId);
@@ -23,7 +23,7 @@ const backend = getFlagValue(args, "--backend") || process.env.CATALOG_STAGING_B
     console.error(result.message);
     process.exit(1);
   }
-  console.log(JSON.stringify(result.candidate, null, 2));
+  console.log(JSON.stringify(args.includes("--raw") ? result.candidate : candidateReviewView(result.candidate), null, 2));
 })().catch((error) => {
   console.error(error.message || error);
   process.exit(1);

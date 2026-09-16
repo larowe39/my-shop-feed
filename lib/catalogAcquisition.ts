@@ -19,7 +19,7 @@ import type {
   StagedCatalogCandidate,
 } from "./catalogStagingTypes.ts";
 import type { CreateImportRunInput, StagingStore } from "./stagingStore.ts";
-import type { AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
+import type { AcquisitionQualityMetrics, AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
 import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 
 export type {
@@ -45,6 +45,31 @@ export type AcquisitionRunResult = {
   summary: AcquisitionSummary;
   persistence: string[];
 };
+
+function rate(numerator: number, denominator: number): number {
+  return denominator > 0 ? Number((numerator / denominator).toFixed(4)) : 0;
+}
+
+export function calculateAcquisitionQualityMetrics(
+  records: Partial<CatalogCandidateInput>[],
+  summary: Pick<AcquisitionSummary, "processed" | "valid" | "exactExisting" | "likelyExisting" | "possibleExisting" | "conflict" | "new">,
+  options: { discovered?: number; providerErrors?: number } = {}
+): AcquisitionQualityMetrics {
+  const validRecords = records.filter((record) => validateCatalogCandidate(record).valid);
+  const reviewCount = summary.likelyExisting + summary.possibleExisting + summary.conflict;
+  return {
+    enrichmentSuccessRate: options.discovered === undefined ? null : rate(records.length, options.discovered),
+    validRecordRate: rate(summary.valid, summary.processed),
+    duplicateExistingRate: rate(summary.exactExisting + summary.likelyExisting + summary.possibleExisting, summary.valid),
+    newRate: rate(summary.new, summary.valid),
+    providerErrorRate: options.discovered === undefined ? null : rate(options.providerErrors ?? 0, options.discovered),
+    gtinRate: rate(validRecords.filter((record) => Boolean(record.gtin || record.upc)).length, validRecords.length),
+    imageRate: rate(validRecords.filter((record) => Boolean(record.imageUrl)).length, validRecords.length),
+    modelRate: rate(validRecords.filter((record) => Boolean(record.modelNumber || record.mpn)).length, validRecords.length),
+    trustworthyBrandRate: rate(validRecords.filter((record) => Boolean(record.brand?.trim())).length, validRecords.length),
+    manualReviewRate: rate(reviewCount, summary.valid),
+  };
+}
 
 function normalizeText(value: string | null | undefined): string {
   return String(value ?? "")
@@ -282,7 +307,12 @@ export function parseJsonAdapterRecords(raw: string): CatalogCandidateInput[] {
     subcategory: typeof entry.subcategory === "string" ? entry.subcategory : null,
     aliases: Array.isArray(entry.aliases) ? entry.aliases.filter((alias) => typeof alias === "string") : [],
     sourceUrl: typeof entry.sourceUrl === "string" ? entry.sourceUrl : typeof entry.source_url === "string" ? entry.source_url : null,
+    imageUrl: typeof entry.imageUrl === "string" ? entry.imageUrl : typeof entry.image_url === "string" ? entry.image_url : null,
     sourceType: typeof entry.sourceType === "string" ? entry.sourceType : typeof entry.source_type === "string" ? entry.source_type : null,
+    upc: typeof entry.upc === "string" ? entry.upc : null,
+    gtin: typeof entry.gtin === "string" ? entry.gtin : typeof entry.GTIN === "string" ? entry.GTIN : null,
+    mpn: typeof entry.mpn === "string" ? entry.mpn : null,
+    sourceSku: typeof entry.sourceSku === "string" ? entry.sourceSku : null,
     raw: entry,
   }));
 }
@@ -337,7 +367,12 @@ export function parseCsvAdapterRecords(raw: string): CatalogCandidateInput[] {
       subcategory: row.subcategory || null,
       aliases,
       sourceUrl: row.sourceUrl || row.source_url || null,
+      imageUrl: row.imageUrl || row.image_url || null,
       sourceType: row.sourceType || row.source_type || null,
+      upc: row.upc || null,
+      gtin: row.gtin || row.GTIN || null,
+      mpn: row.mpn || null,
+      sourceSku: row.sourceSku || null,
       raw: row,
     });
   }
@@ -432,6 +467,7 @@ export async function acquireFromRecords(
       subcategory: rawRecord.subcategory ?? null,
       aliases: [...new Set(normalizeAliasList(rawRecord.aliases ?? []))],
       sourceUrl: rawRecord.sourceUrl ?? null,
+      imageUrl: rawRecord.imageUrl ?? null,
       sourceType: rawRecord.sourceType ?? sourceType,
       upc: rawRecord.upc ?? null,
       gtin: rawRecord.gtin ?? null,
@@ -468,8 +504,6 @@ export async function acquireFromRecords(
     });
     for (const candidate of candidates) candidate.sourceId = source.id ?? candidate.sourceId;
 
-    stagedResult = await store.upsertStagedCandidates(candidates);
-
     const runInput: CreateImportRunInput = {
       adapter: options.adapter ?? "json",
       sourcePath: options.sourcePath ?? null,
@@ -491,6 +525,8 @@ export async function acquireFromRecords(
     };
     const run = await store.createImportRun(source, runInput);
     runId = run.id;
+    for (const candidate of candidates) candidate.importRunId = run.id;
+    stagedResult = await store.upsertStagedCandidates(candidates);
     persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
 
@@ -518,7 +554,66 @@ export function printAcquisitionSummary(run: AcquisitionRunResult): string {
     `STAGED: ${run.summary.staged}`,
     `PERSISTENCE: ${run.persistence.join(", ") || "dry-run (zero writes)"}`,
   ];
+  const metrics = run.summary.qualityMetrics;
+  if (metrics) {
+    lines.push(
+      `QUALITY: enrichment=${formatRate(metrics.enrichmentSuccessRate)} valid=${formatRate(metrics.validRecordRate)} duplicate/existing=${formatRate(metrics.duplicateExistingRate)} new=${formatRate(metrics.newRate)}`,
+      `QUALITY FIELDS: gtin=${formatRate(metrics.gtinRate)} image=${formatRate(metrics.imageRate)} model=${formatRate(metrics.modelRate)} trustworthy-brand=${formatRate(metrics.trustworthyBrandRate)} manual-review=${formatRate(metrics.manualReviewRate)}`
+    );
+  }
   return lines.join("\n");
+}
+
+function formatRate(value: number | null | undefined): string {
+  return value === null || value === undefined ? "n/a" : `${(value * 100).toFixed(1)}%`;
+}
+
+export function candidateReviewView(candidate: StagedCatalogCandidate): Record<string, unknown> {
+  return {
+    id: candidate.id,
+    source: candidate.sourceType,
+    sourceId: candidate.sourceId,
+    sourceExternalId: candidate.sourceExternalId,
+    brand: candidate.brand,
+    productName: candidate.productName,
+    model: candidate.modelNumber ?? candidate.mpn,
+    gtins: [candidate.gtin, candidate.upc].filter(Boolean),
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    family: candidate.family,
+    imageUrl: candidate.imageUrl,
+    confidence: candidate.confidence,
+    classification: candidate.classification,
+    possibleCanonicalDuplicate: candidate.duplicateOfCatalogProductId,
+    provenance: { sourceId: candidate.sourceId, sourceExternalId: candidate.sourceExternalId, sourceUrl: candidate.sourceUrl },
+    importRunId: candidate.importRunId,
+    createdAt: candidate.createdAt,
+    updatedAt: candidate.updatedAt,
+    status: candidate.status,
+    reviewNotes: candidate.reviewNotes,
+  };
+}
+
+export async function reviewCandidatesSequentially(
+  store: StagingStore,
+  candidates: StagedCatalogCandidate[],
+  decide: (candidate: StagedCatalogCandidate, index: number) => Promise<"approve" | "reject" | "skip">,
+  options: { dryRun?: boolean } = {}
+): Promise<Array<{ id: string; decision: string; result: { ok: boolean; message: string } }>> {
+  const results: Array<{ id: string; decision: string; result: { ok: boolean; message: string } }> = [];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const decision = await decide(candidate, index);
+    if (decision === "skip") {
+      results.push({ id: candidate.id, decision, result: { ok: true, message: `Skipped ${candidate.id}; left pending.` } });
+      continue;
+    }
+    const result = decision === "approve"
+      ? await approveCandidate(store, candidate.id, { dryRun: options.dryRun ?? true })
+      : await rejectCandidate(store, candidate.id, { dryRun: options.dryRun ?? true });
+    results.push({ id: candidate.id, decision, result: { ok: result.ok, message: result.message } });
+  }
+  return results;
 }
 
 export async function showCandidate(store: StagingStore, candidateId: string): Promise<{ found: boolean; message: string; candidate?: StagedCatalogCandidate }> {
@@ -574,6 +669,7 @@ export type PromotionReportEntry = {
   ok: boolean;
   dryRun: boolean;
   canonicalProductId?: string;
+  preview?: Record<string, unknown>;
   message: string;
 };
 
@@ -636,6 +732,16 @@ export async function promoteApprovedCandidates(
         candidateId: candidate.id,
         ok: true,
         dryRun: true,
+        preview: {
+          brand: candidate.brand,
+          canonicalName: candidate.productName,
+          model: candidate.modelNumber,
+          slug: eligibility.resolution.slug,
+          aliases: candidate.aliases,
+          subcategory: candidate.subcategory,
+          family: candidate.family,
+          sourceProvenance: { sourceId: candidate.sourceId, sourceExternalId: candidate.sourceExternalId, sourceUrl: candidate.sourceUrl },
+        },
         message: `DRY RUN -- would promote ${candidate.id} (brand=${eligibility.resolution.brandSlug}, slug=${eligibility.resolution.slug}); zero canonical writes performed.`,
       });
       continue;

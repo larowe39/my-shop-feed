@@ -242,9 +242,80 @@ The staging status model is:
 
 Review decisions must be explicit; there is no bulk approval path in this PR.
 
+### Staging batch review commands
+
+Staging detail output is redacted by default; raw provider payloads require an
+explicit `--raw` flag.
+
+```sh
+npm run catalog:staging:list -- --limit 25
+npm run catalog:staging:list -- --status needs_review --run-id RUN_ID --limit 10
+npm run catalog:staging:list -- --classification NEW --limit 10
+npm run catalog:staging:status -- --run-id RUN_ID
+npm run catalog:staging:show -- --id CANDIDATE_ID
+npm run catalog:staging:show -- --id CANDIDATE_ID --raw
+```
+
+The sequential review command presents identity, identifiers, taxonomy, image,
+confidence, classification, provenance, run ID, and timestamps. `a` approves,
+`r` rejects, and `s` leaves the candidate pending. It is dry-run unless
+`--apply` is explicit:
+
+```sh
+npm run catalog:staging:review -- --run-id RUN_ID --limit 10
+npm run catalog:staging:review -- --run-id RUN_ID --limit 10 --apply
+```
+
+Approval never promotes a product. Promotion remains separate.
+
 ## Promotion
 
 Promotion remains a separate step from staging. All promotion runs are explicit and dry-run by default. Only approved candidates are eligible for canonical promotion.
+
+The promotion dry-run performs the approved-only eligibility and duplicate
+checks, then previews brand, canonical name, model, slug, aliases, subcategory,
+family, and source provenance. Missing canonical brand, subcategory, or family
+identity is reported as a human-review failure; taxonomy rows are never
+fabricated. Apply uses the existing atomic Postgres RPC, including its final
+duplicate and alias-conflict rechecks.
+
+## Import-run summary and quality metrics
+
+An apply acquisition prints the source, run ID, elapsed time, discovered and
+enriched counts, valid/invalid and classification counts, staged count,
+provider errors, and lightweight rates for enrichment success, valid records,
+existing/duplicate records, NEW records, GTIN, image, model/MPN, trustworthy
+brand, provider errors, and manual-review share. Raw payloads remain available
+for audit but are not shown by default.
+
+## First production batch
+
+The first bounded Open Icecat production batch is intentionally staging-only:
+
+```sh
+npm run catalog:acquire:icecat -- --discover --mode initial --limit 10 --page-size 10 --apply
+```
+
+This authenticates the provider, loads the canonical catalog only for
+classification, and resolves the staging backend only because `--apply` is
+present. It calls `acquireFromRecords`, which writes only
+`catalog_sources`, `catalog_import_runs`, `catalog_staged_products`, and
+`catalog_staged_aliases`. The Icecat CLI does not import approval, rejection,
+or promotion functions and never calls the canonical promotion store. It does
+not approve candidates, promote products, write canonical products or aliases,
+or weaken duplicate checks. Approval and promotion must be separate explicit
+commands.
+
+Before running it, confirm Icecat and Supabase service-role credentials exist
+only in the local gitignored `.env.local`. Record the printed run ID and inspect
+it with `catalog:staging:status` and `catalog:staging:list` before reviewing.
+
+## Schema extension
+
+The deployed PR #21 migration is unchanged. The new
+`20260916_extend_catalog_staging_observability.sql` migration adds the
+import-run link, image URL, UPC, GTIN, and MPN fields, plus an import-run index.
+It reuses the existing four staging tables and creates no redundant tables.
 
 ## Idempotency and fingerprints
 
