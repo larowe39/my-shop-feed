@@ -150,7 +150,11 @@ export class SupabaseCanonicalPromotionStore implements CanonicalPromotionStore 
   }
 
   async promote(candidate: StagedCatalogCandidate, resolution: CanonicalResolution): Promise<PromotionOutcome> {
-    const aliases = Array.from(new Set([...(candidate.aliases ?? []), candidate.brand, candidate.productName, candidate.modelNumber ?? ""]))
+    // Brand alone is deliberately excluded: a bare brand name as a canonical
+    // product alias would cause false identity matches against every other
+    // product from that brand. Explicit source aliases + product name/model
+    // number are the only aliases promoted.
+    const aliases = Array.from(new Set([...(candidate.aliases ?? []), candidate.productName, candidate.modelNumber ?? ""]))
       .filter(Boolean)
       .map((alias) => ({ alias, normalized_alias: normalizeAcquisitionText(alias) }));
 

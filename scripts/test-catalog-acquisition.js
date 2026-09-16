@@ -423,6 +423,7 @@ async function main() {
   function makeFakeSupabaseClient() {
     const sourceRow = { id: "supabase-source-1", name: "fake-supabase-source", type: "json" };
     const stagedRowsById = new Map();
+    const stagedAliasRows = [];
     let stagedSeq = 0;
     return {
       from(table) {
@@ -444,6 +445,11 @@ async function main() {
               return { select: () => Promise.resolve({ data: inserted, error: null }) };
             }
             if (table === "catalog_staged_aliases") {
+              for (const row of Array.isArray(rows) ? rows : [rows]) {
+                if (!stagedAliasRows.some((r) => r.staged_product_id === row.staged_product_id && r.normalized_alias === row.normalized_alias)) {
+                  stagedAliasRows.push(row);
+                }
+              }
               return Promise.resolve({ error: null });
             }
             return Promise.resolve({ error: null });
@@ -455,9 +461,16 @@ async function main() {
             return { select: () => ({ single: async () => ({ data: { id: "unused" }, error: null }) }) };
           },
           select() {
+            if (table === "catalog_staged_aliases") {
+              return {
+                in: async (_column, ids) => ({ data: stagedAliasRows.filter((row) => ids.includes(row.staged_product_id)), error: null }),
+              };
+            }
             return {
               range: async () => ({ data: [...stagedRowsById.values()], error: null }),
-              eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }),
+              eq: (_column, value) => ({
+                maybeSingle: async () => ({ data: stagedRowsById.get(value) ?? null, error: null }),
+              }),
             };
           },
         };
@@ -468,7 +481,7 @@ async function main() {
   const fakeClient = makeFakeSupabaseClient();
   const supabaseStagingStore = new SupabaseStagingStore(fakeClient);
   const supabaseRun = await acquireFromRecords(
-    [{ sourceExternalId: "sb-1", brand: "Bose", productName: "QuietComfort Ultra", raw: {} }],
+    [{ sourceExternalId: "sb-1", brand: "Bose", productName: "QuietComfort Ultra", aliases: ["QC Ultra"], raw: {} }],
     [],
     { name: "fake-supabase-source", type: "json" },
     { apply: true, adapter: "json" },
@@ -478,6 +491,65 @@ async function main() {
   assert.ok(recordedCalls.includes("catalog_import_runs"), "Supabase apply path must call catalog_import_runs");
   assert.ok(recordedCalls.includes("catalog_staged_products"), "Supabase apply path must call catalog_staged_products");
   assert.ok(supabaseRun.persistence.every((entry) => entry.startsWith("supabase:")));
+
+  // ---------------------------------------------------------------------
+  // 9b. Alias-propagation regression (PR #21 production smoke-test bug):
+  // A. explicit source aliases must survive the Supabase staging round-trip
+  // B. a bare brand name must never appear as a (staged or canonical) alias
+  // ---------------------------------------------------------------------
+  const supabaseStagedId = supabaseRun.staged[0].id;
+  const roundTrippedCandidate = await supabaseStagingStore.getStagedCandidateById(supabaseStagedId);
+  assert.ok(roundTrippedCandidate, "staged candidate must be readable back from the Supabase staging store");
+  assert.ok(
+    roundTrippedCandidate.aliases.includes("qc ultra"),
+    "explicit source-provided alias must survive acquisition -> catalog_staged_aliases -> staging read (was previously lost: rowToCandidate hardcoded aliases: [])"
+  );
+  assert.ok(!roundTrippedCandidate.aliases.some((alias) => alias.toLowerCase() === "bose"), "bare brand name must never be emitted as a staged alias");
+
+  const listedCandidates = await supabaseStagingStore.listStagedCandidates();
+  const listedMatch = listedCandidates.find((candidate) => candidate.id === supabaseStagedId);
+  assert.ok(listedMatch.aliases.includes("qc ultra"), "listStagedCandidates must also return real aliases, not []");
+
+  function makeFakeCanonicalRpcClient() {
+    const rpcCalls = [];
+    return {
+      rpcCalls,
+      from() {
+        return { select: () => ({ or: () => ({ limit: async () => ({ data: [], error: null }) }) }) };
+      },
+      rpc(name, args) {
+        rpcCalls.push({ name, args });
+        return Promise.resolve({ data: [{ catalog_product_id: "fake-canonical-product-1" }], error: null });
+      },
+    };
+  }
+
+  const { SupabaseCanonicalPromotionStore } = promotionModule;
+  const canonicalRpcClient = makeFakeCanonicalRpcClient();
+  const canonicalPromotionStore = new SupabaseCanonicalPromotionStore(canonicalRpcClient);
+  const promotionOutcome = await canonicalPromotionStore.promote(
+    {
+      id: supabaseStagedId,
+      brand: "bose",
+      productName: "quiet comfort ultra",
+      modelNumber: null,
+      aliases: ["QC Ultra", "QC Ultra", "quiet comfort ultra"],
+      normalizedName: "quiet comfort ultra",
+      normalizedModel: undefined,
+    },
+    { brandId: "brand-bose", brandSlug: "bose", subcategoryId: null, familyId: null, slug: "bose-quiet-comfort-ultra" }
+  );
+  assert.strictEqual(promotionOutcome.ok, true);
+  const rpcCallArgs = canonicalRpcClient.rpcCalls[0].args;
+  const promotedAliasTexts = rpcCallArgs.p_aliases.map((row) => row.alias);
+  assert.ok(promotedAliasTexts.includes("QC Ultra"), "explicit source alias must reach the promotion RPC payload");
+  assert.ok(
+    !promotedAliasTexts.some((alias) => alias.toLowerCase() === "bose"),
+    "a bare brand name must NOT be included in the canonical promotion alias payload"
+  );
+  // C. duplicate normalized aliases collapsed deterministically before the RPC call
+  const normalizedAliasSet = new Set(rpcCallArgs.p_aliases.map((row) => row.normalized_alias));
+  assert.strictEqual(normalizedAliasSet.size, rpcCallArgs.p_aliases.length, "duplicate normalized aliases must be collapsed before promotion");
 
   // ---------------------------------------------------------------------
   // 10. Fail-closed: Supabase backend with missing credentials never falls

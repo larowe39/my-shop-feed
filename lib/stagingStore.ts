@@ -219,9 +219,11 @@ export class LocalStagingStore implements StagingStore {
       ledger.stagedProducts.push(candidate);
       results.push(candidate);
 
-      const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.brand, candidate.productName, candidate.modelNumber ?? ""])).filter(
-        Boolean
-      );
+      // Brand alone is deliberately excluded: a bare brand name as a product
+      // alias would cause false identity matches across every other product
+      // from that brand. Product name/model number are distinctive enough to
+      // be safe.
+      const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.productName, candidate.modelNumber ?? ""])).filter(Boolean);
       for (const alias of aliasValues) {
         const normalizedAlias = alias.toLowerCase();
         if (ledger.stagedAliases.some((row) => row.stagedProductId === candidate.id && row.normalizedAlias === normalizedAlias)) continue;
@@ -280,7 +282,7 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-function rowToCandidate(row: Record<string, unknown>): StagedCatalogCandidate {
+function rowToCandidate(row: Record<string, unknown>, aliases: string[] = []): StagedCatalogCandidate {
   return {
     id: String(row.id),
     sourceId: (row.source_id as string) ?? null,
@@ -294,7 +296,7 @@ function rowToCandidate(row: Record<string, unknown>): StagedCatalogCandidate {
     family: (row.proposed_family as string) ?? null,
     category: (row.proposed_category as string) ?? null,
     subcategory: (row.proposed_subcategory as string) ?? null,
-    aliases: [],
+    aliases,
     sourceUrl: (row.source_url as string) ?? null,
     sourceType: (row.source_type as string) ?? null,
     rawPayload: (row.raw_payload as Record<string, unknown>) ?? {},
@@ -445,9 +447,9 @@ export class SupabaseStagingStore implements StagingStore {
         if (!stagedId) continue;
         candidate.id = stagedId;
         results.push(candidate);
-        const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.brand, candidate.productName, candidate.modelNumber ?? ""])).filter(
-          Boolean
-        );
+        // Brand alone is deliberately excluded here too -- see the matching
+        // comment in LocalStagingStore.upsertStagedCandidates.
+        const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.productName, candidate.modelNumber ?? ""])).filter(Boolean);
         for (const alias of aliasValues) {
           aliasRows.push({ staged_product_id: stagedId, alias, normalized_alias: alias.toLowerCase() });
         }
@@ -464,8 +466,26 @@ export class SupabaseStagingStore implements StagingStore {
     return results;
   }
 
+  /** Loads catalog_staged_aliases for a set of staged product ids, batched (never one query per id). Returns raw alias text (not normalized) grouped by staged_product_id. */
+  private async fetchAliasesByStagedProductId(stagedProductIds: string[]): Promise<Map<string, string[]>> {
+    const aliasesById = new Map<string, string[]>();
+    const uniqueIds = [...new Set(stagedProductIds)].filter(Boolean);
+    for (const idBatch of chunk(uniqueIds, SUPABASE_STAGING_ALIAS_BATCH_SIZE)) {
+      if (!idBatch.length) continue;
+      const { data, error } = await this.client
+        .from("catalog_staged_aliases")
+        .select("staged_product_id, alias")
+        .in("staged_product_id", idBatch);
+      if (error) throw new StagingBackendError(`Failed to load catalog_staged_aliases: ${error.message}`);
+      for (const row of (data ?? []) as Array<{ staged_product_id: string; alias: string }>) {
+        aliasesById.set(row.staged_product_id, [...(aliasesById.get(row.staged_product_id) ?? []), row.alias]);
+      }
+    }
+    return aliasesById;
+  }
+
   async listStagedCandidates(): Promise<StagedCatalogCandidate[]> {
-    const rows: StagedCatalogCandidate[] = [];
+    const productRows: Record<string, unknown>[] = [];
     let from = 0;
     for (;;) {
       const { data, error } = await this.client
@@ -473,17 +493,20 @@ export class SupabaseStagingStore implements StagingStore {
         .select("*")
         .range(from, from + SUPABASE_STAGING_READ_PAGE_SIZE - 1);
       if (error) throw new StagingBackendError(`Failed to list catalog_staged_products: ${error.message}`);
-      rows.push(...(data ?? []).map(rowToCandidate));
+      productRows.push(...(data ?? []));
       if (!data || data.length < SUPABASE_STAGING_READ_PAGE_SIZE) break;
       from += SUPABASE_STAGING_READ_PAGE_SIZE;
     }
-    return rows;
+    const aliasesById = await this.fetchAliasesByStagedProductId(productRows.map((row) => String(row.id)));
+    return productRows.map((row) => rowToCandidate(row, aliasesById.get(String(row.id)) ?? []));
   }
 
   async getStagedCandidateById(id: string): Promise<StagedCatalogCandidate | null> {
     const { data, error } = await this.client.from("catalog_staged_products").select("*").eq("id", id).maybeSingle();
     if (error) throw new StagingBackendError(`Failed to fetch catalog_staged_products row ${id}: ${error.message}`);
-    return data ? rowToCandidate(data) : null;
+    if (!data) return null;
+    const aliasesById = await this.fetchAliasesByStagedProductId([id]);
+    return rowToCandidate(data, aliasesById.get(id) ?? []);
   }
 
   async updateCandidateStatus(id: string, status: ReviewStatus, reviewNotes?: string | null): Promise<StagedCatalogCandidate | null> {
@@ -494,7 +517,9 @@ export class SupabaseStagingStore implements StagingStore {
       .select("*")
       .maybeSingle();
     if (error) throw new StagingBackendError(`Failed to update catalog_staged_products row ${id}: ${error.message}`);
-    return data ? rowToCandidate(data) : null;
+    if (!data) return null;
+    const aliasesById = await this.fetchAliasesByStagedProductId([id]);
+    return rowToCandidate(data, aliasesById.get(id) ?? []);
   }
 
   async markPromoted(id: string, canonicalProductId: string): Promise<StagedCatalogCandidate | null> {
@@ -505,7 +530,9 @@ export class SupabaseStagingStore implements StagingStore {
       .select("*")
       .maybeSingle();
     if (error) throw new StagingBackendError(`Failed to mark catalog_staged_products row ${id} promoted: ${error.message}`);
-    return data ? rowToCandidate(data) : null;
+    if (!data) return null;
+    const aliasesById = await this.fetchAliasesByStagedProductId([id]);
+    return rowToCandidate(data, aliasesById.get(id) ?? []);
   }
 }
 
