@@ -83,7 +83,26 @@ async function main() {
   const partial = await partialProvider.fetchProducts({ productCodes: ["A", "B"], limit: 2 });
   assert.strictEqual(partial.records.length, 0);
   assert.strictEqual(partial.errors.length, 2);
-  await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
+  const credentialEnv = ["ICECAT_API_TOKEN", "ICECAT_USERNAME", "ICECAT_PASSWORD"];
+  const savedCredentialEnv = Object.fromEntries(credentialEnv.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of credentialEnv) delete process.env[name];
+    await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
+    await assert.rejects(
+      () => new OpenIcecatProvider({ username: "basic-user" }).fetchProducts({ productCodes: ["A"] }),
+      /credentials/
+    );
+    await assert.rejects(
+      () => new OpenIcecatProvider({ username: "basic-user", password: "   " }).fetchProducts({ productCodes: ["A"] }),
+      /credentials/
+    );
+  } finally {
+    for (const name of credentialEnv) {
+      if (savedCredentialEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedCredentialEnv[name];
+    }
+  }
+  await testExplicitAuthenticationHeaders(OpenIcecatProvider, fixture);
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
   await testIcecatAuthentication(OpenIcecatProvider, fixture, indexFixture);
   await testIcecatTransportDecoding(OpenIcecatProvider, fixture, indexFixture);
@@ -203,6 +222,22 @@ async function main() {
   assertProviderSupports(bothProvider, "discovery");
 
   console.log("Catalog provider fixture tests passed.");
+}
+
+async function testExplicitAuthenticationHeaders(OpenIcecatProvider, fixture) {
+  const requests = [];
+  const fetcher = async (_url, init) => {
+    requests.push(new Headers(init.headers));
+    return new Response(fixture);
+  };
+
+  await new OpenIcecatProvider({ apiToken: " token-value ", username: "ignored", password: "ignored", fetcher }).lookupProducts({ productCodes: ["TOKEN"], limit: 1 });
+  assert.strictEqual(requests.at(-1).get("Api-Token"), "token-value");
+  assert.strictEqual(requests.at(-1).has("Authorization"), false, "API token must take precedence over Basic credentials");
+
+  await new OpenIcecatProvider({ username: " basic-user ", password: " basic-password ", fetcher }).lookupProducts({ productCodes: ["BASIC"], limit: 1 });
+  assert.strictEqual(requests.at(-1).get("Authorization"), `Basic ${Buffer.from("basic-user:basic-password").toString("base64")}`);
+  assert.strictEqual(requests.at(-1).has("Api-Token"), false);
 }
 
 function makeIcecatDiscoveryFetcher(indexFixture, inspectRequest) {

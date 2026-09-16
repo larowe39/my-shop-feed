@@ -476,9 +476,12 @@ export type OpenIcecatProviderOptions = {
 };
 
 function buildIcecatAuthHeaders(config: OpenIcecatProviderOptions): Record<string, string> {
-  if (config.apiToken) return { "Api-Token": config.apiToken };
-  if (config.username && config.password) {
-    return { Authorization: `Basic ${Buffer.from(`${config.username}:${config.password}`).toString("base64")}` };
+  const apiToken = config.apiToken?.trim();
+  const username = config.username?.trim();
+  const password = config.password?.trim();
+  if (apiToken) return { "Api-Token": apiToken };
+  if (username && password) {
+    return { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}` };
   }
   throw new Error("Open Icecat credentials are required. Set ICECAT_API_TOKEN or ICECAT_USERNAME and ICECAT_PASSWORD.");
 }
