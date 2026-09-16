@@ -11,10 +11,17 @@ function args() {
   return {
     apply: raw.includes("--apply"),
     discover: raw.includes("--discover"),
+    mode: (getFlagValue(raw, "--mode") || "initial").toLowerCase(),
     source: getFlagValue(raw, "--source"),
     backend: getFlagValue(raw, "--backend") || process.env.CATALOG_STAGING_BACKEND || null,
     limit: Number(getFlagValue(raw, "--limit") || 10),
     pages: Number(getFlagValue(raw, "--pages") || 1),
+    pageSize: Number(getFlagValue(raw, "--page-size") || 25),
+    brand: getFlagValue(raw, "--brand") || null,
+    category: getFlagValue(raw, "--category") || null,
+    country: getFlagValue(raw, "--country") || null,
+    onMarket: getFlagValue(raw, "--on-market") || null,
+    updatedSince: getFlagValue(raw, "--updated-since") || null,
     productCodes: raw.flatMap((arg, index) => arg === "--product-code" && raw[index + 1] ? [raw[index + 1]] : []).concat(
       raw.filter((arg) => arg.startsWith("--product-code=")).map((arg) => arg.slice("--product-code=".length))
     ),
@@ -23,18 +30,43 @@ function args() {
 
 async function main() {
   const options = args();
-  const { OpenIcecatProvider, parseIcecatProductsXml } = await import("../lib/catalogProviders.ts");
-  const provider = new OpenIcecatProvider();
+  const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
+  const provider = new OpenIcecatProvider({ username: process.env.ICECAT_USERNAME, password: process.env.ICECAT_PASSWORD, indexBaseUrl: process.env.ICECAT_INDEX_URL || undefined });
   if (options.discover) {
-    const { assertProviderSupports } = await import("../lib/catalogProviders.ts");
     assertProviderSupports(provider, "discovery");
   }
+
   let records = [];
   let providerErrors = [];
   let fetched = 0;
   let pages = 0;
 
-  if (options.source) {
+  if (options.discover) {
+    const discoveryOptions = {
+      mode: options.mode,
+      limit: options.limit,
+      pageSize: options.pageSize,
+      brand: options.brand || undefined,
+      category: options.category || undefined,
+      country: options.country || undefined,
+      onMarket: options.onMarket === null ? undefined : options.onMarket,
+      updatedSince: options.updatedSince || undefined,
+    };
+    const discoveryPages = [];
+    for await (const page of provider.discoverProducts(discoveryOptions)) {
+      discoveryPages.push(page);
+      fetched += page.records.length;
+      pages += 1;
+      for (const record of page.records) {
+        try {
+          records.push(provider.normalizeProduct(record));
+        } catch (error) {
+          providerErrors.push({ message: error instanceof Error ? error.message : String(error), sourceExternalId: record.sourceExternalId });
+        }
+      }
+      if (limitReached(discoveryPages, options.limit)) break;
+    }
+  } else if (options.source) {
     const sourcePath = path.resolve(options.source);
     const xml = fs.readFileSync(sourcePath, "utf8");
     const products = parseIcecatProductsXml(xml).slice(0, Math.max(0, Math.min(options.limit, 100)));
@@ -71,12 +103,19 @@ async function main() {
     sourcePath: options.source,
   }, store);
   console.log(`PROVIDER: open-icecat`);
+  console.log(`MODE: ${options.discover ? options.mode : "lookup"}`);
   console.log(`RECORDS FETCHED: ${fetched}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
   console.log(options.apply ? "APPLY -- staging data written; no approval or promotion performed." : "DRY RUN -- ZERO Supabase staging/canonical writes");
+}
+
+function limitReached(discoveryPages, limit) {
+  if (limit <= 0) return false;
+  const total = discoveryPages.reduce((sum, page) => sum + page.records.length, 0);
+  return total >= limit;
 }
 
 main().catch((error) => {

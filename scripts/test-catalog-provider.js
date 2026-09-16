@@ -8,8 +8,16 @@ async function main() {
   const acquisition = await import("../lib/catalogAcquisition.ts");
   const { OpenIcecatProvider, parseIcecatXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages } = provider;
   const fixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-products.xml"), "utf8");
+  const indexFixture = `<?xml version="1.0" encoding="UTF-8"?>
+<ICECAT-interface>
+  <file generated="2026-01-01T00:00:00Z">
+    <Product Product_ID="1001" Supplier_id="42" Prod_ID="WH1000XM5/B" Model_Name="WH-1000XM5" On_Market="1" Updated="2026-01-01T00:00:00Z" Catid="123" Quality="1" Country="US" EAN_UPC="4548736131133" />
+    <Product Product_ID="1002" Supplier_id="42" Prod_ID="EA-DS1" Model_Name="Desk Speaker" On_Market="0" Updated="2026-01-02T00:00:00Z" Catid="456" Quality="3" Country="DE" EAN_UPC="1234567890123" />
+    <Product Product_ID="1003" Supplier_id="99" Prod_ID="XLR-100" Model_Name="XLR Controller" On_Market="1" Updated="2026-01-03T00:00:00Z" Catid="999" Quality="2" Country="US" EAN_UPC="" />
+  </file>
+</ICECAT-interface>`;
   const first = normalizeIcecatProduct(parseIcecatXml(fixture));
-  assert.deepStrictEqual(new OpenIcecatProvider({ username: "u", password: "p" }).capabilities, { lookup: true, discovery: false });
+  assert.deepStrictEqual(new OpenIcecatProvider({ username: "u", password: "p" }).capabilities, { lookup: true, discovery: true });
 
   assert.strictEqual(first.sourceExternalId, "icecat-1001");
   assert.strictEqual(first.brand, "Sony");
@@ -56,7 +64,30 @@ async function main() {
   assert.strictEqual(partial.errors.length, 2);
   await assert.rejects(() => new OpenIcecatProvider().fetchProducts({ productCodes: ["A"] }), /credentials/);
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
-  assert.throws(() => assertProviderSupports(new OpenIcecatProvider(), "discovery"), /does not support discovery/);
+  const discoveryProviderInstance = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(indexFixture) });
+  const discoveryRecords = [];
+  for await (const page of discoveryProviderInstance.discoverProducts({ mode: "initial", limit: 2, pageSize: 1, brand: "Sony" })) {
+    discoveryRecords.push(...page.records);
+    assert.ok(page.records.length <= 1);
+    assert.ok(page.nextCursor === null || typeof page.nextCursor === "string");
+  }
+  assert.strictEqual(discoveryRecords.length, 0, "brand filter should drop records when the brand does not match the index snapshot");
+
+  const openIcecatDiscovery = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async () => new Response(indexFixture),
+  });
+  const dailyDiscoveryPages = [];
+  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-01-02T00:00:00Z" })) {
+    dailyDiscoveryPages.push(page);
+  }
+  assert.strictEqual(dailyDiscoveryPages.length, 2);
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].sourceExternalId, "1002");
+  assert.strictEqual(dailyDiscoveryPages[1].records[0].sourceExternalId, "1003");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].brand, "Open Icecat");
+
+  assert.doesNotThrow(() => assertProviderSupports(new OpenIcecatProvider({ username: "u", password: "p" }), "discovery"));
 
   const discoveredRecord = { sourceExternalId: "discovered-1", brand: "Brand", productName: "Discovered Product", raw: { source: "mock-discovery" } };
   const discoveryProvider = {
