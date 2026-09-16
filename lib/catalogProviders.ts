@@ -161,7 +161,7 @@ function normalizeIcecatBoolean(value: unknown): boolean | null {
 
 export type IcecatIndexRecord = {
   sourceExternalId: string;
-  brand: string;
+  brand: string | null;
   productName: string;
   modelNumber: string | null;
   mpn: string | null;
@@ -172,16 +172,28 @@ export type IcecatIndexRecord = {
   onMarket: boolean | null;
   country: string | null;
   updated: string | null;
+  supplierId: string | null;
+  dateAdded: string | null;
+  imageUrl: string | null;
+  countryMarkets: string[];
   raw: Record<string, unknown>;
 };
 
+function normalizeIcecatTimestamp(value: string | null): string | null {
+  if (!value || !/^\d{14}$/.test(value)) return value;
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T${value.slice(8, 10)}:${value.slice(10, 12)}:${value.slice(12, 14)}Z`;
+}
+
+function buildIcecatProductUrl(indexUrl: string, productPath: string): string {
+  return new URL(productPath.replace(/^\/+/, ""), new URL("/", indexUrl)).toString();
+}
+
 function readIcecatIndexProducts(root: Record<string, unknown>): Record<string, unknown>[] {
-  const fileEntry = root.file ?? root.files ?? root.File ?? root.Files ?? root;
-  if (!fileEntry || typeof fileEntry !== "object") return [];
-  const productNode = (fileEntry as Record<string, unknown>).Product ?? (fileEntry as Record<string, unknown>).product ?? (fileEntry as Record<string, unknown>).Products ?? (fileEntry as Record<string, unknown>).products;
-  if (Array.isArray(productNode)) return productNode.filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"));
-  if (productNode && typeof productNode === "object") return [productNode as Record<string, unknown>];
-  return Object.values(fileEntry as Record<string, unknown>).filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"));
+  const index = root["files.index"];
+  if (!index || typeof index !== "object") return [];
+  const files = (index as Record<string, unknown>).file;
+  if (Array.isArray(files)) return files.filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"));
+  return files && typeof files === "object" ? [files as Record<string, unknown>] : [];
 }
 
 export function parseIcecatIndexXml(xml: string): IcecatIndexRecord[] {
@@ -189,32 +201,41 @@ export function parseIcecatIndexXml(xml: string): IcecatIndexRecord[] {
   const parsed = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: false }).parse(xml) as Record<string, unknown>;
   const root = (parsed["ICECAT-interface"] ?? parsed["icecat-interface"] ?? parsed) as Record<string, unknown>;
   const products = readIcecatIndexProducts(root);
+  if (!products.length && root["files.index"]) throw new Error("Icecat files.index contains no parseable file records");
   const records: IcecatIndexRecord[] = [];
   for (const product of products) {
     const productId = first(attr(product, "Product_ID", "ProductId"), text((product as Record<string, unknown>).Product_ID), text((product as Record<string, unknown>).ProductId));
     if (!productId) continue;
     const modelNumber = first(attr(product, "Model_Name", "ModelName"), text((product as Record<string, unknown>).Model_Name), text((product as Record<string, unknown>).ModelName), text((product as Record<string, unknown>).Prod_ID));
     const mpn = first(attr(product, "Prod_ID", "ProductCode", "MPN"), text((product as Record<string, unknown>).Prod_ID), text((product as Record<string, unknown>).ProductCode), text((product as Record<string, unknown>).MPN));
-    const gtin = first(attr(product, "EAN_UPC", "EAN", "UPC", "GTIN"), text((product as Record<string, unknown>).EAN_UPC), text((product as Record<string, unknown>).EAN), text((product as Record<string, unknown>).GTIN));
-    const country = first(attr(product, "Country"), text((product as Record<string, unknown>).Country));
-    const updated = first(attr(product, "Updated"), text((product as Record<string, unknown>).Updated));
+    const eanNode = (product.EAN_UPCS as Record<string, unknown> | undefined)?.EAN_UPC;
+    const eans = (Array.isArray(eanNode) ? eanNode : eanNode ? [eanNode] : []).map((entry) => attr(entry, "Value")).filter((value): value is string => Boolean(value));
+    const countryNode = (product.Country_Markets as Record<string, unknown> | undefined)?.Country_Market;
+    const countryMarkets = (Array.isArray(countryNode) ? countryNode : countryNode ? [countryNode] : []).map((entry) => attr(entry, "Value")).filter((value): value is string => Boolean(value));
+    const gtin = eans[0] ?? null;
+    const country = countryMarkets[0] ?? null;
+    const updated = normalizeIcecatTimestamp(first(attr(product, "Updated"), text(product.Updated)));
     const onMarket = normalizeIcecatBoolean(first(attr(product, "On_Market"), text((product as Record<string, unknown>).On_Market)) ?? "0");
     const category = first(attr(product, "Catid"), text((product as Record<string, unknown>).Catid));
-    const brand = first(attr(product, "Brand", "Manufacturer"), text((product as Record<string, unknown>).Brand), text((product as Record<string, unknown>).Manufacturer), "Open Icecat") ?? "Open Icecat";
     const productName = first(attr(product, "Model_Name", "Name", "ProductName"), text((product as Record<string, unknown>).Model_Name), text((product as Record<string, unknown>).Name), text((product as Record<string, unknown>).ProductName), mpn, productId) ?? productId;
+    const productPath = attr(product, "path");
     records.push({
       sourceExternalId: String(productId),
-      brand: String(brand),
+      brand: null,
       productName: String(productName),
       modelNumber: modelNumber ? String(modelNumber) : null,
       mpn: mpn ? String(mpn) : null,
       gtin: gtin ? String(gtin) : null,
-      sourceUrl: null,
+      sourceUrl: productPath,
       category: category ? String(category) : null,
       subcategory: null,
       onMarket,
       country: country ? String(country) : null,
       updated: updated ? String(updated) : null,
+      supplierId: attr(product, "Supplier_id"),
+      dateAdded: normalizeIcecatTimestamp(attr(product, "Date_Added")),
+      imageUrl: attr(product, "HighPic"),
+      countryMarkets,
       raw: {
         provider: "open-icecat",
         providerProductId: productId,
@@ -224,6 +245,10 @@ export function parseIcecatIndexXml(xml: string): IcecatIndexRecord[] {
         onMarket,
         country,
         updated,
+        path: productPath,
+        eans,
+        countryMarkets,
+        alternateManufacturerPartNumbers: product.M_Prod_ID,
       },
     });
   }
@@ -578,17 +603,26 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       const decompressedStream = streamIcecatIndex(url, response.headers, bodyStream);
       const parser = new SaxesParser();
       const decoder = new StringDecoder("utf8");
-      let currentRecord: Record<string, string> | null = null;
+      let currentFile: Record<string, string> | null = null;
+      let currentTextElement: { name: string; attributes: Record<string, string>; value: string } | null = null;
+      let currentEans: string[] = [];
+      let currentCountryMarkets: string[] = [];
+      let currentAlternateMpns: Array<{ value: string; supplierId: string | null; supplierName: string | null }> = [];
+      let candidateRecords: IcecatIndexRecord[] = [];
       let page: IcecatIndexRecord[] = [];
       let pageErrors: ProviderFetchError[] = [];
       let readyPages: ProviderDiscoveryPage<IcecatIndexRecord>[] = [];
       let emittedCount = 0;
-      let qualifyingCount = 0;
       let processedCount = 0;
+      let enrichmentAttempts = 0;
+      let filesIndexSeen = false;
+      let fileElementsSeen = 0;
+      let parsedFileRecords = 0;
       let lastSourceIdentity: string | null = null;
       let lastUpdatedValue: string | null = null;
       let limitReached = false;
       let resumeSatisfied = !resumeEnabled;
+      const maxEnrichmentAttempts = limit > 0 ? Math.min(100000, Math.max(pageSize, limit * 10)) : 100000;
 
       const flushPage = () => {
         if (!page.length && !pageErrors.length) return null;
@@ -632,61 +666,103 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
 
       parser.on("opentag", (node) => {
         if (limitReached) return;
-        if (node.name === "Product") {
-          currentRecord = { ...(node.attributes as Record<string, unknown> as Record<string, string>) };
+        const attributes = { ...(node.attributes as Record<string, unknown> as Record<string, string>) };
+        if (node.name === "files.index") filesIndexSeen = true;
+        if (node.name === "file") {
+          fileElementsSeen += 1;
+          currentFile = attributes;
+          currentEans = [];
+          currentCountryMarkets = [];
+          currentAlternateMpns = [];
+        } else if (currentFile && node.name === "EAN_UPC") {
+          const value = first(attributes.Value, attributes.value);
+          if (value) currentEans.push(value);
+        } else if (currentFile && node.name === "Country_Market") {
+          const value = first(attributes.Value, attributes.value);
+          if (value) currentCountryMarkets.push(value);
+        } else if (currentFile && node.name === "M_Prod_ID") {
+          currentTextElement = { name: node.name, attributes, value: "" };
         }
+      });
+
+      parser.on("text", (value) => {
+        if (currentTextElement) currentTextElement.value += value;
       });
 
       parser.on("closetag", (node) => {
         if (limitReached) return;
-        if (node.name !== "Product" || !currentRecord) return;
+        if (node.name === "M_Prod_ID" && currentTextElement) {
+          const value = currentTextElement.value.trim();
+          if (value) {
+            currentAlternateMpns.push({
+              value,
+              supplierId: first(currentTextElement.attributes.Supplier_id),
+              supplierName: first(currentTextElement.attributes.Supplier_name),
+            });
+          }
+          currentTextElement = null;
+          return;
+        }
+        if (node.name !== "file" || !currentFile) return;
 
         processedCount += 1;
         options.diagnostics?.onRecordSeen?.();
-        const productId = first(currentRecord.Product_ID, currentRecord.ProductId, currentRecord.id);
-        const productBrand = first(currentRecord.Brand, currentRecord.Manufacturer, currentRecord.Supplier_Name, currentRecord.Supplier);
-        const productName = first(currentRecord.Model_Name, currentRecord.Name, currentRecord.ProductName, currentRecord.Prod_ID);
-        if (!productId || !productBrand || !productName) {
+        const productId = first(currentFile.Product_ID, currentFile.ProductId);
+        const productName = first(currentFile.Model_Name, currentFile.Prod_ID);
+        const productPath = first(currentFile.path, currentFile.Path);
+        if (!productId || !productName || !productPath) {
           pageErrors.push({
             sourceExternalId: productId ?? undefined,
-            message: "Icecat index record is missing Product_ID, brand/manufacturer, or product name",
+            message: "Icecat files.index record is missing Product_ID, Model_Name/Prod_ID, or product XML path",
             retriable: false,
           });
-          currentRecord = null;
+          currentFile = null;
           if (page.length + pageErrors.length >= pageSize) flushPage();
           return;
         }
-        const updated = first(currentRecord.Updated, currentRecord.updated) ?? null;
-        const onMarket = normalizeIcecatBoolean(first(currentRecord.On_Market, currentRecord.onMarket) ?? "0");
-        const category = first(currentRecord.Catid, currentRecord.category, currentRecord.CategoryId) ?? null;
-        const country = first(currentRecord.Country, currentRecord.country) ?? null;
-        const gtin = first(currentRecord.EAN_UPC, currentRecord.EAN, currentRecord.UPC, currentRecord.GTIN) ?? null;
-        const mpn = first(currentRecord.Prod_ID, currentRecord.ProductCode, currentRecord.MPN) ?? null;
-        const modelNumber = first(currentRecord.Model_Name, currentRecord.ModelName, currentRecord.Model, mpn) ?? null;
+        const updated = normalizeIcecatTimestamp(first(currentFile.Updated, currentFile.updated));
+        const onMarket = normalizeIcecatBoolean(first(currentFile.On_Market, currentFile.onMarket) ?? "0");
+        const category = first(currentFile.Catid, currentFile.CategoryId);
+        const country = currentCountryMarkets[0] ?? null;
+        const gtin = currentEans[0] ?? null;
+        const mpn = first(currentFile.Prod_ID);
+        const modelNumber = first(currentFile.Model_Name, mpn);
         const record: IcecatIndexRecord = {
           sourceExternalId: String(productId),
-          brand: String(productBrand),
+          brand: null,
           productName: String(productName),
           modelNumber: modelNumber ? String(modelNumber) : null,
           mpn: mpn ? String(mpn) : null,
           gtin: gtin ? String(gtin) : null,
-          sourceUrl: null,
+          sourceUrl: buildIcecatProductUrl(url, productPath),
           category: category ? String(category) : null,
           subcategory: null,
           onMarket,
           country: country ? String(country) : null,
           updated: updated ? String(updated) : null,
+          supplierId: first(currentFile.Supplier_id),
+          dateAdded: normalizeIcecatTimestamp(first(currentFile.Date_Added)),
+          imageUrl: first(currentFile.HighPic),
+          countryMarkets: currentCountryMarkets.slice(),
           raw: {
             provider: "open-icecat",
             providerProductId: productId,
-            record: currentRecord,
+            record: currentFile,
             sourceType: "open-icecat-index",
             categoryId: category,
             onMarket,
             country,
             updated,
+            path: productPath,
+            supplierId: first(currentFile.Supplier_id),
+            highPic: first(currentFile.HighPic),
+            dateAdded: normalizeIcecatTimestamp(first(currentFile.Date_Added)),
+            eans: currentEans.slice(),
+            countryMarkets: currentCountryMarkets.slice(),
+            alternateManufacturerPartNumbers: currentAlternateMpns.slice(),
           },
         };
+        parsedFileRecords += 1;
 
         if (resumeEnabled) {
           const cursorProductId = resumeCursor.productId ?? "";
@@ -698,28 +774,18 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
               ? Boolean(cursorUpdated && recordUpdated && recordUpdated > cursorUpdated)
               : Number(recordProductId) > Number(cursorProductId) || String(recordProductId) > String(cursorProductId);
           if (!recordIsAfterCursor) {
-            currentRecord = null;
+            currentFile = null;
             return;
           }
           resumeSatisfied = true;
         }
 
-        if (!matchesDiscoveryFilter(record, options)) {
-          currentRecord = null;
+        if (!matchesDiscoveryFilter(record, { ...options, brand: undefined })) {
+          currentFile = null;
           return;
         }
-
-        qualifyingCount += 1;
-        options.diagnostics?.onRecordQualified?.();
-        lastSourceIdentity = record.sourceExternalId;
-        lastUpdatedValue = record.updated ?? lastUpdatedValue;
-        page.push(record);
-
-        if (page.length + pageErrors.length >= pageSize || (limit > 0 && qualifyingCount >= limit)) {
-          flushPage();
-        }
-
-        currentRecord = null;
+        candidateRecords.push(record);
+        currentFile = null;
       });
 
       parser.on("error", (error) => {
@@ -727,10 +793,50 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         throw error;
       });
 
+      const enrichCandidates = async () => {
+        while (candidateRecords.length && !limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
+          const indexRecord = candidateRecords.shift()!;
+          enrichmentAttempts += 1;
+          try {
+            const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000);
+            const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
+            const enrichedRecord: IcecatIndexRecord = {
+              ...indexRecord,
+              brand: detail.brand,
+              productName: detail.productName,
+              modelNumber: detail.modelNumber ?? indexRecord.modelNumber,
+              mpn: detail.mpn ?? indexRecord.mpn,
+              gtin: detail.gtin ?? indexRecord.gtin,
+              raw: { ...indexRecord.raw, enrichedProduct: detail.raw },
+            };
+            if (!matchesDiscoveryFilter(enrichedRecord, options)) continue;
+            options.diagnostics?.onRecordQualified?.();
+            lastSourceIdentity = enrichedRecord.sourceExternalId;
+            lastUpdatedValue = enrichedRecord.updated ?? lastUpdatedValue;
+            page.push(enrichedRecord);
+            if (page.length >= pageSize || (limit > 0 && emittedCount + page.length >= limit)) flushPage();
+          } catch (error) {
+            pageErrors.push({
+              sourceExternalId: indexRecord.sourceExternalId,
+              message: `Icecat product enrichment failed: ${error instanceof Error ? error.message : String(error)}`,
+              retriable: true,
+            });
+            if (page.length + pageErrors.length >= pageSize) flushPage();
+          }
+        }
+        if (enrichmentAttempts >= maxEnrichmentAttempts && !limitReached && candidateRecords.length) {
+          pageErrors.push({ message: `Icecat discovery stopped after ${maxEnrichmentAttempts} bounded enrichment attempts`, retriable: true });
+          candidateRecords = [];
+          flushPage();
+          limitReached = true;
+        }
+      };
+
       const feedParser = async function* (textChunk: string): AsyncGenerator<ProviderDiscoveryPage<IcecatIndexRecord>> {
         const maxParserFeedChars = 1024;
         for (let offset = 0; offset < textChunk.length && !limitReached; offset += maxParserFeedChars) {
           parser.write(textChunk.slice(offset, offset + maxParserFeedChars));
+          await enrichCandidates();
           while (readyPages.length) {
             yield readyPages.shift()!;
           }
@@ -768,6 +874,10 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       if (!limitReached) {
         for await (const readyPage of feedParser(decoder.end())) yield readyPage;
         parser.close();
+        await enrichCandidates();
+        if (filesIndexSeen && fileElementsSeen > 0 && parsedFileRecords === 0) {
+          throw new Error("Icecat files.index schema mismatch: file elements were present but none could be parsed");
+        }
         flushPage();
       }
 

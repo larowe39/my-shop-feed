@@ -9,14 +9,7 @@ async function main() {
   const acquisition = await import("../lib/catalogAcquisition.ts");
   const { OpenIcecatProvider, parseIcecatXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages } = provider;
   const fixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-products.xml"), "utf8");
-  const indexFixture = `<?xml version="1.0" encoding="UTF-8"?>
-<ICECAT-interface>
-  <file generated="2026-01-01T00:00:00Z">
-    <Product Product_ID="1001" Brand="Example Audio" Supplier_id="42" Prod_ID="WH1000XM5/B" Model_Name="WH-1000XM5" On_Market="1" Updated="2026-01-01T00:00:00Z" Catid="123" Quality="1" Country="US" EAN_UPC="4548736131133" />
-    <Product Product_ID="1002" Brand="Example Audio" Supplier_id="42" Prod_ID="EA-DS1" Model_Name="Desk Speaker" On_Market="0" Updated="2026-01-02T00:00:00Z" Catid="456" Quality="3" Country="DE" EAN_UPC="1234567890123" />
-    <Product Product_ID="1003" Brand="Example Audio" Supplier_id="99" Prod_ID="XLR-100" Model_Name="XLR Controller" On_Market="1" Updated="2026-01-03T00:00:00Z" Catid="999" Quality="2" Country="US" EAN_UPC="" />
-  </file>
-</ICECAT-interface>`;
+  const indexFixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-files-index.xml"), "utf8");
   const first = normalizeIcecatProduct(parseIcecatXml(fixture));
   assert.deepStrictEqual(new OpenIcecatProvider({ username: "u", password: "p" }).capabilities, { lookup: true, discovery: true });
 
@@ -67,28 +60,57 @@ async function main() {
   await assert.rejects(() => new OpenIcecatProvider({ username: "u", password: "p" }).fetchProducts({ limit: 10 }), /unbounded crawl/);
   await testIcecatAuthentication(OpenIcecatProvider, fixture, indexFixture);
   await testDiscoveryStreamFailures(OpenIcecatProvider);
-  const discoveryProviderInstance = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(indexFixture) });
+  const discoveryProviderInstance = new OpenIcecatProvider({ username: "u", password: "p", fetcher: makeIcecatDiscoveryFetcher(indexFixture) });
   const discoveryRecords = [];
   for await (const page of discoveryProviderInstance.discoverProducts({ mode: "initial", limit: 2, pageSize: 1, brand: "Sony" })) {
     discoveryRecords.push(...page.records);
     assert.ok(page.records.length <= 1);
     assert.ok(page.nextCursor === null || typeof page.nextCursor === "string");
   }
-  assert.strictEqual(discoveryRecords.length, 0, "brand filter should drop records when the brand does not match the index snapshot");
+  assert.strictEqual(discoveryRecords.length, 1, "brand filter must use bounded product-detail enrichment");
+  assert.strictEqual(discoveryRecords[0].sourceExternalId, "1001");
 
   const openIcecatDiscovery = new OpenIcecatProvider({
     username: "u",
     password: "p",
-    fetcher: async () => new Response(indexFixture),
+    fetcher: makeIcecatDiscoveryFetcher(indexFixture),
   });
   const dailyDiscoveryPages = [];
-  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-01-02T00:00:00Z" })) {
+  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-09-16T06:02:02Z" })) {
     dailyDiscoveryPages.push(page);
   }
   assert.strictEqual(dailyDiscoveryPages.length, 2);
   assert.strictEqual(dailyDiscoveryPages[0].records[0].sourceExternalId, "1002");
   assert.strictEqual(dailyDiscoveryPages[1].records[0].sourceExternalId, "1003");
   assert.strictEqual(dailyDiscoveryPages[0].records[0].brand, "Example Audio");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].sourceUrl, "https://data.icecat.biz/export/freexml/INT/1002.xml");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].gtin, "1234567890123");
+  assert.deepStrictEqual(dailyDiscoveryPages[1].records[0].countryMarkets, ["US"]);
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].raw.supplierId, "42");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].updated, "2026-09-16T06:02:02Z");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].dateAdded, "2020-01-02T03:04:05Z");
+  assert.strictEqual(dailyDiscoveryPages[0].records[0].imageUrl, "https://images.icecat.biz/img/gallery/1002.jpg");
+
+  const filteredRecords = [];
+  const filteredProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: makeIcecatDiscoveryFetcher(indexFixture) });
+  for await (const page of filteredProvider.discoverProducts({
+    limit: 10,
+    category: "456",
+    country: "DE",
+    onMarket: false,
+    updatedSince: "2026-09-16T06:02:02Z",
+  })) filteredRecords.push(...page.records);
+  assert.deepStrictEqual(filteredRecords.map((record) => record.sourceExternalId), ["1002"]);
+  console.log("testLiveFilesIndexFilters passed.");
+
+  const liveSchemaRecord = discoveryRecords[0];
+  assert.strictEqual(liveSchemaRecord.brand, "Sony", "brand must come from product detail enrichment");
+  assert.notStrictEqual(liveSchemaRecord.brand, "HPI SOURCING", "alternate M_Prod_ID supplier name must not become canonical brand");
+  assert.deepStrictEqual(liveSchemaRecord.raw.alternateManufacturerPartNumbers[1], { value: "ALT-1001", supplierId: "37985", supplierName: "HPI SOURCING" });
+  console.log("testLiveFilesIndexSchema passed.");
+
+  await testFilesIndexSchemaMismatch(OpenIcecatProvider);
+  await testUsableRecordLimitAfterEnrichmentFailure(OpenIcecatProvider);
 
   await testLargeStreamingDiscovery(OpenIcecatProvider);
   await testTruncatedXmlFailure(OpenIcecatProvider);
@@ -129,6 +151,20 @@ async function main() {
   console.log("Catalog provider fixture tests passed.");
 }
 
+function makeIcecatDiscoveryFetcher(indexFixture, inspectRequest) {
+  return async (url, init) => {
+    inspectRequest?.(url, init);
+    if (String(url).endsWith(".index.xml.gz")) return new Response(indexFixture);
+    const productId = String(url).match(/\/(\d+)\.xml$/)?.[1] ?? "1";
+    const details = {
+      "1001": { brand: "Sony", name: "WH-1000XM5", mpn: "WH1000XM5/B", gtin: "4548736131133" },
+      "1002": { brand: "Example Audio", name: "Desk Speaker", mpn: "EA-DS1", gtin: "1234567890123" },
+      "1003": { brand: "Example Controls", name: "XLR Controller", mpn: "XLR-100", gtin: "" },
+    }[productId] ?? { brand: "Synthetic", name: `Model ${productId}`, mpn: `MPN-${productId}`, gtin: "" };
+    return new Response(`<?xml version="1.0"?><ICECAT-interface><Product Product_ID="${productId}" Brand="${details.brand}" Name="${details.name}" Model_Name="${details.name}" Prod_ID="${details.mpn}" EAN_UPC="${details.gtin}" /></ICECAT-interface>`);
+  };
+}
+
 async function testIcecatAuthentication(OpenIcecatProvider, productFixture, indexFixture) {
   const token = "fixture-api-token-never-expose";
   const previousToken = process.env.ICECAT_API_TOKEN;
@@ -139,10 +175,9 @@ async function testIcecatAuthentication(OpenIcecatProvider, productFixture, inde
     const environmentTokenProvider = new OpenIcecatProvider({
       username: "basic-user",
       password: "basic-password",
-      fetcher: async (_url, init) => {
+      fetcher: makeIcecatDiscoveryFetcher(indexFixture, (_url, init) => {
         discoveryHeaders = new Headers(init.headers);
-        return new Response(indexFixture, { headers: { ETag: '"fixture-etag"', "Last-Modified": "Tue, 01 Sep 2026 00:00:00 GMT" } });
-      },
+      }),
     });
     for await (const page of environmentTokenProvider.discoverProducts({ limit: 1, pageSize: 1 })) {
       discoveryCheckpoint = page.checkpoint;
@@ -201,12 +236,55 @@ async function testTruncatedXmlFailure(OpenIcecatProvider) {
   const provider = new OpenIcecatProvider({
     username: "u",
     password: "p",
-    fetcher: async () => new Response('<ICECAT-interface><file><Product Product_ID="1" Brand="Brand" Model_Name="Model" />'),
+    fetcher: async () => new Response('<ICECAT-interface><files.index><file path="export/freexml/INT/1.xml" Product_ID="1" Model_Name="Model">'),
   });
   await assert.rejects(async () => {
     for await (const page of provider.discoverProducts({ limit: 20, pageSize: 10 })) void page;
   }, /unclosed tag|unexpected end|closed root|documents may contain only one root/i, "natural truncated XML must fail");
   console.log("testTruncatedXmlFailure passed.");
+}
+
+async function testFilesIndexSchemaMismatch(OpenIcecatProvider) {
+  const provider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: makeIcecatDiscoveryFetcher('<ICECAT-interface><files.index><file Unknown="value"/></files.index></ICECAT-interface>'),
+  });
+  await assert.rejects(async () => {
+    for await (const page of provider.discoverProducts({ limit: 1 })) void page;
+  }, /files\.index schema mismatch: file elements were present but none could be parsed/);
+  console.log("testFilesIndexSchemaMismatch passed.");
+}
+
+async function testUsableRecordLimitAfterEnrichmentFailure(OpenIcecatProvider) {
+  const total = 50;
+  const files = Array.from({ length: total }, (_, index) => {
+    const id = index + 1;
+    return `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`;
+  }).join("");
+  const index = `<ICECAT-interface><files.index>${files}</files.index></ICECAT-interface>`;
+  const detailFetcher = makeIcecatDiscoveryFetcher(index);
+  let enrichmentAttempts = 0;
+  const provider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(index);
+      enrichmentAttempts += 1;
+      if (enrichmentAttempts === 1) return new Response("missing", { status: 503, statusText: "Unavailable" });
+      return detailFetcher(url, init);
+    },
+  });
+  const records = [];
+  const errors = [];
+  for await (const page of provider.discoverProducts({ limit: 10, pageSize: 25 })) {
+    records.push(...page.records);
+    errors.push(...page.errors);
+  }
+  assert.strictEqual(records.length, 10, "limit must count usable enriched records, not attempted index records");
+  assert.strictEqual(enrichmentAttempts, 11);
+  assert.strictEqual(errors.length, 1);
+  console.log("testUsableRecordLimitAfterEnrichmentFailure passed.");
 }
 
 async function testDiscoveryStreamFailures(OpenIcecatProvider) {
@@ -235,22 +313,27 @@ async function testDiscoveryStreamFailures(OpenIcecatProvider) {
     const encoder = new TextEncoder();
     const progressingSource = new ReadableStream({
       async start(controller) {
-        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        controller.enqueue(encoder.encode("<ICECAT-interface><files.index>"));
         await new Promise((resolve) => setTimeout(resolve, 15));
-        controller.enqueue(encoder.encode('<Product Product_ID="1" Brand="Brand" Model_Name="Model"/>'));
+        controller.enqueue(encoder.encode('<file path="export/freexml/INT/1.xml" Product_ID="1" Prod_ID="MPN-1" Model_Name="Model"/>'));
         await new Promise((resolve) => setTimeout(resolve, 15));
-        controller.enqueue(encoder.encode("</file></ICECAT-interface>"));
+        controller.enqueue(encoder.encode("</files.index></ICECAT-interface>"));
         controller.close();
       },
     });
-    const progressingProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(progressingSource) });
+    const detailFetcher = makeIcecatDiscoveryFetcher("");
+    const progressingProvider = new OpenIcecatProvider({
+      username: "u",
+      password: "p",
+      fetcher: async (url, init) => String(url).endsWith(".index.xml.gz") ? new Response(progressingSource) : detailFetcher(url, init),
+    });
     const progressingRecords = [];
     for await (const page of progressingProvider.discoverProducts({ limit: 2, pageSize: 1, requestTimeoutMs: 5, inactivityTimeoutMs: 25 })) progressingRecords.push(...page.records);
     assert.strictEqual(progressingRecords.length, 1, "an established slow stream must not be subject to the request timeout");
 
     const stalledSource = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        controller.enqueue(encoder.encode("<ICECAT-interface><files.index>"));
       },
       cancel() {},
     });
@@ -266,7 +349,7 @@ async function testDiscoveryStreamFailures(OpenIcecatProvider) {
 
     const networkSource = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        controller.enqueue(encoder.encode("<ICECAT-interface><files.index>"));
         controller.error(new Error("synthetic network interruption"));
       },
     });
@@ -275,9 +358,13 @@ async function testDiscoveryStreamFailures(OpenIcecatProvider) {
       for await (const page of networkProvider.discoverProducts({ limit: 2 })) void page;
     }, /synthetic network interruption/);
 
-    const corruptGzip = Buffer.from(gzipSync('<ICECAT-interface><file><Product Product_ID="1" Brand="Brand" Model_Name="Model"/></file></ICECAT-interface>'));
+    const corruptGzip = Buffer.from(gzipSync('<ICECAT-interface><files.index><file path="export/freexml/INT/1.xml" Product_ID="1" Prod_ID="MPN-1" Model_Name="Model"/></files.index></ICECAT-interface>'));
     corruptGzip[corruptGzip.length - 8] ^= 0xff;
-    const gzipProvider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(corruptGzip) });
+    const gzipProvider = new OpenIcecatProvider({
+      username: "u",
+      password: "p",
+      fetcher: async (url, init) => String(url).endsWith(".index.xml.gz") ? new Response(corruptGzip) : detailFetcher(url, init),
+    });
     await assert.rejects(async () => {
       for await (const page of gzipProvider.discoverProducts({ limit: 2 })) void page;
     }, /incorrect data check|checksum/i);
@@ -294,13 +381,13 @@ async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
   const provider = new OpenIcecatProvider({
     username: "u",
     password: "p",
-    fetcher: async () => new Response('<ICECAT-interface><file><Product Product_ID="bad" Model_Name="Missing brand"/><Product Product_ID="good" Brand="Brand" Model_Name="Good"/></file></ICECAT-interface>'),
+    fetcher: makeIcecatDiscoveryFetcher('<ICECAT-interface><files.index><file Product_ID="bad" Model_Name="Missing path"/><file path="export/freexml/INT/1.xml" Product_ID="1" Prod_ID="GOOD-1" Model_Name="Good"/></files.index></ICECAT-interface>'),
   });
   const pages = [];
   for await (const page of provider.discoverProducts({ limit: 1, pageSize: 25 })) pages.push(page);
   assert.strictEqual(pages.flatMap((page) => page.records).length, 1);
   assert.strictEqual(pages.flatMap((page) => page.errors).length, 1);
-  assert.match(pages[0].errors[0].message, /missing Product_ID, brand\/manufacturer, or product name/);
+  assert.match(pages[0].errors[0].message, /missing Product_ID, Model_Name\/Prod_ID, or product XML path/);
   console.log("testMalformedDiscoveryRecord passed.");
 }
 
@@ -322,18 +409,18 @@ async function testLargeStreamingDiscovery(OpenIcecatProvider) {
     pull(controller) {
       if (phase === "header") {
         phase = "records";
-        controller.enqueue(encoder.encode("<ICECAT-interface><file>"));
+        controller.enqueue(encoder.encode("<ICECAT-interface><files.index>"));
         return;
       }
       if (counters.sourceRecordsGenerated < TOTAL_AVAILABLE) {
         counters.sourceRecordsGenerated += 1;
         const id = counters.sourceRecordsGenerated;
-        controller.enqueue(encoder.encode(`<Product Product_ID="${id}" Brand="Synthetic" Model_Name="Model ${id}" Updated="2026-01-01T00:00:00Z"/>`));
+        controller.enqueue(encoder.encode(`<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}" Updated="20260916060101"/>`));
         return;
       }
       counters.sourceCompletedNaturally = true;
       phase = "done";
-      controller.enqueue(encoder.encode("</file></ICECAT-interface>"));
+      controller.enqueue(encoder.encode("</files.index></ICECAT-interface>"));
       controller.close();
     },
     cancel() {
@@ -341,7 +428,12 @@ async function testLargeStreamingDiscovery(OpenIcecatProvider) {
     },
   });
 
-  const provider = new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => new Response(source) });
+  const detailFetcher = makeIcecatDiscoveryFetcher("");
+  const provider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => String(url).endsWith(".index.xml.gz") ? new Response(source) : detailFetcher(url, init),
+  });
   let generatedWhenFirstPageArrived = null;
   let generatedAfterSlowConsumer = null;
   let generatedAfterSecondWait = null;

@@ -97,8 +97,24 @@ documented `files.index.xml.gz` or `daily.index.xml.gz` index through a
 backpressure-aware HTTP/gzip stream and a SAX parser. Each bounded page enters
 the existing acquisition pipeline before the next page is requested; the CLI
 does not retain the complete discovery result. `--limit` is enforced per
-qualifying record, so a limit smaller than the page size produces a partial
-final page.
+usable, enriched record, so a limit smaller than the page size produces a
+partial final page.
+
+The verified index shape is `ICECAT-interface > files.index > file`. Each
+`file` contributes Product_ID, Prod_ID, Model_Name, Supplier_id, Catid,
+Updated, On_Market, path, HighPic, Date_Added, nested EAN_UPC values, country
+markets, and alternate M_Prod_ID values to raw provenance. Supplier_id is not a
+brand name, and nested M_Prod_ID Supplier_name values are alternate supplier
+context rather than canonical brand identity. Discovery therefore performs a
+bounded product-XML fetch using each candidate's path and accepts the record
+only when that detail document supplies the brand/manufacturer required by the
+acquisition model. Failed enrichments are reported and discovery continues up
+to a conservative bounded attempt limit while seeking the requested number of
+usable records.
+
+Category, country market, on-market, and Updated-since filters run against the
+index before enrichment. Brand filtering runs after bounded detail enrichment;
+it is not inferred from Supplier_id or M_Prod_ID Supplier_name.
 
 Bulk discovery uses separate streaming timeout semantics: a 30-second request
 timeout covers only establishment through response headers, then is cleared.
@@ -117,10 +133,10 @@ rather than silently continuing against a different snapshot.
 The synthetic streaming tests verify bounded read-ahead, early cancellation,
 first-page delivery before source completion, malformed-record reporting, and
 truncated-XML failure. The Open Icecat full index endpoint has been verified to
-accept `Api-Token` authentication and return gzip content with ETag and
-Last-Modified headers. Its complete XML shape, ordering, sustained streaming
-behavior, and server-side cancellation remain live-unverified pending a bounded
-authenticated dry run.
+accept `Api-Token` authentication, return gzip content with ETag and
+Last-Modified headers, and use the files.index/file XML shape described above.
+Its full-run ordering, sustained streaming behavior, and server-side
+cancellation remain live-unverified pending a bounded authenticated dry run.
 
 Run a fixture-only dry run with an intentionally empty local canonical catalog:
 
