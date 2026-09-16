@@ -15,6 +15,7 @@
     "catalog:import": "node ./scripts/import-catalog-data.js",
     "catalog:run:report": "node ./scripts/catalog-run-report.js",
     "catalog:taxonomy:gaps": "node ./scripts/catalog-taxonomy-gaps.js",
+    "catalog:taxonomy:coverage": "node ./scripts/catalog-taxonomy-coverage.js",
     "catalog:taxonomy:external": "node ./scripts/catalog-taxonomy-external.js",
     "catalog:acquire": "node ./scripts/catalog-acquire.js",
     "catalog:acquire:icecat": "node ./scripts/catalog-acquire-icecat.js",

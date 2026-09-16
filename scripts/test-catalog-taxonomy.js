@@ -11,6 +11,7 @@ async function main() {
   const mappings = await import("../lib/catalogTaxonomyMappings.ts");
   const acquisition = await import("../lib/catalogAcquisition.ts");
   const staging = await import("../lib/stagingStore.ts");
+  const { loadAndValidateCatalogData } = require("./lib/catalogDataLoader");
   const providerTaxonomy = await import("../lib/catalogProviderTaxonomy.ts");
   const providers = await import("../lib/catalogProviders.ts");
   const { mappingKey, mappingIsTrusted } = taxonomy;
@@ -37,6 +38,36 @@ async function main() {
   assert.doesNotMatch(categoriesScreenSource, /list\.push\(/, "product labels must not create discovery navigation tiles");
   const canonicalCliSource = fs.readFileSync(path.join(__dirname, "catalog-taxonomy-canonical.js"), "utf8");
   assert.match(canonicalCliSource, /internal-only/, "canonical taxonomy inspection must distinguish internal-only nodes");
+
+  const loadedCatalog = loadAndValidateCatalogData(path.join(__dirname, "..", "catalog-data"), (await import("../lib/catalogMatching.ts")).normalizeCatalogText);
+  assert.ok(loadedCatalog.taxonomy.subcategoryByPath.has("electronics::printers-and-scanners"), "Printers & Scanners must exist as a canonical internal node");
+  assert.ok(loadedCatalog.taxonomy.subcategoryByPath.has("electronics::printers-and-scanners/printing-supplies/ink-cartridges"), "Ink Cartridges must exist under Printing Supplies");
+  assert.ok(loadedCatalog.taxonomy.subcategoryByPath.has("electronics::printers-and-scanners/printing-media/large-format-media"), "Large Format Media must exist under Printing Media");
+  assert.strictEqual(isDiscoveryCategoryVisible("printers-and-scanners"), false, "internal printing taxonomy must not become discovery-visible");
+  assert.strictEqual(isDiscoveryCategoryVisible("electronics"), true, "core discovery categories must remain visible");
+
+  const coveragePlanner = require("./catalog-taxonomy-coverage.js");
+  assert.strictEqual(typeof coveragePlanner.computeCoverage, "function", "coverage planner must exist");
+
+  const coverageLedgerPath = path.join(__dirname, "..", ".catalog-staging", "taxonomy-coverage.test.json");
+  const coverageStore = new LocalStagingStore(coverageLedgerPath);
+  coverageStore.reset();
+  const coverageRun = await coverageStore.createImportRun({ id: "source-coverage-test", name: "coverage-source", type: "open-icecat", baseUrl: null, trustClassification: "staged", active: true, notes: null, metadata: {} }, {
+    adapter: "open-icecat", dryRun: true, processed: 100, valid: 100, invalid: 0, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, newRecords: 100, conflictRecords: 0, approved: 0, rejected: 0, promoted: 0, staged: 100, errors: 0, status: "completed", summary: {},
+  });
+  await coverageStore.upsertStagedCandidates([
+    { id: "candidate-1", importRunId: coverageRun.id, sourceId: "source-coverage-test", sourceExternalId: "151", fingerprint: "fp-151", status: "pending", classification: "NEW", brand: "Fixture", productName: "Laptop 15", modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null, sourceType: "open-icecat", upc: null, gtin: null, mpn: null, externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops", path: "1 > 2833 Computers & Peripherals > 150 Computers > 151 Laptops" }, rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" }, taxonomyMapping: { status: "verified" } }, confidence: 0.9, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" },
+    { id: "candidate-2", importRunId: coverageRun.id, sourceId: "source-coverage-test", sourceExternalId: "971", fingerprint: "fp-971", status: "pending", classification: "NEW", brand: "Fixture", productName: "Large Format Printer", modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null, sourceType: "open-icecat", upc: null, gtin: null, mpn: null, externalTaxonomy: { provider: "open-icecat", externalId: "971", name: "Large Format Media", path: "1 > 2833 Computers & Peripherals > 225 Printers & Scanners > 692 Printing Media > 971 Large Format Media" }, rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "971", name: "Large Format Media" } }, confidence: 0.9, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" },
+    { id: "candidate-3", importRunId: coverageRun.id, sourceId: "source-coverage-test", sourceExternalId: "847", fingerprint: "fp-847", status: "pending", classification: "NEW", brand: "Fixture", productName: "Photo Paper For Studio", modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null, sourceType: "open-icecat", upc: null, gtin: null, mpn: null, externalTaxonomy: { provider: "open-icecat", externalId: "847", name: "Photo Paper", path: "... > 847 Photo Paper" }, rawPayload: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "847", name: "Photo Paper" } }, confidence: 0.9, createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" },
+  ]);
+  const planPath = path.join(__dirname, "..", "docs", "catalog-taxonomy-mapping-plan.json");
+  const computed = await coveragePlanner.computeCoverage({ runId: coverageRun.id, backend: "local", planPath, logger: console }, { store: coverageStore });
+  assert.strictEqual(computed.total, 3, "coverage planner must compute actual run totals from persisted data");
+  assert.strictEqual(computed.currentlyResolved, 1, "verified 151 target should count as currently resolved");
+  assert.strictEqual(computed.proposedResolved, 2, "proposed mapping plan should resolve the 151 and 971 rows");
+  assert.strictEqual(computed.currentlyUnresolved, 2, "unresolved rows remain for 971 and 847 before mapping application");
+  assert.strictEqual(computed.byExternalCategory.some((row) => row.externalId === "151" && row.resolved), true, "coverage breakdown should retain per-ID resolved state");
+  fs.rmSync(coverageLedgerPath, { force: true });
 
   const categoryFixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-taxonomy", "open-icecat-categories.xml"), "utf8");
   const authoritativeCategories = await parseOpenIcecatCategoriesXml(categoryFixture);
