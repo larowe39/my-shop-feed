@@ -24,6 +24,11 @@ async function main() {
     approveCandidate,
     rejectCandidate,
     promoteApprovedCandidates,
+    calculateAcquisitionQualityMetrics,
+    assessCandidateReadiness,
+    candidateReviewView,
+    formatApprovalPreview,
+    reviewCandidatesSequentially,
   } = acquisition;
 
   const stagingStoreModule = await import("../lib/stagingStore.ts");
@@ -59,6 +64,20 @@ async function main() {
     /acquireFromRecords\(\s*records,\s*\[\]/,
     "catalog-acquire.js must not classify against a hardcoded empty canonical catalog"
   );
+  const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
+  assert.match(icecatCliSource, /resolveStagingStore/, "Icecat apply must resolve the staging backend");
+  assert.match(icecatCliSource, /persistedRunId = pageRun\.runId/, "Icecat discovery must retain the persisted import run ID");
+  assert.match(icecatCliSource, /runId: persistedRunId/, "Icecat discovery output must expose the persisted import run ID");
+  assert.doesNotMatch(icecatCliSource, /approveCandidate|rejectCandidate|promoteApprovedCandidates|resolveCanonicalPromotionStore/, "Icecat acquisition must not approve or promote");
+  const approveCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-approve.js"), "utf8");
+  const showCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-show.js"), "utf8");
+  const reviewCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-review.js"), "utf8");
+  const rejectCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-reject.js"), "utf8");
+  assert.match(approveCliSource, /formatApprovalPreview/, "approve CLI must print the concise assessment");
+  assert.match(approveCliSource, /args\.includes\("--raw"\)/, "approve CLI raw output must be explicit");
+  assert.match(showCliSource, /args\.includes\("--raw"\)/, "show CLI raw output must be explicit");
+  assert.match(reviewCliSource, /candidateReviewView/, "review CLI must use bounded candidate output");
+  assert.match(rejectCliSource, /args\.includes\("--raw"\)/, "reject CLI raw output must be explicit");
 
   // ---------------------------------------------------------------------
   // 1. Pure parsing / normalization / validation / classification / fingerprint
@@ -230,7 +249,7 @@ async function main() {
     },
   });
   const dryRunRecords = [
-    { sourceExternalId: "new-1", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", family: "Portable Speakers", category: "Electronics", raw: { source: "fixture" } },
+    { sourceExternalId: "new-1", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", family: "Portable Speakers", category: "Electronics", imageUrl: "https://example.test/jbl.jpg", raw: { source: "fixture" } },
   ];
   const dryRunResult = await acquireFromRecords(dryRunRecords, [], { name: "dry-run-source", type: "json" }, { apply: false });
   assert.strictEqual(storeCalls, 0, "dry-run acquisition must never call the staging store");
@@ -245,7 +264,7 @@ async function main() {
   // ---------------------------------------------------------------------
   const firstRun = await acquireFromRecords(
     [
-      { sourceExternalId: "new-1", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", family: "Portable Speakers", category: "Electronics", raw: { source: "fixture" } },
+      { sourceExternalId: "new-1", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", family: "Portable Speakers", category: "Electronics", imageUrl: "https://example.test/jbl.jpg", raw: { source: "fixture" } },
       { sourceExternalId: "dup-1", brand: "Sony", productName: "Sony WH-1000XM5", modelNumber: "WH-1000XM5", family: "Headphones", category: "Electronics", raw: { source: "fixture" } },
       { sourceExternalId: "bad-1", brand: "", productName: "", raw: { source: "fixture" } },
     ],
@@ -258,6 +277,34 @@ async function main() {
   assert.strictEqual(firstRun.summary.invalid, 1);
   assert.strictEqual(firstRun.summary.new + firstRun.summary.possibleExisting, 1);
   assert.strictEqual(firstRun.summary.exactExisting, 1);
+  assert.strictEqual(firstRun.summary.qualityMetrics.imageRate, 0.5);
+  assert.strictEqual(firstRun.runId !== undefined, true, "apply acquisition must return the persisted import run ID");
+  const quality = calculateAcquisitionQualityMetrics(
+    [{ sourceExternalId: "metric-1", brand: "JBL", productName: "Boombox 3", modelNumber: "Boombox 3", gtin: "123", imageUrl: "https://example.test/image.jpg", raw: {} }],
+    { processed: 1, valid: 1, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, conflict: 0, new: 1 },
+    { discovered: 1, providerErrors: 0 }
+  );
+  assert.strictEqual(quality.gtinRate, 1);
+  assert.strictEqual(quality.imageRate, 1);
+  assert.strictEqual(quality.newRate, 1);
+  const unresolvedIcecat = {
+    sourceExternalId: "icecat-1",
+    brand: "HP",
+    productName: "Ink Cartridge",
+    modelNumber: "C4872A",
+    raw: { provider: "open-icecat", externalCategory: { id: "846", name: "Printers" }, taxonomyMapping: null },
+  };
+  const readiness = assessCandidateReadiness(unresolvedIcecat, "NEW");
+  assert.strictEqual(readiness.externallyValid, true);
+  assert.strictEqual(readiness.duplicateSafe, true);
+  assert.strictEqual(readiness.reviewRequired, true);
+  assert.strictEqual(readiness.promotionReady, false);
+  assert.match(readiness.reasons.join(" "), /HIERARCHY UNRESOLVED/);
+  const unresolvedQuality = calculateAcquisitionQualityMetrics(
+    [unresolvedIcecat],
+    { processed: 1, valid: 1, exactExisting: 0, likelyExisting: 0, possibleExisting: 0, conflict: 0, new: 1 }
+  );
+  assert.strictEqual(unresolvedQuality.manualReviewRate, 1, "valid NEW records with unresolved hierarchy require manual review");
   assert.ok(firstRun.persistence.every((entry) => entry.startsWith("local:")));
   const stagedAfterFirstRun = await localStore.listStagedCandidates();
   assert.ok(stagedAfterFirstRun.length >= 1);
@@ -289,6 +336,17 @@ async function main() {
 
   const shown = await showCandidate(localStore, pendingCandidate.id);
   assert.strictEqual(shown.found, true);
+  assert.strictEqual(candidateReviewView(shown.candidate).id, pendingCandidate.id);
+  assert.ok(!("rawPayload" in candidateReviewView(shown.candidate)), "review view must not expose raw payloads by default");
+  const approvalPreview = formatApprovalPreview(pendingCandidate, { dryRun: true, approvalAllowed: true });
+  assert.match(approvalPreview, /ASSESSMENT/);
+  assert.match(approvalPreview, /External valid: yes/);
+  assert.match(approvalPreview, /Promotion ready:/);
+  assert.match(approvalPreview, /DRY RUN -- ZERO WRITES/);
+  assert.doesNotMatch(approvalPreview, /rawPayload|enrichedProduct|HighPic/);
+  const reviewDryRun = await reviewCandidatesSequentially(localStore, [pendingCandidate], async () => "approve", { dryRun: true });
+  assert.strictEqual(reviewDryRun[0].result.ok, true);
+  assert.strictEqual((await localStore.getStagedCandidateById(pendingCandidate.id)).status, pendingCandidate.status, "sequential dry-run review must not write");
 
   const missing = await showCandidate(localStore, "candidate-missing");
   assert.strictEqual(missing.found, false);
@@ -327,6 +385,7 @@ async function main() {
   const approvedBeforePromotion = (await localStore.listStagedCandidates()).filter((c) => c.status === "approved");
   assert.ok(approvedBeforePromotion.length >= 1);
   assert.ok(dryPromotion.entries.some((entry) => entry.dryRun === true));
+  assert.ok(dryPromotion.entries.find((entry) => entry.dryRun).preview.slug, "promotion dry-run must include canonical preview");
 
   // ---------------------------------------------------------------------
   // 6. Promotion apply: only eligible approved candidates get promoted
@@ -416,6 +475,26 @@ async function main() {
   assert.strictEqual(hierarchyEntry.ok, false, "family belonging to another brand must block promotion");
   assert.strictEqual((await hierarchyStore.getStagedCandidateById(hierarchyId)).status, "approved");
 
+  const unresolvedHierarchyLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.unresolved-hierarchy-test.json");
+  const unresolvedHierarchyStore = new LocalStagingStore(unresolvedHierarchyLedgerPath);
+  unresolvedHierarchyStore.reset();
+  const unresolvedHierarchyRun = await acquireFromRecords(
+    [{ sourceExternalId: "icecat-hierarchy-1", brand: "JBL", productName: "Charge 7", raw: { provider: "open-icecat", externalCategory: { id: "846", name: "Printers" }, taxonomyMapping: null } }],
+    [],
+    { name: "icecat-source", type: "external-provider" },
+    { apply: true, adapter: "open-icecat" },
+    unresolvedHierarchyStore
+  );
+  const unresolvedHierarchyId = unresolvedHierarchyRun.staged[0].id;
+  assert.strictEqual(unresolvedHierarchyRun.staged[0].status, "needs_review");
+  await approveCandidate(unresolvedHierarchyStore, unresolvedHierarchyId, { dryRun: false });
+  const unresolvedHierarchyPromotion = await promoteApprovedCandidates(
+    unresolvedHierarchyStore,
+    new LocalCanonicalPromotionStore({ brands: [{ id: "brand-jbl", slug: "jbl", name: "JBL" }], subcategories: [], families: [], products: [] }),
+    { dryRun: true }
+  );
+  assert.match(unresolvedHierarchyPromotion.entries[0].message, /HIERARCHY UNRESOLVED|MANUAL REVIEW REQUIRED/);
+
   // ---------------------------------------------------------------------
   // 9. Supabase backend: staging-store methods actually invoked (fake client)
   // ---------------------------------------------------------------------
@@ -481,7 +560,7 @@ async function main() {
   const fakeClient = makeFakeSupabaseClient();
   const supabaseStagingStore = new SupabaseStagingStore(fakeClient);
   const supabaseRun = await acquireFromRecords(
-    [{ sourceExternalId: "sb-1", brand: "Bose", productName: "QuietComfort Ultra", aliases: ["QC Ultra"], raw: {} }],
+    [{ sourceExternalId: "sb-1", brand: "Bose", productName: "QuietComfort Ultra", aliases: ["QC Ultra"], imageUrl: "https://example.test/bose.jpg", raw: {} }],
     [],
     { name: "fake-supabase-source", type: "json" },
     { apply: true, adapter: "json" },
@@ -505,6 +584,7 @@ async function main() {
     "explicit source-provided alias must survive acquisition -> catalog_staged_aliases -> staging read (was previously lost: rowToCandidate hardcoded aliases: [])"
   );
   assert.ok(!roundTrippedCandidate.aliases.some((alias) => alias.toLowerCase() === "bose"), "bare brand name must never be emitted as a staged alias");
+  assert.strictEqual(roundTrippedCandidate.imageUrl, "https://example.test/bose.jpg", "image URL must survive Supabase staging round-trip");
 
   const listedCandidates = await supabaseStagingStore.listStagedCandidates();
   const listedMatch = listedCandidates.find((candidate) => candidate.id === supabaseStagedId);
@@ -565,7 +645,7 @@ async function main() {
   assert.strictEqual(explicitLocal.kind, "local");
 
   localStore.reset();
-  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath]) {
+  for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
   console.log("Catalog acquisition tests passed.");

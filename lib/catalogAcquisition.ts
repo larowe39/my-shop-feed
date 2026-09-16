@@ -19,8 +19,10 @@ import type {
   StagedCatalogCandidate,
 } from "./catalogStagingTypes.ts";
 import type { CreateImportRunInput, StagingStore } from "./stagingStore.ts";
-import type { AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
+import type { AcquisitionQualityMetrics, AcquisitionSummary, SourceRegistryEntry } from "./catalogStagingTypes.ts";
 import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
+import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
+import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
 
 export type {
   CandidateClassification,
@@ -45,6 +47,69 @@ export type AcquisitionRunResult = {
   summary: AcquisitionSummary;
   persistence: string[];
 };
+
+export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
+
+function rate(numerator: number, denominator: number): number {
+  return denominator > 0 ? Number((numerator / denominator).toFixed(4)) : 0;
+}
+
+export function calculateAcquisitionQualityMetrics(
+  records: Partial<CatalogCandidateInput>[],
+  summary: Pick<AcquisitionSummary, "processed" | "valid" | "exactExisting" | "likelyExisting" | "possibleExisting" | "conflict" | "new">,
+  options: { discovered?: number; providerErrors?: number } = {}
+): AcquisitionQualityMetrics {
+  const validRecords = records.filter((record) => validateCatalogCandidate(record).valid);
+  const hierarchyReviewCount = validRecords.filter((record) => !assessCandidateReadiness(record, "NEW").promotionReady).length;
+  const reviewCount = summary.likelyExisting + summary.possibleExisting + summary.conflict + hierarchyReviewCount;
+  return {
+    enrichmentSuccessRate: options.discovered === undefined ? null : rate(records.length, options.discovered),
+    validRecordRate: rate(summary.valid, summary.processed),
+    duplicateExistingRate: rate(summary.exactExisting + summary.likelyExisting + summary.possibleExisting, summary.valid),
+    newRate: rate(summary.new, summary.valid),
+    providerErrorRate: options.discovered === undefined ? null : rate(options.providerErrors ?? 0, options.discovered),
+    gtinRate: rate(validRecords.filter((record) => Boolean(record.gtin || record.upc)).length, validRecords.length),
+    imageRate: rate(validRecords.filter((record) => Boolean(record.imageUrl)).length, validRecords.length),
+    modelRate: rate(validRecords.filter((record) => Boolean(record.modelNumber || record.mpn)).length, validRecords.length),
+    trustworthyBrandRate: rate(validRecords.filter((record) => Boolean(record.brand?.trim())).length, validRecords.length),
+    manualReviewRate: rate(reviewCount, summary.valid),
+  };
+}
+
+export type CandidateReadiness = {
+  externallyValid: boolean;
+  duplicateSafe: boolean;
+  reviewRequired: boolean;
+  promotionReady: boolean;
+  reasons: string[];
+};
+
+export function assessCandidateReadiness(
+  candidate: Partial<CatalogCandidateInput>,
+  classification: CandidateClassification = "NEW"
+): CandidateReadiness {
+  const validation = validateCatalogCandidate(candidate);
+  const reasons = validation.errors.slice();
+  const duplicateSafe = classification === "NEW";
+  if (!duplicateSafe) reasons.push(`classification ${classification} requires duplicate review`);
+
+  const raw = candidate.raw && typeof candidate.raw === "object" ? candidate.raw : {};
+  const externalCategory = raw.externalCategory && typeof raw.externalCategory === "object"
+    ? raw.externalCategory as { id?: unknown; name?: unknown }
+    : null;
+  const taxonomyMapping = raw.taxonomyMapping && typeof raw.taxonomyMapping === "object" ? raw.taxonomyMapping : null;
+  const hierarchyUnresolved = raw.provider === "open-icecat" && !taxonomyMapping && !candidate.category && !candidate.subcategory && !candidate.family;
+  if (hierarchyUnresolved) reasons.push("HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED");
+
+  const reviewRequired = !validation.valid || !duplicateSafe || hierarchyUnresolved;
+  return {
+    externallyValid: validation.valid,
+    duplicateSafe,
+    reviewRequired,
+    promotionReady: validation.valid && duplicateSafe && !hierarchyUnresolved,
+    reasons,
+  };
+}
 
 function normalizeText(value: string | null | undefined): string {
   return String(value ?? "")
@@ -282,7 +347,12 @@ export function parseJsonAdapterRecords(raw: string): CatalogCandidateInput[] {
     subcategory: typeof entry.subcategory === "string" ? entry.subcategory : null,
     aliases: Array.isArray(entry.aliases) ? entry.aliases.filter((alias) => typeof alias === "string") : [],
     sourceUrl: typeof entry.sourceUrl === "string" ? entry.sourceUrl : typeof entry.source_url === "string" ? entry.source_url : null,
+    imageUrl: typeof entry.imageUrl === "string" ? entry.imageUrl : typeof entry.image_url === "string" ? entry.image_url : null,
     sourceType: typeof entry.sourceType === "string" ? entry.sourceType : typeof entry.source_type === "string" ? entry.source_type : null,
+    upc: typeof entry.upc === "string" ? entry.upc : null,
+    gtin: typeof entry.gtin === "string" ? entry.gtin : typeof entry.GTIN === "string" ? entry.GTIN : null,
+    mpn: typeof entry.mpn === "string" ? entry.mpn : null,
+    sourceSku: typeof entry.sourceSku === "string" ? entry.sourceSku : null,
     raw: entry,
   }));
 }
@@ -337,7 +407,12 @@ export function parseCsvAdapterRecords(raw: string): CatalogCandidateInput[] {
       subcategory: row.subcategory || null,
       aliases,
       sourceUrl: row.sourceUrl || row.source_url || null,
+      imageUrl: row.imageUrl || row.image_url || null,
       sourceType: row.sourceType || row.source_type || null,
+      upc: row.upc || null,
+      gtin: row.gtin || row.GTIN || null,
+      mpn: row.mpn || null,
+      sourceSku: row.sourceSku || null,
       raw: row,
     });
   }
@@ -358,7 +433,7 @@ export async function acquireFromRecords(
   records: Partial<CatalogCandidateInput>[],
   canonicalCatalog: CanonicalCatalogEntry[] = [],
   sourceInfo: Partial<SourceRegistryEntry> = {},
-  options: { apply?: boolean; adapter?: string; sourcePath?: string | null } = {},
+  options: { apply?: boolean; adapter?: string; sourcePath?: string | null; taxonomyResolver?: TaxonomyMappingResolver } = {},
   store?: StagingStore
 ): Promise<AcquisitionRunResult> {
   const apply = options.apply ?? false;
@@ -380,20 +455,46 @@ export async function acquireFromRecords(
   };
   const candidates: StagedCatalogCandidate[] = [];
   const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
+  const resolvedRecordsForMetrics: Partial<CatalogCandidateInput>[] = [];
 
   const sourceType = sourceInfo.type ?? "manual import";
   for (let index = 0; index < records.length; index += 1) {
     const rawRecord = records[index] ?? {};
-    const validation = validateCatalogCandidate(rawRecord as CatalogCandidateInput);
+    let resolvedRecord = rawRecord;
+    if (rawRecord.externalTaxonomy && options.taxonomyResolver) {
+      const mapping = await options.taxonomyResolver(rawRecord.externalTaxonomy);
+      const trustedMapping = mappingIsTrusted(mapping) ? mapping : null;
+      if (trustedMapping) {
+        resolvedRecord = {
+          ...rawRecord,
+          category: trustedMapping.canonicalCategoryName ?? rawRecord.category,
+          subcategory: trustedMapping.canonicalSubcategoryName ?? rawRecord.subcategory,
+          raw: {
+            ...(rawRecord.raw ?? {}),
+            taxonomyMapping: {
+              id: trustedMapping.id,
+              provider: trustedMapping.provider,
+              externalTaxonomyId: trustedMapping.externalTaxonomyId,
+              status: trustedMapping.status,
+              method: trustedMapping.method,
+              canonicalCategoryId: trustedMapping.canonicalCategoryId,
+              canonicalSubcategoryId: trustedMapping.canonicalSubcategoryId,
+            },
+          },
+        };
+      }
+    }
+    const validation = validateCatalogCandidate(resolvedRecord as CatalogCandidateInput);
     if (!validation.valid) {
       summary.invalid += 1;
       summary.errors += 1;
-      invalidRecords.push({ candidate: rawRecord, errors: validation.errors, classification: "INVALID" });
+      invalidRecords.push({ candidate: resolvedRecord, errors: validation.errors, classification: "INVALID" });
       continue;
     }
 
     summary.valid += 1;
-    const classification = classifyCandidate(rawRecord as CatalogCandidateInput, canonicalCatalog);
+    resolvedRecordsForMetrics.push(resolvedRecord);
+    const classification = classifyCandidate(resolvedRecord as CatalogCandidateInput, canonicalCatalog);
 
     if (classification === "EXACT_EXISTING") {
       summary.exactExisting += 1;
@@ -404,40 +505,42 @@ export async function acquireFromRecords(
     else if (classification === "NEW") summary.new += 1;
     else if (classification === "CONFLICT") summary.conflict += 1;
 
-    const status: ReviewStatus =
-      classification === "LIKELY_EXISTING" || classification === "POSSIBLE_EXISTING" || classification === "CONFLICT" ? "needs_review" : "pending";
+    const readiness = assessCandidateReadiness(resolvedRecord, classification);
+    const status: ReviewStatus = readiness.reviewRequired ? "needs_review" : "pending";
     const fingerprint = sourceFingerprint({
-      sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
-      sourceExternalId: rawRecord.sourceExternalId ?? null,
-      brand: rawRecord.brand,
-      productName: rawRecord.productName,
-      modelNumber: rawRecord.modelNumber,
-      family: rawRecord.family,
-      category: rawRecord.category,
-      sourceUrl: rawRecord.sourceUrl ?? null,
+      sourceId: sourceInfo.id ?? resolvedRecord.sourceId ?? null,
+      sourceExternalId: resolvedRecord.sourceExternalId ?? null,
+      brand: resolvedRecord.brand,
+      productName: resolvedRecord.productName,
+      modelNumber: resolvedRecord.modelNumber,
+      family: resolvedRecord.family,
+      category: resolvedRecord.category,
+      sourceUrl: resolvedRecord.sourceUrl ?? null,
     });
 
     candidates.push({
       id: makeId("candidate"),
-      sourceId: sourceInfo.id ?? rawRecord.sourceId ?? null,
-      sourceExternalId: rawRecord.sourceExternalId ?? null,
+      sourceId: sourceInfo.id ?? resolvedRecord.sourceId ?? null,
+      sourceExternalId: resolvedRecord.sourceExternalId ?? null,
       fingerprint,
       status,
       classification,
-      brand: rawRecord.brand ?? "",
-      productName: rawRecord.productName ?? "",
-      modelNumber: rawRecord.modelNumber ?? null,
-      family: rawRecord.family ?? null,
-      category: rawRecord.category ?? null,
-      subcategory: rawRecord.subcategory ?? null,
-      aliases: [...new Set(normalizeAliasList(rawRecord.aliases ?? []))],
-      sourceUrl: rawRecord.sourceUrl ?? null,
-      sourceType: rawRecord.sourceType ?? sourceType,
-      upc: rawRecord.upc ?? null,
-      gtin: rawRecord.gtin ?? null,
-      mpn: rawRecord.mpn ?? null,
-      sourceSku: rawRecord.sourceSku ?? null,
-      rawPayload: rawRecord.raw ?? {},
+      brand: resolvedRecord.brand ?? "",
+      productName: resolvedRecord.productName ?? "",
+      modelNumber: resolvedRecord.modelNumber ?? null,
+      family: resolvedRecord.family ?? null,
+      category: resolvedRecord.category ?? null,
+      subcategory: resolvedRecord.subcategory ?? null,
+      aliases: [...new Set(normalizeAliasList(resolvedRecord.aliases ?? []))],
+      sourceUrl: resolvedRecord.sourceUrl ?? null,
+      imageUrl: resolvedRecord.imageUrl ?? null,
+      sourceType: resolvedRecord.sourceType ?? sourceType,
+      upc: resolvedRecord.upc ?? null,
+      gtin: resolvedRecord.gtin ?? null,
+      mpn: resolvedRecord.mpn ?? null,
+      sourceSku: resolvedRecord.sourceSku ?? null,
+      externalTaxonomy: resolvedRecord.externalTaxonomy ?? null,
+      rawPayload: resolvedRecord.raw ?? {},
       normalizedBrand: validation.normalized.brand,
       normalizedName: validation.normalized.productName,
       normalizedModel: validation.normalized.modelNumber || undefined,
@@ -449,6 +552,8 @@ export async function acquireFromRecords(
     });
     summary.staged += 1;
   }
+
+  summary.qualityMetrics = calculateAcquisitionQualityMetrics(resolvedRecordsForMetrics, summary);
 
   const persistenceMessages: string[] = [];
   let source: SourceRegistryEntry | undefined;
@@ -467,8 +572,6 @@ export async function acquireFromRecords(
       metadata: sourceInfo.metadata ?? {},
     });
     for (const candidate of candidates) candidate.sourceId = source.id ?? candidate.sourceId;
-
-    stagedResult = await store.upsertStagedCandidates(candidates);
 
     const runInput: CreateImportRunInput = {
       adapter: options.adapter ?? "json",
@@ -491,6 +594,8 @@ export async function acquireFromRecords(
     };
     const run = await store.createImportRun(source, runInput);
     runId = run.id;
+    for (const candidate of candidates) candidate.importRunId = run.id;
+    stagedResult = await store.upsertStagedCandidates(candidates);
     persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
 
@@ -518,7 +623,123 @@ export function printAcquisitionSummary(run: AcquisitionRunResult): string {
     `STAGED: ${run.summary.staged}`,
     `PERSISTENCE: ${run.persistence.join(", ") || "dry-run (zero writes)"}`,
   ];
+  const metrics = run.summary.qualityMetrics;
+  if (metrics) {
+    lines.push(
+      `QUALITY: enrichment=${formatRate(metrics.enrichmentSuccessRate)} valid=${formatRate(metrics.validRecordRate)} duplicate/existing=${formatRate(metrics.duplicateExistingRate)} new=${formatRate(metrics.newRate)}`,
+      `QUALITY FIELDS: gtin=${formatRate(metrics.gtinRate)} image=${formatRate(metrics.imageRate)} model=${formatRate(metrics.modelRate)} trustworthy-brand=${formatRate(metrics.trustworthyBrandRate)} manual-review=${formatRate(metrics.manualReviewRate)}`
+    );
+  }
   return lines.join("\n");
+}
+
+function formatRate(value: number | null | undefined): string {
+  return value === null || value === undefined ? "n/a" : `${(value * 100).toFixed(1)}%`;
+}
+
+export function candidateReviewView(candidate: StagedCatalogCandidate): Record<string, unknown> {
+  return {
+    id: candidate.id,
+    source: candidate.sourceType,
+    sourceId: candidate.sourceId,
+    sourceExternalId: candidate.sourceExternalId,
+    brand: candidate.brand,
+    productName: candidate.productName,
+    model: candidate.modelNumber ?? candidate.mpn,
+    gtins: [candidate.gtin, candidate.upc].filter(Boolean),
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    family: candidate.family,
+    imageUrl: candidate.imageUrl,
+    confidence: candidate.confidence,
+    classification: candidate.classification,
+    possibleCanonicalDuplicate: candidate.duplicateOfCatalogProductId,
+    externalCategory: candidate.rawPayload.externalCategory ?? null,
+    promotionReadiness: assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      family: candidate.family,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification),
+    provenance: { sourceId: candidate.sourceId, sourceExternalId: candidate.sourceExternalId, sourceUrl: candidate.sourceUrl },
+    importRunId: candidate.importRunId,
+    createdAt: candidate.createdAt,
+    updatedAt: candidate.updatedAt,
+    status: candidate.status,
+    reviewNotes: candidate.reviewNotes,
+  };
+}
+
+export function formatApprovalPreview(
+  candidate: StagedCatalogCandidate,
+  options: { dryRun: boolean; approvalAllowed: boolean; approvalBlocker?: string } = { dryRun: true, approvalAllowed: true }
+): string {
+  const readiness = assessCandidateReadiness({
+    brand: candidate.brand,
+    productName: candidate.productName,
+    modelNumber: candidate.modelNumber,
+    family: candidate.family,
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    sourceExternalId: candidate.sourceExternalId,
+    sourceId: candidate.sourceId,
+    raw: candidate.rawPayload,
+  }, candidate.classification);
+  const hierarchyResolved = !readiness.reasons.some((reason) => reason.includes("HIERARCHY UNRESOLVED"));
+  const lines = [
+    "CANDIDATE",
+    `ID: ${candidate.id}`,
+    `Source: ${candidate.sourceType ?? "unknown"}`,
+    `External ID: ${candidate.sourceExternalId ?? "-"}`,
+    `Brand: ${candidate.brand || "-"}`,
+    `Product: ${candidate.productName || "-"}`,
+    `Model: ${candidate.modelNumber ?? candidate.mpn ?? "-"}`,
+    `GTIN: ${candidate.gtin ?? candidate.upc ?? "-"}`,
+    "",
+    "ASSESSMENT",
+    `External valid: ${readiness.externallyValid ? "yes" : "no"}`,
+    `Duplicate safe: ${readiness.duplicateSafe ? "yes" : "no"}`,
+    `Human reviewed: ${candidate.status === "approved" ? "yes" : "no"}`,
+    `Canonical hierarchy: ${hierarchyResolved ? "resolved" : "unresolved"}`,
+    `Manual review required: ${readiness.reviewRequired ? "yes" : "no"}`,
+    `Promotion ready: ${readiness.promotionReady ? "yes" : "no"}`,
+    "",
+    "APPROVAL PREVIEW",
+    `Would approve: ${options.approvalAllowed ? "yes" : "no"}`,
+  ];
+  const blockers = [...readiness.reasons, ...(options.approvalAllowed ? [] : options.approvalBlocker ? [options.approvalBlocker] : [])];
+  if (blockers.length) {
+    lines.push("", "BLOCKERS", ...Array.from(new Set(blockers)).map((reason) => `- ${reason}`));
+  }
+  lines.push("", options.dryRun ? "DRY RUN -- ZERO WRITES" : "APPLY -- staging approval written; no promotion performed");
+  return lines.join("\n");
+}
+
+export async function reviewCandidatesSequentially(
+  store: StagingStore,
+  candidates: StagedCatalogCandidate[],
+  decide: (candidate: StagedCatalogCandidate, index: number) => Promise<"approve" | "reject" | "skip">,
+  options: { dryRun?: boolean } = {}
+): Promise<Array<{ id: string; decision: string; result: { ok: boolean; message: string } }>> {
+  const results: Array<{ id: string; decision: string; result: { ok: boolean; message: string } }> = [];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const decision = await decide(candidate, index);
+    if (decision === "skip") {
+      results.push({ id: candidate.id, decision, result: { ok: true, message: `Skipped ${candidate.id}; left pending.` } });
+      continue;
+    }
+    const result = decision === "approve"
+      ? await approveCandidate(store, candidate.id, { dryRun: options.dryRun ?? true })
+      : await rejectCandidate(store, candidate.id, { dryRun: options.dryRun ?? true });
+    results.push({ id: candidate.id, decision, result: { ok: result.ok, message: result.message } });
+  }
+  return results;
 }
 
 export async function showCandidate(store: StagingStore, candidateId: string): Promise<{ found: boolean; message: string; candidate?: StagedCatalogCandidate }> {
@@ -540,6 +761,20 @@ export async function approveCandidate(
   if (!candidate) return { ok: false, message: `Candidate ${candidateId} not found in ${store.kind} staging backend.` };
   if (TERMINAL_STATUSES.includes(candidate.status)) {
     return { ok: false, candidate, message: `Candidate ${candidateId} is in a terminal status (${candidate.status}) and cannot be approved.` };
+  }
+  const readiness = assessCandidateReadiness({
+    brand: candidate.brand,
+    productName: candidate.productName,
+    modelNumber: candidate.modelNumber,
+    family: candidate.family,
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    sourceExternalId: candidate.sourceExternalId,
+    sourceId: candidate.sourceId,
+    raw: candidate.rawPayload,
+  }, candidate.classification);
+  if (!readiness.externallyValid) {
+    return { ok: false, candidate, message: `Candidate ${candidateId} is not externally valid and cannot be approved: ${readiness.reasons.join("; ")}.` };
   }
   if (!APPROVABLE_STATUSES.includes(candidate.status) && candidate.status !== "approved") {
     return { ok: false, candidate, message: `Candidate ${candidateId} is not approvable in its current status (${candidate.status}).` };
@@ -574,6 +809,7 @@ export type PromotionReportEntry = {
   ok: boolean;
   dryRun: boolean;
   canonicalProductId?: string;
+  preview?: Record<string, unknown>;
   message: string;
 };
 
@@ -625,6 +861,22 @@ export async function promoteApprovedCandidates(
       continue;
     }
 
+    const readiness = assessCandidateReadiness({
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      raw: candidate.rawPayload,
+    }, candidate.classification);
+    if (!readiness.promotionReady) {
+      entries.push({ candidateId: candidate.id, ok: false, dryRun, message: `${readiness.reasons.join("; ") || "Candidate is not promotion-ready"}. Skipped.` });
+      continue;
+    }
+
     const eligibility = await canonicalStore.checkEligibility(candidate);
     if (!eligibility.eligible) {
       entries.push({ candidateId: candidate.id, ok: false, dryRun, message: eligibility.reason });
@@ -636,6 +888,16 @@ export async function promoteApprovedCandidates(
         candidateId: candidate.id,
         ok: true,
         dryRun: true,
+        preview: {
+          brand: candidate.brand,
+          canonicalName: candidate.productName,
+          model: candidate.modelNumber,
+          slug: eligibility.resolution.slug,
+          aliases: candidate.aliases,
+          subcategory: candidate.subcategory,
+          family: candidate.family,
+          sourceProvenance: { sourceId: candidate.sourceId, sourceExternalId: candidate.sourceExternalId, sourceUrl: candidate.sourceUrl },
+        },
         message: `DRY RUN -- would promote ${candidate.id} (brand=${eligibility.resolution.brandSlug}, slug=${eligibility.resolution.slug}); zero canonical writes performed.`,
       });
       continue;

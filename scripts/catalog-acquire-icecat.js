@@ -31,7 +31,7 @@ function args() {
 async function main() {
   const options = args();
   const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports, processDiscoveredPages } = await import("../lib/catalogProviders.ts");
-  const { acquireFromRecords, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
+  const { acquireFromRecords, calculateAcquisitionQualityMetrics, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
   const provider = new OpenIcecatProvider({
     apiToken: process.env.ICECAT_API_TOKEN,
     username: process.env.ICECAT_USERNAME,
@@ -50,12 +50,16 @@ async function main() {
     store = resolveStagingStore({ backend: options.backend || undefined });
   }
   const metadata = provider.getSourceMetadata();
+  const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
+  const taxonomyStore = resolveTaxonomyMappingStore({ backend: options.backend || undefined });
 
   let records = [];
   let providerErrors = [];
   let fetched = 0;
   let pages = 0;
   let run;
+  const metricRecords = [];
+  const startedAt = Date.now();
 
   if (options.discover) {
     const discoveryOptions = {
@@ -81,6 +85,7 @@ async function main() {
       errors: 0,
     };
     const persistence = new Set();
+    let persistedRunId;
 
     await processDiscoveredPages(provider, discoveryOptions, async (page) => {
       fetched += page.records.length;
@@ -94,15 +99,19 @@ async function main() {
           providerErrors.push({ message: error instanceof Error ? error.message : String(error), sourceExternalId: record.sourceExternalId });
         }
       }
+      metricRecords.push(...pageRecords);
       const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, metadata, {
         apply: options.apply,
         adapter: "open-icecat",
         sourcePath: options.source,
+        taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
       }, store);
+      persistedRunId = pageRun.runId || persistedRunId;
       for (const key of Object.keys(summary)) summary[key] += pageRun.summary[key];
       for (const entry of pageRun.persistence) persistence.add(entry);
     });
-    run = { summary, persistence: [...persistence] };
+    summary.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, summary, { discovered: fetched, providerErrors: providerErrors.length });
+    run = { runId: persistedRunId, summary, persistence: [...persistence] };
   } else if (options.source) {
     const sourcePath = path.resolve(options.source);
     const xml = fs.readFileSync(sourcePath, "utf8");
@@ -130,13 +139,21 @@ async function main() {
       apply: options.apply,
       adapter: "open-icecat",
       sourcePath: options.source,
+      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
     }, store);
+  }
+  if (!run.summary.qualityMetrics) {
+    run.summary.qualityMetrics = calculateAcquisitionQualityMetrics(records, run.summary, { discovered: fetched, providerErrors: providerErrors.length });
   }
   console.log(`PROVIDER: open-icecat`);
   console.log(`MODE: ${options.discover ? options.mode : "lookup"}`);
+  console.log(`REQUESTED LIMIT: ${options.limit}`);
   console.log(`RECORDS FETCHED: ${fetched}`);
+  console.log(`RECORDS ENRICHED: ${options.discover ? metricRecords.length : records.length}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
+  console.log(`ELAPSED MS: ${Date.now() - startedAt}`);
+  console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
   console.log(options.apply ? "APPLY -- staging data written; no approval or promotion performed." : "DRY RUN -- ZERO Supabase staging/canonical writes");

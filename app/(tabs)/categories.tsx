@@ -20,6 +20,7 @@ import {
   getCategoryProductCount,
 } from "../../constants/categories";
 import { useProducts } from "../../hooks/ProductsContext";
+import { isDiscoveryCategoryVisible } from "../../lib/discoveryTaxonomy";
 
 export default function CategoriesScreen() {
   const router = useRouter();
@@ -36,33 +37,11 @@ export default function CategoriesScreen() {
     }
   };
 
-  // Build the complete category list: curated categories + any extra distinct categories found in db
+  // Discovery is intentionally curated. Internal canonical classifications and
+  // seller-provided labels must not become navigation tiles automatically.
   const allCategories = useMemo(() => {
-    const list: CategoryItem[] = [...CATEGORIES];
-    const knownKeys = new Set(
-      CATEGORIES.flatMap((c) => [c.id.toLowerCase(), c.name.toLowerCase(), ...c.keywords])
-    );
-
-    // Detect if products have other custom categories
-    for (const p of products) {
-      const raw = (p.category ?? "").trim();
-      if (!raw) continue;
-      const lower = raw.toLowerCase();
-      if (!knownKeys.has(lower)) {
-        knownKeys.add(lower);
-        list.push({
-          id: lower,
-          name: raw.charAt(0).toUpperCase() + raw.slice(1),
-          subtitle: "Community collection",
-          imageUrl:
-            "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=800&q=80",
-          keywords: [lower],
-        });
-      }
-    }
-
-    return list;
-  }, [products]);
+    return CATEGORIES.filter((category) => isDiscoveryCategoryVisible(category.id));
+  }, []);
 
   // Filter categories by query
   const filteredCategories = useMemo(() => {

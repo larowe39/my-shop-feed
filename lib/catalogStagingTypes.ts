@@ -43,6 +43,7 @@ export type CatalogCandidateInput = {
   subcategory?: string | null;
   aliases?: string[];
   sourceUrl?: string | null;
+  imageUrl?: string | null;
   sourceType?: string | null;
   // Strong identifiers, optional and provider-agnostic. A retailer SKU
   // (sourceSku) is source-specific provenance, never a universal product
@@ -51,7 +52,17 @@ export type CatalogCandidateInput = {
   gtin?: string | null;
   mpn?: string | null;
   sourceSku?: string | null;
+  externalTaxonomy?: ExternalTaxonomyIdentity | null;
   raw: Record<string, unknown>;
+};
+
+export type ExternalTaxonomyIdentity = {
+  provider: string;
+  externalId: string;
+  name?: string | null;
+  path?: string | null;
+  parentId?: string | null;
+  parentPath?: string | null;
 };
 
 export type CanonicalCatalogEntry = {
@@ -69,6 +80,7 @@ export type CanonicalCatalogEntry = {
 
 export type StagedCatalogCandidate = {
   id: string;
+  importRunId?: string | null;
   sourceId?: string | null;
   sourceExternalId?: string | null;
   fingerprint: string;
@@ -82,11 +94,13 @@ export type StagedCatalogCandidate = {
   subcategory?: string | null;
   aliases: string[];
   sourceUrl?: string | null;
+  imageUrl?: string | null;
   sourceType?: string | null;
   upc?: string | null;
   gtin?: string | null;
   mpn?: string | null;
   sourceSku?: string | null;
+  externalTaxonomy?: ExternalTaxonomyIdentity | null;
   rawPayload: Record<string, unknown>;
   normalizedBrand?: string;
   normalizedName?: string;
@@ -111,6 +125,20 @@ export type AcquisitionSummary = {
   conflict: number;
   staged: number;
   errors: number;
+  qualityMetrics?: AcquisitionQualityMetrics;
+};
+
+export type AcquisitionQualityMetrics = {
+  enrichmentSuccessRate?: number | null;
+  validRecordRate: number;
+  duplicateExistingRate: number;
+  newRate: number;
+  providerErrorRate?: number | null;
+  gtinRate: number;
+  imageRate: number;
+  modelRate: number;
+  trustworthyBrandRate: number;
+  manualReviewRate: number;
 };
 
 export type ImportRunRecord = {

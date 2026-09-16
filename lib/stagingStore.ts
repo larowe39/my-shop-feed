@@ -67,6 +67,7 @@ export interface StagingStore {
   readonly kind: StagingBackendKind;
   upsertSource(entry: SourceRegistryEntry): Promise<SourceRegistryEntry>;
   createImportRun(source: SourceRegistryEntry, input: CreateImportRunInput): Promise<ImportRunRecord>;
+  listImportRuns(): Promise<ImportRunRecord[]>;
   /** Idempotent by fingerprint: re-submitting the same candidate updates it in place instead of duplicating. */
   upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]>;
   listStagedCandidates(): Promise<StagedCatalogCandidate[]>;
@@ -199,6 +200,10 @@ export class LocalStagingStore implements StagingStore {
     return run;
   }
 
+  async listImportRuns(): Promise<ImportRunRecord[]> {
+    return this.read().importRuns;
+  }
+
   async upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]> {
     const ledger = this.read();
     const results: StagedCatalogCandidate[] = [];
@@ -233,7 +238,6 @@ export class LocalStagingStore implements StagingStore {
     this.write(ledger);
     return results;
   }
-
   async listStagedCandidates(): Promise<StagedCatalogCandidate[]> {
     return this.read().stagedProducts;
   }
@@ -285,6 +289,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 function rowToCandidate(row: Record<string, unknown>, aliases: string[] = []): StagedCatalogCandidate {
   return {
     id: String(row.id),
+    importRunId: (row.import_run_id as string) ?? null,
     sourceId: (row.source_id as string) ?? null,
     sourceExternalId: (row.source_external_id as string) ?? null,
     fingerprint: String(row.fingerprint ?? ""),
@@ -298,7 +303,12 @@ function rowToCandidate(row: Record<string, unknown>, aliases: string[] = []): S
     subcategory: (row.proposed_subcategory as string) ?? null,
     aliases,
     sourceUrl: (row.source_url as string) ?? null,
+    imageUrl: (row.image_url as string) ?? null,
     sourceType: (row.source_type as string) ?? null,
+    upc: (row.upc as string) ?? null,
+    gtin: (row.gtin as string) ?? null,
+    mpn: (row.mpn as string) ?? null,
+    externalTaxonomy: ((row.raw_payload as Record<string, unknown> | null)?.externalTaxonomy as StagedCatalogCandidate["externalTaxonomy"]) ?? null,
     rawPayload: (row.raw_payload as Record<string, unknown>) ?? {},
     normalizedBrand: (row.normalized_brand as string) ?? undefined,
     normalizedName: (row.normalized_name as string) ?? undefined,
@@ -412,12 +422,44 @@ export class SupabaseStagingStore implements StagingStore {
     };
   }
 
+  async listImportRuns(): Promise<ImportRunRecord[]> {
+    const { data, error } = await this.client
+      .from("catalog_import_runs")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new StagingBackendError(`Failed to list catalog_import_runs: ${error.message}`);
+    return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+      id: String(row.id),
+      sourceId: (row.source_id as string) ?? null,
+      adapter: String(row.adapter ?? ""),
+      sourcePath: (row.source_path as string) ?? null,
+      dryRun: Boolean(row.dry_run),
+      processed: Number(row.processed ?? 0),
+      valid: Number(row.valid ?? 0),
+      invalid: Number(row.invalid ?? 0),
+      exactExisting: Number(row.exact_existing ?? 0),
+      likelyExisting: Number(row.likely_existing ?? 0),
+      possibleExisting: Number(row.possible_existing ?? 0),
+      newRecords: Number(row.new_records ?? 0),
+      conflictRecords: Number(row.conflict_records ?? 0),
+      approved: Number(row.approved ?? 0),
+      rejected: Number(row.rejected ?? 0),
+      promoted: Number(row.promoted ?? 0),
+      staged: Number(row.staged ?? 0),
+      errors: Number(row.errors ?? 0),
+      status: String(row.status ?? "completed"),
+      summary: (row.summary as Record<string, unknown>) ?? {},
+      createdAt: String(row.created_at ?? new Date().toISOString()),
+    }));
+  }
+
   async upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]> {
     const results: StagedCatalogCandidate[] = [];
     for (const batch of chunk(candidates, SUPABASE_STAGING_WRITE_BATCH_SIZE)) {
       if (!batch.length) continue;
       const rows = batch.map((candidate) => ({
         source_id: candidate.sourceId ?? null,
+        import_run_id: candidate.importRunId ?? null,
         source_external_id: candidate.sourceExternalId ?? null,
         fingerprint: candidate.fingerprint,
         raw_payload: candidate.rawPayload,
@@ -428,7 +470,11 @@ export class SupabaseStagingStore implements StagingStore {
         proposed_subcategory: candidate.subcategory ?? null,
         proposed_family: candidate.family ?? null,
         source_url: candidate.sourceUrl ?? null,
+        image_url: candidate.imageUrl ?? null,
         source_type: candidate.sourceType ?? null,
+        upc: candidate.upc ?? null,
+        gtin: candidate.gtin ?? null,
+        mpn: candidate.mpn ?? null,
         status: candidate.status,
         confidence: candidate.confidence,
         duplicate_of_catalog_product_id: candidate.duplicateOfCatalogProductId ?? null,

@@ -242,9 +242,154 @@ The staging status model is:
 
 Review decisions must be explicit; there is no bulk approval path in this PR.
 
+### Staging batch review commands
+
+Staging detail output is redacted by default; raw provider payloads require an
+explicit `--raw` flag.
+
+```sh
+npm run catalog:staging:list -- --limit 25
+npm run catalog:staging:list -- --status needs_review --run-id RUN_ID --limit 10
+npm run catalog:staging:list -- --classification NEW --limit 10
+npm run catalog:staging:status -- --run-id RUN_ID
+npm run catalog:staging:show -- --id CANDIDATE_ID
+npm run catalog:staging:show -- --id CANDIDATE_ID --raw
+npm run catalog:staging:approve -- --id CANDIDATE_ID
+npm run catalog:staging:approve -- --id CANDIDATE_ID --raw
+npm run catalog:staging:reject -- --id CANDIDATE_ID
+npm run catalog:staging:reject -- --id CANDIDATE_ID --raw
+```
+
+The sequential review command presents identity, identifiers, taxonomy, image,
+confidence, classification, provenance, run ID, and timestamps. `a` approves,
+`r` rejects, and `s` leaves the candidate pending. It is dry-run unless
+`--apply` is explicit:
+
+```sh
+npm run catalog:staging:review -- --run-id RUN_ID --limit 10
+npm run catalog:staging:review -- --run-id RUN_ID --limit 10 --apply
+```
+
+Approval never promotes a product. Promotion remains separate. Approval is the
+human-review decision: an externally valid candidate may be approved even when
+canonical hierarchy is unresolved, so the review decision and promotion
+preparation remain separate. The approval preview labels `Human reviewed`,
+`Canonical hierarchy`, and `Promotion ready` independently. Promotion still
+requires resolved canonical hierarchy and remains blocked with
+`HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED` until that issue is resolved.
+
+All five operator-facing commands are concise and redacted by default:
+`show`, `review`, `approve`, and `reject` never print `rawPayload` unless
+`--raw` is explicitly supplied. Approval dry-runs also print
+`DRY RUN -- ZERO WRITES` and do not change the candidate status.
+
 ## Promotion
 
 Promotion remains a separate step from staging. All promotion runs are explicit and dry-run by default. Only approved candidates are eligible for canonical promotion.
+
+The promotion dry-run performs the approved-only eligibility and duplicate
+checks, then previews brand, canonical name, model, slug, aliases, subcategory,
+family, and source provenance. Missing canonical brand, subcategory, or family
+identity is reported as a human-review failure; taxonomy rows are never
+fabricated. Apply uses the existing atomic Postgres RPC, including its final
+duplicate and alias-conflict rechecks.
+
+## Import-run summary and quality metrics
+
+An apply acquisition prints the source, run ID, elapsed time, discovered and
+enriched counts, valid/invalid and classification counts, staged count,
+provider errors, and lightweight rates for enrichment success, valid records,
+existing/duplicate records, NEW records, GTIN, image, model/MPN, trustworthy
+brand, provider errors, and manual-review share. Raw payloads remain available
+for audit but are not shown by default.
+
+The quality model distinguishes four states: externally valid means required
+source identity and payload fields are present; duplicate-safe means the
+candidate classified as `NEW` under the existing matcher protections; review
+required includes duplicate ambiguity and any unmapped external Icecat
+hierarchy; promotion-ready requires external validity, duplicate safety, and a
+resolved canonical hierarchy. A valid external record is not automatically
+promotion-ready.
+
+Icecat `Catid` and detail category name/path remain external provenance. Numeric
+Catid values are never treated as PENCHANT taxonomy IDs. Configured unambiguous
+name mappings may populate canonical category/subcategory fields; otherwise
+the candidate is marked `HIERARCHY UNRESOLVED / MANUAL REVIEW REQUIRED` and
+promotion is blocked without creating taxonomy rows.
+
+## First production batch
+
+The first bounded Open Icecat production batch is intentionally staging-only:
+
+```sh
+npm run catalog:acquire:icecat -- --discover --mode initial --limit 10 --page-size 10 --apply
+```
+
+This authenticates the provider, loads the canonical catalog only for
+classification, and resolves the staging backend only because `--apply` is
+present. It calls `acquireFromRecords`, which writes only
+`catalog_sources`, `catalog_import_runs`, `catalog_staged_products`, and
+`catalog_staged_aliases`. The Icecat CLI does not import approval, rejection,
+or promotion functions and never calls the canonical promotion store. It does
+not approve candidates, promote products, write canonical products or aliases,
+or weaken duplicate checks. Approval and promotion must be separate explicit
+commands.
+
+Before running it, confirm Icecat and Supabase service-role credentials exist
+only in the local gitignored `.env.local`. Record the printed run ID and inspect
+it with `catalog:staging:status` and `catalog:staging:list` before reviewing.
+
+## Schema extension
+
+The deployed PR #21 migration is unchanged. The deployed
+`20260916_extend_catalog_staging_observability.sql` migration adds the
+import-run link, image URL, UPC, GTIN, and MPN fields, plus an import-run index.
+It reuses the existing four staging tables and creates no redundant tables.
+
+## External taxonomy mappings
+
+Provider adapters emit a generic external taxonomy identity containing provider,
+external ID, name, path, and optional parent identity. Open Icecat keeps
+`Catid` as the external ID; it is never treated as a PENCHANT UUID or taxonomy
+ID. Detail category names and paths are retained only when the provider actually
+supplies them.
+
+The new additive migration
+`20260917_add_catalog_taxonomy_mappings.sql` creates the operator-only
+`catalog_taxonomy_mappings` registry. It supports `unmapped`,
+`suggested`, `verified`, and `rejected` states. Only `verified` mappings with
+an existing canonical category/subcategory are trusted for automatic reuse.
+Mapping method and evidence are retained. Suggested or rejected mappings never
+resolve a candidate's canonical hierarchy.
+
+```sh
+npm run catalog:taxonomy:list -- --source open-icecat --status verified
+npm run catalog:taxonomy:list -- --unmapped --limit 25
+npm run catalog:taxonomy:show -- --source open-icecat --external-id 846
+npm run catalog:taxonomy:map -- --source open-icecat --external-id 846 \
+  --subcategory-id CANONICAL_SUBCATEGORY_ID --status verified
+npm run catalog:taxonomy:map -- --source open-icecat --external-id 846 \
+  --subcategory-id CANONICAL_SUBCATEGORY_ID --status verified --apply
+```
+
+Mapping commands are dry-run by default, validate the existing canonical
+subcategory/category relationship, and never create taxonomy rows. A verified
+mapping is reused dynamically during future acquisition and resolves staged
+category/subcategory fields without approving or promoting candidates. Existing
+staged rows are not backfilled or mutated by mapping creation; they are handled
+by a later acquisition or explicit operator workflow.
+
+Canonical classification is separate from discovery/navigation. The existing
+`catalog_subcategories.parent_subcategory_id` tree and reviewed
+`catalog-data/taxonomy.json` importer support deeper internal classes without
+changing the app's ten curated Categories tiles. Inspect the canonical tree
+with `catalog:taxonomy:canonical`; it labels top-level allowlisted departments
+as `discovery-visible` and deeper/internal nodes as `internal-only`.
+
+Open Icecat category `846` is intentionally unresolved in this repository. The
+available fixtures preserve external IDs and some category names, but do not
+provide trustworthy evidence identifying real production `846`; no mapping or
+canonical printer classification is fabricated.
 
 ## Idempotency and fingerprints
 
