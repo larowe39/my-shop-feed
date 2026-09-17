@@ -94,6 +94,15 @@ async function main() {
   assert.ok(failedRun, "interrupted discovery must leave a durable failed run");
   assert.strictEqual(failedRun.status, "failed");
 
+  const finalizationFailureStore = new FailingStore(store, { name: "updateImportRun", at: 1 });
+  await assert.rejects(
+    () => acquireDiscoveredProducts(provider, { limit: 1, pageSize: 1 }, [], source, { apply: true, adapter: "fixture" }, finalizationFailureStore),
+    /injected updateImportRun failure/
+  );
+  const failedFinalizationRun = (await store.listImportRuns()).find((item) => item.summary.failure && item.summary.failure.includes("updateImportRun"));
+  assert.ok(failedFinalizationRun, "finalization failure must be durable");
+  assert.strictEqual(failedFinalizationRun.status, "failed");
+
   const cliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(cliSource, /explicit bounded --limit between 1 and 100/);
   assert.match(cliSource, /ACKNOWLEDGED CONTINUATION/);

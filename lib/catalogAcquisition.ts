@@ -1190,20 +1190,33 @@ export async function acquireDiscoveredProducts<TRaw>(
         errors: entry.errors,
       })),
     };
-    await store.updateImportRun(existingRun.id, {
-      processed: aggregate.processed,
-      valid: aggregate.valid,
-      invalid: aggregate.invalid,
-      exactExisting: aggregate.exactExisting,
-      likelyExisting: aggregate.likelyExisting,
-      possibleExisting: aggregate.possibleExisting,
-      newRecords: aggregate.new,
-      conflictRecords: aggregate.conflict,
-      staged: aggregate.staged,
-      errors: aggregate.errors,
-      status: "completed",
-      summary: persistedSummary,
-    });
+    try {
+      await store.updateImportRun(existingRun.id, {
+        processed: aggregate.processed,
+        valid: aggregate.valid,
+        invalid: aggregate.invalid,
+        exactExisting: aggregate.exactExisting,
+        likelyExisting: aggregate.likelyExisting,
+        possibleExisting: aggregate.possibleExisting,
+        newRecords: aggregate.new,
+        conflictRecords: aggregate.conflict,
+        staged: aggregate.staged,
+        errors: aggregate.errors,
+        status: "completed",
+        summary: persistedSummary,
+      });
+    } catch (error) {
+      await store.updateImportRun(existingRun.id, {
+        processed: aggregate.processed,
+        valid: aggregate.valid,
+        invalid: aggregate.invalid,
+        staged: aggregate.staged,
+        errors: aggregate.errors + 1,
+        status: "failed",
+        summary: { ...persistedSummary, failure: error instanceof Error ? error.message : String(error) },
+      });
+      throw error;
+    }
   } else {
     aggregate.staged = staged.length;
   }
