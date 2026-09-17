@@ -27,11 +27,15 @@ function args() {
     productCodes: raw.flatMap((arg, index) => arg === "--product-code" && raw[index + 1] ? [raw[index + 1]] : []).concat(
       raw.filter((arg) => arg.startsWith("--product-code=")).map((arg) => arg.slice("--product-code=".length))
     ),
+    limitWasExplicit: raw.some((arg) => arg === "--limit" || arg.startsWith("--limit=")),
   };
 }
 
 async function main() {
   const options = args();
+  if (options.apply && (!options.limitWasExplicit || !Number.isInteger(options.limit) || options.limit < 1 || options.limit > 100)) {
+    throw new Error("Refusing apply: provide an explicit bounded --limit between 1 and 100.");
+  }
   const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
   const { loadOpenIcecatTaxonomyCache } = await import("../lib/catalogProviderTaxonomy.ts");
   const {
