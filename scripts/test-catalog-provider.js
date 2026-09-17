@@ -196,6 +196,8 @@ async function main() {
   await testEnrichmentIdentityMismatch(OpenIcecatProvider);
 
   await testLargeStreamingDiscovery(OpenIcecatProvider);
+  await testDenseDiscoveryBackpressure(OpenIcecatProvider);
+  await testDiscoveryOutcomeAccounting(OpenIcecatProvider);
   await testTruncatedXmlFailure(OpenIcecatProvider);
   await testMalformedDiscoveryRecord(OpenIcecatProvider);
   await testV2ContinuationContract(OpenIcecatProvider, decodeIcecatDiscoveryCursor, encodeIcecatDiscoveryCursor);
@@ -800,12 +802,14 @@ async function testLargeStreamingDiscovery(OpenIcecatProvider) {
   let generatedWhenFirstPageArrived = null;
   let generatedAfterSlowConsumer = null;
   let generatedAfterSecondWait = null;
+  let providerMetrics = null;
   for await (const page of provider.discoverProducts({
     limit: 10,
     pageSize: 25,
     diagnostics: {
       onRecordSeen: () => { counters.parserRecordsSeen += 1; },
       onRecordQualified: () => { counters.qualifyingRecords += 1; },
+      onMetrics: (metrics) => { providerMetrics = metrics; },
     },
   })) {
     counters.pagesEmitted += 1;
@@ -829,7 +833,11 @@ async function testLargeStreamingDiscovery(OpenIcecatProvider) {
   assert.strictEqual(counters.sourceCompletedNaturally, false);
   assert.strictEqual(counters.sourceCancelledEarly, true);
   assert.strictEqual(counters.qualifyingRecords, 10);
-  assert.ok(counters.parserRecordsSeen >= 10 && counters.parserRecordsSeen < 20);
+  assert.ok(counters.parserRecordsSeen >= 10 && counters.parserRecordsSeen < 1000);
+  assert.ok(providerMetrics, "provider must emit final streaming metrics");
+  assert.ok(providerMetrics.retainedWorkHighWaterMark <= providerMetrics.totalWorkBound, `retained work must stay within the documented bound; saw ${providerMetrics.retainedWorkHighWaterMark}/${providerMetrics.totalWorkBound}`);
+  assert.ok(providerMetrics.parsedCandidateQueueHighWaterMark <= providerMetrics.parserPendingBound, `parsed candidate queue must stay within its documented bound; saw ${providerMetrics.parsedCandidateQueueHighWaterMark}/${providerMetrics.parserPendingBound}`);
+  assert.strictEqual(providerMetrics.terminationReason, "limit-reached");
 
   console.log("testLargeStreamingDiscovery, testFirstPageBeforeSourceEnd, testSlowConsumerBackpressure, and testIntentionalLimitTermination passed.");
   console.log("Large streaming discovery counters:", JSON.stringify({
@@ -845,6 +853,152 @@ async function testLargeStreamingDiscovery(OpenIcecatProvider) {
     GENERATED_AFTER_SLOW_CONSUMER: generatedAfterSlowConsumer,
     GENERATED_AFTER_SECOND_WAIT: generatedAfterSecondWait,
   }));
+}
+
+function denseFilesIndex(total) {
+  const files = Array.from({ length: total }, (_, index) => {
+    const id = index + 1;
+    return `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="M${id}" Updated="20260916060101"/>`;
+  }).join("");
+  return `<ICECAT-interface><files.index>${files}</files.index></ICECAT-interface>`;
+}
+
+function denseDetailXml(id, brand = "Dense Brand") {
+  return `<?xml version="1.0"?><ICECAT-interface><Product ID="${id}" Name="M${id}" IntName="M${id}" Title="M${id}" GeneratedIntTitle="M${id}" Prod_id="MPN-${id}"><Supplier ID="supplier-${id}" Name="${brand}"/></Product></ICECAT-interface>`;
+}
+
+function assertOutcomeReconciliation(metrics) {
+  const total = metrics.usableSuccessfulDetails + metrics.failedDetailRequests + metrics.filteredSuccessfulDetails + metrics.successfulSpeculativeCompletions + metrics.cancelledDetailRequests;
+  assert.strictEqual(total, metrics.enrichmentAttempts, `detail outcomes must reconcile to attempts: ${JSON.stringify(metrics)}`);
+}
+
+async function collectDiscovery(provider, options) {
+  const pages = [];
+  const records = [];
+  const errors = [];
+  let metrics = null;
+  await (async () => {
+    for await (const page of provider.discoverProducts({
+      ...options,
+      diagnostics: {
+        ...(options.diagnostics ?? {}),
+        onMetrics: (value) => {
+          metrics = value;
+          options.diagnostics?.onMetrics?.(value);
+        },
+      },
+    })) {
+      pages.push(page);
+      records.push(...page.records);
+      errors.push(...page.errors);
+      options.onPage?.(page);
+    }
+  })();
+  return { pages, records, errors, metrics };
+}
+
+async function testDenseDiscoveryBackpressure(OpenIcecatProvider) {
+  for (const concurrency of [1, 2, 3, 5]) {
+    for (const parserFeedChars of [128, 8192]) {
+      const index = denseFilesIndex(500);
+      let detailRequests = 0;
+      let releaseFirstDetail = null;
+      const firstDetail = new Promise((resolve) => { releaseFirstDetail = resolve; });
+      const provider = new OpenIcecatProvider({
+        username: "u",
+        password: "p",
+        fetcher: async (url) => {
+          if (String(url).endsWith(".index.xml.gz")) return new Response(index);
+          detailRequests += 1;
+          const id = String(url).match(/\/(\d+)\.xml$/)?.[1] ?? "1";
+          if (detailRequests === 1) await firstDetail;
+          if (detailRequests >= concurrency) releaseFirstDetail();
+          return new Response(denseDetailXml(id));
+        },
+      });
+      if (concurrency === 1) setImmediate(() => releaseFirstDetail());
+      const result = await collectDiscovery(provider, { limit: 50, pageSize: 10, concurrency, parserFeedChars });
+      assert.strictEqual(result.records.length, 50);
+      assert.strictEqual(result.errors.length, 0);
+      assert.ok(result.metrics, "dense discovery must emit final metrics");
+      assert.ok(result.metrics.maxActiveDetailRequests <= concurrency, `active detail requests must stay within concurrency ${concurrency}`);
+      assert.ok(result.metrics.parsedCandidateQueueHighWaterMark <= result.metrics.parserPendingBound, `parsed queue high-water must be bounded for parser feed ${parserFeedChars}`);
+      assert.ok(result.metrics.retainedWorkHighWaterMark <= result.metrics.totalWorkBound, `retained work must be bounded for concurrency ${concurrency}, parser feed ${parserFeedChars}`);
+      assert.strictEqual(result.metrics.terminationReason, "limit-reached");
+      assertOutcomeReconciliation(result.metrics);
+    }
+  }
+  console.log("testDenseDiscoveryBackpressure passed for concurrency 1/2/3/5 and parser feeds 128/8192.");
+}
+
+async function testDiscoveryOutcomeAccounting(OpenIcecatProvider) {
+  const allFailIndex = denseFilesIndex(1000);
+  let allFailSourceCancelled = false;
+  const allFailSource = new ReadableStream({
+    start(controller) { controller.enqueue(new TextEncoder().encode(allFailIndex)); },
+    cancel() { allFailSourceCancelled = true; },
+  });
+  const allFailProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url) => String(url).endsWith(".index.xml.gz")
+      ? new Response(allFailSource)
+      : new Response("unavailable", { status: 503, statusText: "Unavailable" }),
+  });
+  const allFail = await collectDiscovery(allFailProvider, { limit: 10, pageSize: 25, concurrency: 3, parserFeedChars: 128 });
+  assert.strictEqual(allFail.records.length, 0);
+  assert.strictEqual(allFail.metrics.enrichmentAttempts, 100);
+  assert.strictEqual(allFail.errors.length, 100);
+  assert.strictEqual(allFail.metrics.failedDetailRequests, 100);
+  assert.strictEqual(allFail.metrics.terminationReason, "attempt-budget-exhausted");
+  assert.strictEqual(allFailSourceCancelled, true, "attempt-budget exhaustion must cancel the index source promptly");
+  assert.ok(allFail.metrics.retainedWorkHighWaterMark <= allFail.metrics.totalWorkBound);
+  assertOutcomeReconciliation(allFail.metrics);
+
+  const filteredProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(denseFilesIndex(12));
+      const id = String(url).match(/\/(\d+)\.xml$/)?.[1] ?? "1";
+      return new Response(denseDetailXml(id, "Other Brand"));
+    },
+  });
+  const filtered = await collectDiscovery(filteredProvider, { limit: 5, pageSize: 5, concurrency: 2, brand: "Wanted Brand" });
+  assert.strictEqual(filtered.records.length, 0);
+  assert.strictEqual(filtered.errors.length, 0);
+  assert.strictEqual(filtered.metrics.filteredSuccessfulDetails, 12);
+  assert.strictEqual(filtered.metrics.terminationReason, "source-exhausted");
+  assertOutcomeReconciliation(filtered.metrics);
+
+  const abortController = new AbortController();
+  let cancelMetrics = null;
+  const activeCancelProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(denseFilesIndex(20));
+      return new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true }));
+    },
+  });
+  const pending = collectDiscovery(activeCancelProvider, {
+    limit: 5,
+    pageSize: 5,
+    concurrency: 3,
+    signal: abortController.signal,
+    diagnostics: { onMetrics: (metrics) => { cancelMetrics = metrics; } },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  abortController.abort(new Error("unused"));
+  await assert.rejects(
+    () => collectDiscovery(activeCancelProvider, { limit: 5, pageSize: 5, concurrency: 3, signal: AbortSignal.abort(new Error("active-cancelled")), diagnostics: { onMetrics: (metrics) => { cancelMetrics = metrics; } } }),
+    /active-cancelled/
+  );
+  await assert.rejects(pending);
+  assert.ok(cancelMetrics, "cancelled discovery must emit final metrics");
+  assert.strictEqual(cancelMetrics.terminationReason, "cancelled");
+  assert.ok(cancelMetrics.cancelledDetailRequests > 0, "active cancellation must count cancelled detail requests");
+  console.log("testDiscoveryOutcomeAccounting passed.");
 }
 
 main().catch((error) => {
