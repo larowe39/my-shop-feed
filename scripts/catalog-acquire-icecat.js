@@ -58,7 +58,9 @@ async function main() {
   }
 
   const { resolveCanonicalCatalogEntries } = await import("../lib/catalogCanonicalLookup.ts");
+  const canonicalLoadStartedAt = Date.now();
   const canonicalCatalog = await resolveCanonicalCatalogEntries({ backend: options.backend || undefined });
+  const canonicalCatalogLoadMs = Date.now() - canonicalLoadStartedAt;
   let store;
   if (options.apply) {
     const { resolveStagingStore } = await import("../lib/stagingStore.ts");
@@ -67,6 +69,17 @@ async function main() {
   const metadata = provider.getSourceMetadata();
   const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
   const taxonomyStore = resolveTaxonomyMappingStore({ backend: options.backend || undefined });
+  let taxonomyResolutionCount = 0;
+  let taxonomyResolutionMs = 0;
+  const resolveTrustedMapping = async (identity) => {
+    const startedAt = Date.now();
+    try {
+      return await taxonomyStore.resolveTrustedMapping(identity);
+    } finally {
+      taxonomyResolutionCount += 1;
+      taxonomyResolutionMs += Date.now() - startedAt;
+    }
+  };
 
   let records = [];
   let providerErrors = [];
@@ -93,7 +106,7 @@ async function main() {
       apply: options.apply,
       adapter: "open-icecat",
       sourcePath: options.source,
-      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
+      taxonomyResolver: resolveTrustedMapping,
     }, store);
     fetched = discoveryRun.fetched;
     pages = discoveryRun.pages;
@@ -127,7 +140,7 @@ async function main() {
       apply: options.apply,
       adapter: "open-icecat",
       sourcePath: options.source,
-      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
+      taxonomyResolver: resolveTrustedMapping,
     }, store);
   }
   if (!run.summary.qualityMetrics) {
@@ -140,6 +153,12 @@ async function main() {
   console.log(`RECORDS ENRICHED: ${options.discover ? enriched : records.length}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
+  if (run.providerMetrics) console.log(`ENRICHMENT ATTEMPTS NOT IN USABLE OUTPUT: ${Math.max(run.providerMetrics.enrichmentAttempts - enriched, 0)}`);
+  console.log(`CANONICAL CATALOG LOAD MS: ${canonicalCatalogLoadMs}`);
+  console.log(`CANONICAL CATALOG PRODUCTS: ${canonicalCatalog.length}`);
+  console.log(`TAXONOMY RESOLUTION COUNT: ${taxonomyResolutionCount}`);
+  console.log(`TAXONOMY RESOLUTION TOTAL MS: ${taxonomyResolutionMs}`);
+  console.log(`TAXONOMY RESOLUTION AVERAGE MS: ${taxonomyResolutionCount ? (taxonomyResolutionMs / taxonomyResolutionCount).toFixed(2) : "0.00"}`);
   console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
   console.log(`TERMINATION REASON: ${run.terminationReason || "source-exhausted"}`);
