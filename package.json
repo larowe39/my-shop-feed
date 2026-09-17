@@ -39,6 +39,7 @@
     "catalog:concurrency-test": "node ./scripts/test-catalog-concurrency.js",
     "catalog:taxonomy-test": "node ./scripts/test-catalog-taxonomy.js",
     "catalog:scale-test": "node ./scripts/test-catalog-scale.js",
+    "catalog:scale-readiness": "node ./scripts/benchmark-catalog-scale-readiness.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",

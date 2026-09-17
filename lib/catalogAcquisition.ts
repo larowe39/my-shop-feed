@@ -1615,7 +1615,7 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     `Fetched: ${metrics.fetched}`,
     `Enriched (usable): ${metrics.enriched}`,
     `Attempted enrichments: ${attemptedEnrichments === null ? "unavailable" : attemptedEnrichments}`,
-    `Enrichment failures (attempted but not usable): ${enrichmentFailures === null ? "unavailable" : enrichmentFailures}`,
+    `Speculative enrichment attempts (not provider failures): ${enrichmentFailures === null ? "unavailable" : enrichmentFailures}`,
     `Pages: ${metrics.providerPages === null ? "unavailable" : metrics.providerPages}`,
     `Provider errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
     `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,
