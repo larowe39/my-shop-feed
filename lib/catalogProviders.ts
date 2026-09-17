@@ -54,10 +54,17 @@ export type IcecatDiscoveryMetrics = {
   parserPendingBound: number;
   totalWorkBound: number;
   enrichmentAttempts: number;
+  usableSuccessfulDetails: number;
+  failedDetailRequests: number;
+  filteredSuccessfulDetails: number;
+  successfulSpeculativeCompletions: number;
+  cancelledDetailRequests: number;
   activeDetailRequests: number;
   maxActiveDetailRequests: number;
+  parsedCandidateQueueHighWaterMark: number;
   admittedWindowHighWaterMark: number;
   reorderBufferHighWaterMark: number;
+  retainedWorkHighWaterMark: number;
   detailLatencyCount: number;
   detailLatencyTotalMs: number;
   averageDetailLatencyMs: number;
@@ -792,6 +799,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     let cleanup: (() => Promise<void>) | undefined;
     let reportMetrics: ((terminationReason: DiscoveryTerminationReason | null) => void) | undefined;
     let indexHeadersAt = startedAt;
+    let terminationReason: DiscoveryTerminationReason | null = null;
 
     try {
       let response: Response;
@@ -861,9 +869,16 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let nextCommitPosition: number | null = null;
       let maxActiveDetailRequests = 0;
       let admittedWindowHighWaterMark = 0;
+      let parsedCandidateQueueHighWaterMark = 0;
       let reorderBufferHighWaterMark = 0;
+      let retainedWorkHighWaterMark = 0;
       let detailLatencyCount = 0;
       let detailLatencyTotalMs = 0;
+      let usableSuccessfulDetails = 0;
+      let failedDetailRequests = 0;
+      let filteredSuccessfulDetails = 0;
+      let successfulSpeculativeCompletions = 0;
+      let cancelledDetailRequests = 0;
       let firstIndexByteAt: number | null = null;
       let parserFinishedAt: number | null = null;
       let firstQualifyingAt: number | null = null;
@@ -892,16 +907,33 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let limitReached = false;
       let resumeSatisfied = !resumeEnabled;
       const maxEnrichmentAttempts = limit > 0 ? Math.min(100000, Math.max(pageSize, limit * 10)) : 100000;
+
+      const retainedWorkCount = () => candidateRecords.length + activeEnrichments.size + completedEnrichments.size;
+
+      const updateWorkHighWaterMarks = () => {
+        parsedCandidateQueueHighWaterMark = Math.max(parsedCandidateQueueHighWaterMark, candidateRecords.length);
+        admittedWindowHighWaterMark = Math.max(admittedWindowHighWaterMark, retainedWorkCount());
+        reorderBufferHighWaterMark = Math.max(reorderBufferHighWaterMark, completedEnrichments.size);
+        retainedWorkHighWaterMark = Math.max(retainedWorkHighWaterMark, retainedWorkCount());
+      };
+
       reportMetrics = (terminationReason: DiscoveryTerminationReason | null) => options.diagnostics?.onMetrics?.({
         concurrency,
         admissionWindow,
         parserPendingBound,
         totalWorkBound,
         enrichmentAttempts,
+        usableSuccessfulDetails,
+        failedDetailRequests,
+        filteredSuccessfulDetails,
+        successfulSpeculativeCompletions,
+        cancelledDetailRequests,
         activeDetailRequests: activeEnrichments.size,
         maxActiveDetailRequests,
+        parsedCandidateQueueHighWaterMark,
         admittedWindowHighWaterMark,
         reorderBufferHighWaterMark,
+        retainedWorkHighWaterMark,
         detailLatencyCount,
         detailLatencyTotalMs,
         averageDetailLatencyMs: detailLatencyCount ? detailLatencyTotalMs / detailLatencyCount : 0,
@@ -994,12 +1026,20 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
 
       cleanup = async () => {
         if (!bodyStream.destroyed) bodyStream.destroy();
+        for (const outcome of completedEnrichments.values()) {
+          if (outcome.error) failedDetailRequests += 1;
+          else if (!outcome.record || !matchesDiscoveryFilter(outcome.record, options)) filteredSuccessfulDetails += 1;
+          else successfulSpeculativeCompletions += 1;
+        }
+        completedEnrichments.clear();
         if (activeEnrichments.size) {
           speculativeCancellationCount += activeEnrichments.size;
+          cancelledDetailRequests += activeEnrichments.size;
           controller.abort(new DOMException("Icecat discovery admission closed", "AbortError"));
         }
         await Promise.allSettled(activeEnrichments.values());
         activeEnrichments.clear();
+        completedEnrichments.clear();
         try {
           await decompressedStream.return(undefined);
         } catch {}
@@ -1130,6 +1170,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           return;
         }
         candidateRecords.push(record);
+        updateWorkHighWaterMarks();
         currentFile = null;
       });
 
@@ -1141,17 +1182,23 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       const commitEnrichment = (outcome: EnrichmentOutcome) => {
         if (limitReached) return;
         if (outcome.error) {
+          failedDetailRequests += 1;
           const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
           const isDataError = /identity mismatch|MPN mismatch|conflicting Supplier names|missing ID\/Product_ID/.test(message);
           pageErrors.push({ sourceExternalId: outcome.indexRecord.sourceExternalId, message: `Icecat product enrichment failed: ${message}`, retriable: !isDataError });
           if (page.length + pageErrors.length >= pageSize) flushPage();
           return;
         }
-        if (!outcome.record || !matchesDiscoveryFilter(outcome.record, options)) return;
+        if (!outcome.record || !matchesDiscoveryFilter(outcome.record, options)) {
+          filteredSuccessfulDetails += 1;
+          return;
+        }
         if (limit > 0 && emittedCount + page.length >= limit) {
+          successfulSpeculativeCompletions += 1;
           flushPage();
           return;
         }
+        usableSuccessfulDetails += 1;
         options.diagnostics?.onRecordQualified?.();
         const qualifiedAt = Date.now();
         firstQualifyingAt ??= qualifiedAt;
@@ -1195,9 +1242,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           });
           activeEnrichments.set(indexRecord.encounterPosition!, task);
           maxActiveDetailRequests = Math.max(maxActiveDetailRequests, activeEnrichments.size);
-          const admitted = activeEnrichments.size + completedEnrichments.size + candidateRecords.length;
-          admittedWindowHighWaterMark = Math.max(admittedWindowHighWaterMark, admitted);
-          reorderBufferHighWaterMark = Math.max(reorderBufferHighWaterMark, completedEnrichments.size);
+          updateWorkHighWaterMarks();
         }
       };
 
@@ -1206,6 +1251,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         const next = completedEnrichments.get(nextCommitPosition);
         if (!next) return false;
         completedEnrichments.delete(nextCommitPosition);
+        updateWorkHighWaterMarks();
         commitEnrichment(next);
         const pendingPositions = [...candidateRecords.map((record) => record.encounterPosition!), ...completedEnrichments.keys(), ...activeEnrichments.keys()]
           .filter((position) => position > nextCommitPosition!);
@@ -1221,12 +1267,41 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         }
       };
 
-      const feedParser = async function* (textChunk: string): AsyncGenerator<ProviderDiscoveryPage<IcecatIndexRecord>> {
-        const maxParserFeedChars = parserFeedChars;
-        for (let offset = 0; offset < textChunk.length && !limitReached; offset += maxParserFeedChars) {
-          parser.write(textChunk.slice(offset, offset + maxParserFeedChars));
+      const drainUntilBelowParserBound = async () => {
+        while (!limitReached && retainedWorkCount() >= totalWorkBound) {
           admitCandidates();
-          if (activeEnrichments.size + completedEnrichments.size + candidateRecords.length >= admissionWindow) await drainOneOrderedEnrichment();
+          if (commitReadyEnrichment()) continue;
+          if (activeEnrichments.size) await drainOneOrderedEnrichment();
+          else break;
+        }
+      };
+
+      const stopForAttemptBudget = async function* () {
+        terminationReason = "attempt-budget-exhausted";
+        while (!limitReached && (activeEnrichments.size || completedEnrichments.size)) {
+          if (commitReadyEnrichment()) continue;
+          if (activeEnrichments.size) await drainOneOrderedEnrichment();
+          else break;
+          while (readyPages.length) yield readyPages.shift()!;
+        }
+        candidateRecords = [];
+        await cleanup?.();
+      };
+
+      const feedParser = async function* (textChunk: string): AsyncGenerator<ProviderDiscoveryPage<IcecatIndexRecord>> {
+        for (let offset = 0; offset < textChunk.length && !limitReached; offset += 1) {
+          if (enrichmentAttempts >= maxEnrichmentAttempts && !activeEnrichments.size && !completedEnrichments.size) {
+            yield* stopForAttemptBudget();
+            return;
+          }
+          await drainUntilBelowParserBound();
+          if (retainedWorkCount() >= totalWorkBound) {
+            yield* stopForAttemptBudget();
+            return;
+          }
+          parser.write(textChunk[offset]);
+          admitCandidates();
+          await drainUntilBelowParserBound();
           while (readyPages.length) {
             yield readyPages.shift()!;
           }
@@ -1256,22 +1331,29 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         for await (const readyPage of feedParser(decoder.write(chunk))) {
           yield readyPage;
           if (readyPage.done) {
+            terminationReason = "limit-reached";
             await cleanup();
             return;
           }
         }
+        if (terminationReason === "attempt-budget-exhausted") return;
       }
 
-      if (!limitReached) {
+      if (!limitReached && terminationReason !== "attempt-budget-exhausted") {
         for await (const readyPage of feedParser(decoder.end())) yield readyPage;
         parser.close();
         parserFinishedAt = Date.now();
         while (!limitReached && (activeEnrichments.size || completedEnrichments.size || candidateRecords.length)) {
+          if (enrichmentAttempts >= maxEnrichmentAttempts && candidateRecords.length) {
+            yield* stopForAttemptBudget();
+            break;
+          }
           admitCandidates();
           while (readyPages.length) {
             const readyPage = readyPages.shift()!;
             yield readyPage;
             if (readyPage.done) {
+              terminationReason = "limit-reached";
               await cleanup();
               return;
             }
@@ -1291,14 +1373,16 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         yield pageToYield;
         if (pageToYield.done) {
           limitReached = true;
+          terminationReason = "limit-reached";
           await cleanup();
           return;
         }
       }
       if (resumeEnabled && !resumeSatisfied) throw new Error("Open Icecat continuation encounter position was not found; restart discovery.");
+      terminationReason ??= "source-exhausted";
     } finally {
-      reportMetrics?.(options.signal?.aborted ? "cancelled" : null);
       await cleanup?.();
+      reportMetrics?.(options.signal?.aborted ? "cancelled" : terminationReason);
       clearTimeout(requestTimeout);
       options.signal?.removeEventListener("abort", callerAbort);
     }

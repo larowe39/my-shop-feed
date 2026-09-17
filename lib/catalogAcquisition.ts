@@ -125,6 +125,8 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   downstreamAcquisitionMs?: number;
 };
 
+type ClassifiableMetricRecord = Partial<CatalogCandidateInput> & { classification?: CandidateClassification };
+
 type ExistingImportRun = {
   id: string;
   source: SourceRegistryEntry;
@@ -204,13 +206,12 @@ function rate(numerator: number, denominator: number): number {
 }
 
 export function calculateAcquisitionQualityMetrics(
-  records: Partial<CatalogCandidateInput>[],
+  records: ClassifiableMetricRecord[],
   summary: Pick<AcquisitionSummary, "processed" | "valid" | "exactExisting" | "likelyExisting" | "possibleExisting" | "conflict" | "new">,
   options: { discovered?: number; providerErrors?: number } = {}
 ): AcquisitionQualityMetrics {
   const validRecords = records.filter((record) => validateCatalogCandidate(record).valid);
-  const hierarchyReviewCount = validRecords.filter((record) => !assessCandidateReadiness(record, "NEW").promotionReady).length;
-  const reviewCount = summary.likelyExisting + summary.possibleExisting + summary.conflict + hierarchyReviewCount;
+  const reviewCount = validRecords.filter((record) => assessCandidateReadiness(record, record.classification ?? "NEW").reviewRequired).length;
   return {
     enrichmentSuccessRate: options.discovered === undefined ? null : rate(records.length, options.discovered),
     validRecordRate: rate(summary.valid, summary.processed),
@@ -721,7 +722,7 @@ export async function acquireFromRecords(
   };
   const candidates: StagedCatalogCandidate[] = [];
   const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
-  const resolvedRecordsForMetrics: Partial<CatalogCandidateInput>[] = [];
+  const resolvedRecordsForMetrics: ClassifiableMetricRecord[] = [];
 
   const sourceType = sourceInfo.type ?? "manual import";
   for (let index = 0; index < records.length; index += 1) {
@@ -768,9 +769,9 @@ export async function acquireFromRecords(
     }
 
     summary.valid += 1;
-    resolvedRecordsForMetrics.push(resolvedRecord);
     const matcherStart = performance.now();
     const classification = classifyCandidateWithIndex(resolvedRecord as CatalogCandidateInput, canonicalCatalog, matcherIndex, matcherMetrics);
+    resolvedRecordsForMetrics.push({ ...resolvedRecord, classification });
     const matcherElapsedMs = performance.now() - matcherStart;
     phaseCounters.matcherClassificationMs += matcherElapsedMs;
     phaseCounters.matcherClassificationCalls += 1;
@@ -971,7 +972,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     staged: 0,
     errors: 0,
   };
-  const metricRecords: Partial<CatalogCandidateInput>[] = [];
+  const metricRecords: ClassifiableMetricRecord[] = [];
   const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
   const staged: StagedCatalogCandidate[] = [];
   const providerErrors: ProviderFetchError[] = [];
@@ -1077,7 +1078,6 @@ export async function acquireDiscoveredProducts<TRaw>(
         });
       }
     }
-    metricRecords.push(...pageRecords);
     const downstreamStartedAt = performance.now();
     const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
       ...options,
@@ -1097,6 +1097,28 @@ export async function acquireDiscoveredProducts<TRaw>(
       aggregate[key] += pageRun.summary[key];
     }
     staged.push(...pageRun.staged);
+    metricRecords.push(...pageRun.staged.map((candidate) => ({
+      sourceExternalId: candidate.sourceExternalId,
+      sourceId: candidate.sourceId,
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber,
+      family: candidate.family,
+      category: candidate.category,
+      subcategory: candidate.subcategory,
+      aliases: candidate.aliases,
+      sourceUrl: candidate.sourceUrl,
+      imageUrl: candidate.imageUrl,
+      sourceType: candidate.sourceType,
+      upc: candidate.upc,
+      gtin: candidate.gtin,
+      mpn: candidate.mpn,
+      sourceSku: candidate.sourceSku,
+      externalTaxonomy: candidate.externalTaxonomy,
+      raw: candidate.rawPayload,
+      classification: candidate.classification,
+    })));
+    metricRecords.push(...pageRun.invalidRecords.map((entry) => ({ ...entry.candidate, classification: entry.classification })));
     invalidRecords.push(...pageRun.invalidRecords);
     for (const entry of pageRun.persistence) persistence.add(entry);
     page.acknowledge?.();
@@ -1123,6 +1145,11 @@ export async function acquireDiscoveredProducts<TRaw>(
       providerPages: pages,
       indexCandidatesExamined,
       enrichmentAttempts,
+      usableSuccessfulDetails: providerMetrics?.usableSuccessfulDetails ?? null,
+      failedDetailRequests: providerMetrics?.failedDetailRequests ?? null,
+      filteredSuccessfulDetails: providerMetrics?.filteredSuccessfulDetails ?? null,
+      successfulSpeculativeCompletions: providerMetrics?.successfulSpeculativeCompletions ?? null,
+      cancelledDetailRequests: providerMetrics?.cancelledDetailRequests ?? null,
     };
     await store.updateImportRun(existingRun.id, {
       processed: aggregate.processed,
@@ -1188,6 +1215,11 @@ export type CatalogRunReportMetrics = {
   providerPages: number | null;
   indexCandidatesExamined: number | null;
   enrichmentAttempts: number | null;
+  usableSuccessfulDetails: number | null;
+  failedDetailRequests: number | null;
+  filteredSuccessfulDetails: number | null;
+  successfulSpeculativeCompletions: number | null;
+  cancelledDetailRequests: number | null;
   imageCoverage: number;
   gtinCoverage: number;
   modelCoverage: number;
@@ -1401,6 +1433,11 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     providerPages: persistedNumber("providerPages"),
     indexCandidatesExamined: persistedNumber("indexCandidatesExamined"),
     enrichmentAttempts: persistedNumber("enrichmentAttempts"),
+    usableSuccessfulDetails: persistedNumber("usableSuccessfulDetails"),
+    failedDetailRequests: persistedNumber("failedDetailRequests"),
+    filteredSuccessfulDetails: persistedNumber("filteredSuccessfulDetails"),
+    successfulSpeculativeCompletions: persistedNumber("successfulSpeculativeCompletions"),
+    cancelledDetailRequests: persistedNumber("cancelledDetailRequests"),
     matcherIndexBuildMs: persistedNumber("matcherIndexBuildMs"),
     matcherIndexBuildCount: persistedNumber("matcherIndexBuildCount"),
     matcherProductsIndexed: persistedNumber("matcherProductsIndexed"),
@@ -1491,6 +1528,11 @@ export function buildCatalogRunReportFromResult(
     providerPages: typeof discovery.pages === "number" ? discovery.pages : null,
     indexCandidatesExamined: typeof discovery.indexCandidatesExamined === "number" ? discovery.indexCandidatesExamined : null,
     enrichmentAttempts: typeof discovery.enrichmentAttempts === "number" ? discovery.enrichmentAttempts : null,
+    usableSuccessfulDetails: discovery.providerMetrics?.usableSuccessfulDetails ?? null,
+    failedDetailRequests: discovery.providerMetrics?.failedDetailRequests ?? null,
+    filteredSuccessfulDetails: discovery.providerMetrics?.filteredSuccessfulDetails ?? null,
+    successfulSpeculativeCompletions: discovery.providerMetrics?.successfulSpeculativeCompletions ?? null,
+    cancelledDetailRequests: discovery.providerMetrics?.cancelledDetailRequests ?? null,
     matcherIndexBuildMs: run.matcherMetrics?.indexBuildMs ?? null,
     matcherIndexBuildCount: run.matcherMetrics?.indexBuildCount ?? null,
     matcherProductsIndexed: run.matcherMetrics?.productsIndexed ?? null,
@@ -1565,7 +1607,7 @@ export function rankTaxonomyGaps(
       return mappingProvider === provider.trim().toLowerCase() && mappingExternalId === externalId;
     });
     const status = String(mapping?.status ?? "").toLowerCase();
-    if (mapping && (status === "verified" || Boolean(mapping.canonicalCategoryId) || Boolean(mapping.canonicalSubcategoryId))) continue;
+    if (mappingIsTrusted(mapping as TaxonomyMappingRecord | null | undefined)) continue;
     const existing = rows.get(key) ?? {
       provider,
       externalId,
@@ -1603,7 +1645,8 @@ export function rankTaxonomyGaps(
 export function formatCatalogRunReport(report: CatalogRunReport): string {
   const metrics = report.metrics;
   const attemptedEnrichments = metrics.enrichmentAttempts;
-  const enrichmentFailures = attemptedEnrichments === null ? null : Math.max(attemptedEnrichments - metrics.enriched, 0);
+  const hasDetailOutcomes = [metrics.usableSuccessfulDetails, metrics.failedDetailRequests, metrics.filteredSuccessfulDetails, metrics.successfulSpeculativeCompletions, metrics.cancelledDetailRequests]
+    .every((value) => typeof value === "number");
   const lines = [
     "CATALOG ACQUISITION RUN",
     `Provider: open-icecat`,
@@ -1615,7 +1658,11 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     `Fetched: ${metrics.fetched}`,
     `Enriched (usable): ${metrics.enriched}`,
     `Attempted enrichments: ${attemptedEnrichments === null ? "unavailable" : attemptedEnrichments}`,
-    `Speculative enrichment attempts (not provider failures): ${enrichmentFailures === null ? "unavailable" : enrichmentFailures}`,
+    `Usable successful details: ${hasDetailOutcomes ? metrics.usableSuccessfulDetails : "unavailable"}`,
+    `Failed detail requests: ${hasDetailOutcomes ? metrics.failedDetailRequests : "unavailable"}`,
+    `Filtered/nonusable successful details: ${hasDetailOutcomes ? metrics.filteredSuccessfulDetails : "unavailable"}`,
+    `Successful speculative completions beyond usable frontier: ${hasDetailOutcomes ? metrics.successfulSpeculativeCompletions : "unavailable"}`,
+    `Cancelled detail requests: ${hasDetailOutcomes ? metrics.cancelledDetailRequests : "unavailable"}`,
     `Pages: ${metrics.providerPages === null ? "unavailable" : metrics.providerPages}`,
     `Provider errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
     `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,

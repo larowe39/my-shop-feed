@@ -335,6 +335,32 @@ async function main() {
   const multiPageRun = await acquisition.acquireDiscoveredProducts(pageProvider, { limit: 6, pageSize: 3 }, [], { name: "page-cache-source", type: "external-provider" }, { taxonomyResolver: pageResolver });
   assert.ok(pageResolverCalls.length <= 3, `repeated taxonomy IDs across discovery pages must share the same run-scoped cache; saw ${pageResolverCalls.length} calls across 3 unique identifiers`);
   assert.strictEqual(multiPageRun.staged.length, 6, "multi-page catalog discovery must continue to stage each valid record even with cached taxonomy resolution");
+
+  const verifiedReadinessRun = await acquisition.acquireDiscoveredProducts({
+    capabilities: { lookup: false, discovery: true },
+    getSourceMetadata: () => ({ name: "verified-readiness", type: "external-provider", baseUrl: "https://example.test", metadata: {} }),
+    normalizeProduct: (record) => record,
+    async *discoverProducts() {
+      yield { records: [
+        { sourceExternalId: "verified-ready-1", brand: "Ready Brand", productName: "Ready Product", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" } } },
+      ], errors: [], nextCursor: null, done: true, checkpoint: { processedCount: 1, enrichmentAttempts: 1 } };
+    },
+  }, { limit: 1, pageSize: 1 }, [], { name: "verified-readiness", type: "external-provider" }, { taxonomyResolver: pageResolver });
+  assert.strictEqual(verifiedReadinessRun.staged[0].status, "pending", "verified taxonomy mapping must make the staged candidate promotion-ready");
+  assert.strictEqual(verifiedReadinessRun.summary.qualityMetrics.manualReviewRate, 0, "aggregate discovery quality must use post-resolution readiness");
+
+  const gapCandidate = {
+    id: "gap-candidate", importRunId: "gap-run", sourceId: "source", sourceExternalId: "gap-product",
+    fingerprint: "gap-fingerprint", status: "needs_review", classification: "NEW", brand: "Fixture", productName: "Gap Product",
+    modelNumber: null, family: null, category: null, subcategory: null, aliases: [], sourceUrl: null, imageUrl: null,
+    sourceType: "open-icecat", upc: null, gtin: null, mpn: null,
+    externalTaxonomy: { provider: "open-icecat", externalId: "gap-1", name: "Gap One" }, rawPayload: {}, confidence: 0.88,
+    createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z",
+  };
+  assert.strictEqual(acquisition.rankTaxonomyGaps("gap-run", [gapCandidate], [{ provider: "open-icecat", externalTaxonomyId: "gap-1", externalName: "Suggested", status: "suggested", canonicalCategoryId: "cat-electronics" }]).length, 1, "suggested mappings with target IDs must not suppress unresolved gaps");
+  assert.strictEqual(acquisition.rankTaxonomyGaps("gap-run", [gapCandidate], [{ provider: "open-icecat", externalTaxonomyId: "gap-1", externalName: "Rejected", status: "rejected", canonicalCategoryId: "cat-electronics" }]).length, 1, "rejected mappings with target IDs must not suppress unresolved gaps");
+  assert.strictEqual(acquisition.rankTaxonomyGaps("gap-run", [gapCandidate], [{ provider: "other-provider", externalTaxonomyId: "gap-1", externalName: "Other", status: "verified", canonicalCategoryId: "cat-electronics" }]).length, 1, "verified mappings from another provider must not suppress unresolved gaps");
+  assert.strictEqual(acquisition.rankTaxonomyGaps("gap-run", [gapCandidate], [{ provider: "open-icecat", externalTaxonomyId: "gap-1", externalName: "Verified", status: "verified", canonicalCategoryId: "cat-electronics" }]).length, 0, "trusted verified mappings for the same provider and external ID suppress resolved gaps");
   fs.rmSync(ledgerPath, { force: true });
   fs.rmSync(taxonomyCachePath, { force: true });
   fs.rmSync(path.join(__dirname, "..", ".catalog-staging", "taxonomy-acquisition.test.json"), { force: true });

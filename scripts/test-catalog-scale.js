@@ -254,7 +254,7 @@ const assert = require("assert");
   assert.match(formattedReport, /Unresolved products: 3/);
   assert.match(formattedReport, /Missing taxonomy identity: 6/);
   assert.match(formattedReport, /Attempted enrichments: 15/);
-  assert.match(formattedReport, /Speculative enrichment attempts \(not provider failures\): 3/);
+  assert.match(formattedReport, /Failed detail requests: unavailable/);
 
   const formattedGaps = acquisition.formatTaxonomyGapReport(gaps);
   assert.match(formattedGaps, /846/);

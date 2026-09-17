@@ -113,10 +113,17 @@ function makeProvider(records, options = {}) {
         parserPendingBound: 0,
         totalWorkBound: 6,
         enrichmentAttempts: records.length,
+        usableSuccessfulDetails: records.length,
+        failedDetailRequests: 0,
+        filteredSuccessfulDetails: 0,
+        successfulSpeculativeCompletions: 0,
+        cancelledDetailRequests: 0,
         activeDetailRequests: 0,
         maxActiveDetailRequests: 3,
+        parsedCandidateQueueHighWaterMark: 0,
         admittedWindowHighWaterMark: 6,
         reorderBufferHighWaterMark: 0,
+        retainedWorkHighWaterMark: 6,
         detailLatencyCount: records.length,
         detailLatencyTotalMs: 0,
         averageDetailLatencyMs: 0,
@@ -205,6 +212,7 @@ async function runWorkload(acquisition, count, canonicalSize, apply = false) {
     assert.strictEqual(store.batches.aliasWriteBatches, result.pages);
   }
   return {
+    workload: "disjoint-brand full-scan",
     products: count,
     canonicalProducts: canonicalSize,
     pages: result.pages,
@@ -213,10 +221,59 @@ async function runWorkload(acquisition, count, canonicalSize, apply = false) {
     taxonomy: { logicalResolutions: result.taxonomyMetrics.resolverCalls, uniqueIds: result.taxonomyMetrics.uniqueExternalTaxonomyIds, cacheHits: result.taxonomyMetrics.cacheHits, misses: result.taxonomyMetrics.cacheMisses, underlyingMappingReads: taxonomyReads.size, canonicalValidationReads: taxonomyReads.size },
     matcher: { indexBuildMs: result.matcherMetrics.indexBuildMs, recordsClassified: result.matcherMetrics.recordsClassified, canonicalEntriesExamined: result.matcherMetrics.canonicalEntriesExamined, scorerInvocations: result.matcherMetrics.scorerInvocations, specificityWitnessChecks: result.matcherMetrics.specificityWitnessChecks, executionMs: result.matcherMetrics.matcherExecutionMs },
     acquisition: result.downstreamPhaseMetrics,
-    database: apply ? { taxonomyReads: taxonomyReads.size, canonicalCatalogReads: 5, sourceUpserts: store.calls.upsertSource, importRunWrites: store.calls.createImportRun + store.calls.updateImportRun, stagedProductWrites: store.batches.productWriteBatches, stagedAliasWrites: store.batches.aliasWriteBatches, hiddenPerProductReadsOrWrites: 0 } : { totalWrites: 0 },
+    database: apply ? { taxonomyReads: taxonomyReads.size, canonicalCatalogReads: 5, sourceUpserts: store.calls.upsertSource, importRunWrites: store.calls.createImportRun + store.calls.updateImportRun, stagedProductWriteCalls: store.calls.upsertStagedCandidates, stagedProductWriteBatches: store.batches.productWriteBatches, stagedAliasWriteBatches: store.batches.aliasWriteBatches, hiddenPerProductReadsOrWrites: 0 } : { totalWrites: 0 },
     memory: { heapBefore: before, heapAfter: after, retainedCandidates: result.staged.length, telemetryEntries: 0 },
+    evidence: {
+      providerHighWater: "MODELED",
+      providerOutcomeCounts: "MODELED",
+      taxonomyReads: "MEASURED",
+      canonicalCatalogReads: "MODELED",
+      stagingWriteCounts: apply ? "MEASURED_BY_COUNTING_STORE" : "NOT_TESTED",
+      hiddenPerProductOperations: apply ? "MODELED_BY_STORE_CONTRACT" : "NOT_TESTED",
+      heapBeforeAfter: "MEASURED_RETAINED_HEAP_SAMPLE_NOT_PEAK",
+      telemetryEntries: "MODELED",
+    },
     gates: acquisition.evaluateControlledScaleGates(acquisition.buildCatalogRunReportFromResult(result, { requestedLimit: count })),
   };
+}
+
+async function runMatcherScenario(acquisition, label, canonical, records) {
+  const startedAt = performance.now();
+  const result = await acquisition.acquireFromRecords(records, canonical, { name: label, type: "offline-matcher" }, { apply: false });
+  return {
+    label,
+    canonicalProducts: canonical.length,
+    incomingProducts: records.length,
+    elapsedMs: performance.now() - startedAt,
+    matcher: {
+      indexBuildMs: result.matcherMetrics.indexBuildMs,
+      recordsClassified: result.matcherMetrics.recordsClassified,
+      canonicalEntriesExamined: result.matcherMetrics.canonicalEntriesExamined,
+      scorerInvocations: result.matcherMetrics.scorerInvocations,
+      specificityWitnessChecks: result.matcherMetrics.specificityWitnessChecks,
+      executionMs: result.matcherMetrics.matcherExecutionMs,
+    },
+  };
+}
+
+async function runMatcherScoringEvidence(acquisition) {
+  const canonical = makeCanonicalCatalog(1000);
+  const allConflict = Array.from({ length: 25 }, (_, index) => ({ sourceExternalId: `conflict-${index}`, brand: "No Shared Brand", productName: `Unseen Item ${index}`, modelNumber: `NSB-${index}`, raw: { provider: "matcher-fixture" } }));
+  const halfCompatible = Array.from({ length: 25 }, (_, index) => ({ sourceExternalId: `compatible-${index}`, brand: index % 2 === 0 ? `Canonical Brand ${index % 20}` : "No Shared Brand", productName: `Canonical Product ${index} Special Edition`, modelNumber: `CMP-${index}`, raw: { provider: "matcher-fixture" } }));
+  const emptyBrandCanonical = canonical.map((entry) => ({ ...entry, brand: "" }));
+  const emptyBrandIncoming = Array.from({ length: 25 }, (_, index) => ({ sourceExternalId: `empty-brand-${index}`, brand: "Incoming Brand", productName: `Canonical Product ${index} Bundle`, modelNumber: `EB-${index}`, raw: { provider: "matcher-fixture" } }));
+  const aliasHeavyCanonical = canonical.map((entry, index) => ({ ...entry, aliases: Array.from({ length: 10 }, (_, aliasIndex) => `Alias ${index}-${aliasIndex}`) }));
+  const aliasHeavyIncoming = Array.from({ length: 25 }, (_, index) => ({ sourceExternalId: `alias-heavy-${index}`, brand: `Canonical Brand ${index % 20}`, productName: `Alias ${index}-${index % 10} Bundle`, modelNumber: `AH-${index}`, aliases: Array.from({ length: 10 }, (_, aliasIndex) => `Incoming Alias ${index}-${aliasIndex}`), raw: { provider: "matcher-fixture" } }));
+
+  const scenarios = [
+    await runMatcherScenario(acquisition, "all brands conflict", canonical, allConflict),
+    await runMatcherScenario(acquisition, "half compatible brands", canonical, halfCompatible),
+    await runMatcherScenario(acquisition, "all canonical brands empty", emptyBrandCanonical, emptyBrandIncoming),
+    await runMatcherScenario(acquisition, "mixed brands plus alias-heavy records", aliasHeavyCanonical, aliasHeavyIncoming),
+  ];
+  assert.strictEqual(scenarios[0].matcher.scorerInvocations, 0);
+  assert.ok(scenarios.slice(1).every((scenario) => scenario.matcher.scorerInvocations > 0), "representative matcher evidence must include nonzero scoring paths");
+  return scenarios;
 }
 
 async function runRecoveryChecks(acquisition) {
@@ -243,9 +300,10 @@ async function runRecoveryChecks(acquisition) {
   for (const count of [100, 500, 1000]) results.push(await runWorkload(acquisition, count, 1000, false));
   const canonicalImpact = [await runWorkload(acquisition, 1000, 1000, false), await runWorkload(acquisition, 1000, 10000, false)];
   const apply = await runWorkload(acquisition, 1000, 1000, true);
+  const matcherScoringEvidence = await runMatcherScoringEvidence(acquisition);
   const recovery = await runRecoveryChecks(acquisition);
   assert.strictEqual(apply.database.hiddenPerProductReadsOrWrites, 0);
-  console.log(JSON.stringify({ configuration: { pageSize: PAGE_SIZE, concurrency: 3, mode: "offline-only", liveRequests: 0, productionWrites: 0 }, workloads: results, canonicalImpact, apply, recovery }, null, 2));
+  console.log(JSON.stringify({ configuration: { pageSize: PAGE_SIZE, concurrency: 3, mode: "offline-only", liveRequests: 0, productionWrites: 0 }, workloads: results, canonicalImpact, apply, matcherScoringEvidence, recovery }, null, 2));
 })().catch((error) => {
   console.error(error.stack || error);
   process.exit(1);
