@@ -11,7 +11,13 @@
 // by this file.
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { CATALOG_CONFIDENCE_THRESHOLDS, findCatalogMatches } from "./catalogMatching.ts";
+import {
+  CATALOG_CONFIDENCE_THRESHOLDS,
+  createCatalogMatcherIndex,
+  findCatalogMatches,
+  findCatalogMatchesWithIndex,
+} from "./catalogMatching.ts";
+import type { CatalogMatcherIndex, CatalogMatcherMetrics } from "./catalogMatching.ts";
 import type {
   CandidateClassification,
   CanonicalCatalogEntry,
@@ -52,6 +58,18 @@ export type AcquisitionRunResult = {
   persistence: string[];
   taxonomyMetrics?: TaxonomyResolutionMetrics;
   downstreamPhaseMetrics?: DownstreamPhaseMetrics;
+  matcherMetrics?: MatcherAcquisitionMetrics;
+};
+
+export type MatcherAcquisitionMetrics = CatalogMatcherMetrics & {
+  indexBuildMs: number;
+  indexBuildCount: number;
+  productsIndexed: number;
+  aliasesIndexed: number;
+  recordsClassified: number;
+  candidateRetrievalMs: number;
+  scoringMs: number;
+  totalMs: number;
 };
 
 export type ScaleProfile = {
@@ -120,6 +138,8 @@ type AcquisitionOptions = {
   taxonomyResolver?: TaxonomyMappingResolver;
   existingRun?: ExistingImportRun;
   deferRunFinalization?: boolean;
+  matcherIndex?: CatalogMatcherIndex;
+  matcherMetrics?: MatcherAcquisitionMetrics;
 };
 
 export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
@@ -463,6 +483,52 @@ export function classifyCandidate(
   return "NEW";
 }
 
+export function classifyCandidateWithIndex(
+  candidate: Partial<CatalogCandidateInput>,
+  canonicalCatalog: CanonicalCatalogEntry[],
+  matcherIndex: CatalogMatcherIndex,
+  matcherMetrics?: MatcherAcquisitionMetrics
+): CandidateClassification {
+  const validation = validateCatalogCandidate(candidate as CatalogCandidateInput);
+  if (!validation.valid) return "INVALID";
+
+  const brand = validation.normalized.brand;
+  const productName = validation.normalized.productName;
+  const modelNumber = validation.normalized.modelNumber;
+  const exactMatch = canonicalCatalog.some((entry) => {
+    const sameBrand = identityTokenMatches(brand, entry.brand);
+    if (!sameBrand) return false;
+    if (modelNumber && identityTokenMatches(modelNumber, entry.modelNumber)) return true;
+    if (identityTokenMatches(productName, entry.productName)) return true;
+    if (identityTokenMatches(`${brand} ${productName}`, entry.productName)) return true;
+    const entryAliases = entry.aliases ?? [];
+    const candidateAliasCombos = [productName, modelNumber, `${brand} ${productName}`].filter(Boolean) as string[];
+    return entryAliases.some((alias) => candidateAliasCombos.some((value) => identityTokenMatches(value, alias)));
+  });
+  if (exactMatch) return "EXACT_EXISTING";
+
+  const sameBrandSimilar = canonicalCatalog.some((entry) => {
+    if (!identityTokenMatches(brand, entry.brand)) return false;
+    const sameName = identityTokenMatches(productName, entry.productName);
+    const sameModel = Boolean(modelNumber && entry.modelNumber && identityTokenMatches(modelNumber, entry.modelNumber));
+    const aliasOverlap = (entry.aliases ?? []).some(
+      (alias) => identityTokenMatches(productName, alias) || identityTokenMatches(modelNumber, alias) || identityTokenMatches(brand, alias)
+    );
+    return sameName || sameModel || aliasOverlap;
+  });
+  if (sameBrandSimilar) return "LIKELY_EXISTING";
+
+  const candidateInput = { title: productName, brand };
+  const scoringStartedAt = performance.now();
+  // A non-empty explicit brand makes every conflicting non-empty canonical
+  // brand score 0.2 before any other evidence, so those candidates cannot
+  // affect the possible-match threshold. Empty canonical brands stay eligible.
+  const matches = findCatalogMatchesWithIndex(candidateInput, matcherIndex, matcherMetrics, true);
+  if (matcherMetrics) matcherMetrics.scoringMs += performance.now() - scoringStartedAt;
+  const best = matches.find((match) => match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.possible);
+  return best ? "POSSIBLE_EXISTING" : "NEW";
+}
+
 export function parseJsonAdapterRecords(raw: string): CatalogCandidateInput[] {
   const parsed = JSON.parse(raw);
   const records = Array.isArray(parsed) ? parsed : Array.isArray(parsed.products) ? parsed.products : Array.isArray(parsed.records) ? parsed.records : [];
@@ -553,6 +619,21 @@ function makeId(prefix: string): string {
   return `${prefix}_${createHash("sha1").update(`${Date.now()}-${Math.random()}-${prefix}`).digest("hex").slice(0, 12)}`;
 }
 
+function createMatcherMetrics(index: CatalogMatcherIndex): MatcherAcquisitionMetrics {
+  return {
+    candidatesConsidered: 0,
+    scoringOperations: 0,
+    indexBuildMs: 0,
+    indexBuildCount: 0,
+    productsIndexed: index.productsIndexed,
+    aliasesIndexed: index.aliasesIndexed,
+    recordsClassified: 0,
+    candidateRetrievalMs: 0,
+    scoringMs: 0,
+    totalMs: 0,
+  };
+}
+
 /**
  * ACQUIRE step. Classifies every record and, when `options.apply` is true,
  * persists staged candidates through the supplied StagingStore (required in
@@ -576,6 +657,16 @@ export async function acquireFromRecords(
     ? options.taxonomyResolver
     : createRunScopedTaxonomyResolver(options.taxonomyResolver);
   const effectiveTaxonomyResolver = resolvedTaxonomyResolver ?? options.taxonomyResolver;
+  let matcherIndex = options.matcherIndex;
+  let matcherMetrics = options.matcherMetrics;
+  if (!matcherIndex) {
+    const indexStartedAt = performance.now();
+    matcherIndex = createCatalogMatcherIndex(canonicalMatchCandidates(canonicalCatalog));
+    matcherMetrics = createMatcherMetrics(matcherIndex);
+    matcherMetrics.indexBuildMs = performance.now() - indexStartedAt;
+    matcherMetrics.indexBuildCount = 1;
+  }
+  if (!matcherMetrics) matcherMetrics = createMatcherMetrics(matcherIndex);
 
   const phaseCounters = {
     totalMs: 0,
@@ -658,9 +749,12 @@ export async function acquireFromRecords(
     summary.valid += 1;
     resolvedRecordsForMetrics.push(resolvedRecord);
     const matcherStart = performance.now();
-    const classification = classifyCandidate(resolvedRecord as CatalogCandidateInput, canonicalCatalog);
-    phaseCounters.matcherClassificationMs += performance.now() - matcherStart;
+    const classification = classifyCandidateWithIndex(resolvedRecord as CatalogCandidateInput, canonicalCatalog, matcherIndex, matcherMetrics);
+    const matcherElapsedMs = performance.now() - matcherStart;
+    phaseCounters.matcherClassificationMs += matcherElapsedMs;
     phaseCounters.matcherClassificationCalls += 1;
+    matcherMetrics.recordsClassified += 1;
+    matcherMetrics.totalMs += matcherElapsedMs;
 
     if (classification === "EXACT_EXISTING") {
       summary.exactExisting += 1;
@@ -812,6 +906,7 @@ export async function acquireFromRecords(
   };
   attachPhaseMetrics(result, phaseCounters);
   attachTaxonomyMetrics(result, effectiveTaxonomyResolver);
+  result.matcherMetrics = matcherMetrics;
   return result;
 }
 
@@ -889,6 +984,11 @@ export async function acquireDiscoveredProducts<TRaw>(
     ? options.taxonomyResolver
     : createRunScopedTaxonomyResolver(options.taxonomyResolver);
   const taxonomyResolverForPage = runScopedTaxonomyResolver ?? options.taxonomyResolver;
+  const matcherIndexStartedAt = performance.now();
+  const matcherIndex = createCatalogMatcherIndex(canonicalMatchCandidates(canonicalCatalog));
+  const matcherMetrics = createMatcherMetrics(matcherIndex);
+  matcherMetrics.indexBuildMs = performance.now() - matcherIndexStartedAt;
+  matcherMetrics.indexBuildCount = 1;
   const providerDiscoveryOptions: ProviderDiscoveryOptions = {
     ...discoveryOptions,
     diagnostics: {
@@ -961,6 +1061,8 @@ export async function acquireDiscoveredProducts<TRaw>(
       taxonomyResolver: taxonomyResolverForPage,
       existingRun,
       deferRunFinalization: Boolean(existingRun),
+      matcherIndex,
+      matcherMetrics,
     }, store);
     downstreamAcquisitionMs += performance.now() - downstreamStartedAt;
     if (pageRun.downstreamPhaseMetrics) {
@@ -1039,6 +1141,7 @@ export async function acquireDiscoveredProducts<TRaw>(
   };
   attachPhaseMetrics(result, aggregatePhaseMetrics);
   attachTaxonomyMetrics(result, taxonomyResolverForPage);
+  result.matcherMetrics = matcherMetrics;
   return result;
 }
 
@@ -1079,6 +1182,16 @@ export type CatalogRunReportMetrics = {
   wouldStage: number;
   blockedForReview: number;
   duplicateFingerprintCollisions: number;
+  matcherIndexBuildMs: number;
+  matcherIndexBuildCount: number;
+  matcherProductsIndexed: number;
+  matcherAliasesIndexed: number;
+  matcherRecordsClassified: number;
+  matcherCandidatesConsidered: number;
+  matcherScoringOperations: number;
+  matcherCandidateRetrievalMs: number;
+  matcherScoringMs: number;
+  matcherTotalMs: number;
 };
 
 export type CatalogRunReport = {
@@ -1261,6 +1374,16 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     providerPages: persistedNumber("providerPages"),
     indexCandidatesExamined: persistedNumber("indexCandidatesExamined"),
     enrichmentAttempts: persistedNumber("enrichmentAttempts"),
+    matcherIndexBuildMs: persistedNumber("matcherIndexBuildMs") ?? 0,
+    matcherIndexBuildCount: persistedNumber("matcherIndexBuildCount") ?? 0,
+    matcherProductsIndexed: persistedNumber("matcherProductsIndexed") ?? 0,
+    matcherAliasesIndexed: persistedNumber("matcherAliasesIndexed") ?? 0,
+    matcherRecordsClassified: persistedNumber("matcherRecordsClassified") ?? 0,
+    matcherCandidatesConsidered: persistedNumber("matcherCandidatesConsidered") ?? 0,
+    matcherScoringOperations: persistedNumber("matcherScoringOperations") ?? 0,
+    matcherCandidateRetrievalMs: persistedNumber("matcherCandidateRetrievalMs") ?? 0,
+    matcherScoringMs: persistedNumber("matcherScoringMs") ?? 0,
+    matcherTotalMs: persistedNumber("matcherTotalMs") ?? 0,
     imageCoverage: typeof persistedMetrics?.imageRate === "number" ? persistedMetrics.imageRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.imageUrl)).length / validRecords.length : 0),
     gtinCoverage: typeof persistedMetrics?.gtinRate === "number" ? persistedMetrics.gtinRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / validRecords.length : 0),
     modelCoverage: typeof persistedMetrics?.modelRate === "number" ? persistedMetrics.modelRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / validRecords.length : 0),
@@ -1338,6 +1461,16 @@ export function buildCatalogRunReportFromResult(
     providerPages: typeof discovery.pages === "number" ? discovery.pages : null,
     indexCandidatesExamined: typeof discovery.indexCandidatesExamined === "number" ? discovery.indexCandidatesExamined : null,
     enrichmentAttempts: typeof discovery.enrichmentAttempts === "number" ? discovery.enrichmentAttempts : null,
+    matcherIndexBuildMs: run.matcherMetrics?.indexBuildMs ?? 0,
+    matcherIndexBuildCount: run.matcherMetrics?.indexBuildCount ?? 0,
+    matcherProductsIndexed: run.matcherMetrics?.productsIndexed ?? 0,
+    matcherAliasesIndexed: run.matcherMetrics?.aliasesIndexed ?? 0,
+    matcherRecordsClassified: run.matcherMetrics?.recordsClassified ?? 0,
+    matcherCandidatesConsidered: run.matcherMetrics?.candidatesConsidered ?? 0,
+    matcherScoringOperations: run.matcherMetrics?.scoringOperations ?? 0,
+    matcherCandidateRetrievalMs: run.matcherMetrics?.candidateRetrievalMs ?? 0,
+    matcherScoringMs: run.matcherMetrics?.scoringMs ?? 0,
+    matcherTotalMs: run.matcherMetrics?.totalMs ?? 0,
     imageCoverage: typeof qualityMetrics?.imageRate === "number" ? qualityMetrics.imageRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.imageUrl)).length / candidates.length : 0),
     gtinCoverage: typeof qualityMetrics?.gtinRate === "number" ? qualityMetrics.gtinRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / candidates.length : 0),
     modelCoverage: typeof qualityMetrics?.modelRate === "number" ? qualityMetrics.modelRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / candidates.length : 0),

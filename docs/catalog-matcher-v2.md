@@ -22,15 +22,8 @@ the callers and only resolves variants with exact variant-level evidence.
 
 ## V2 scoring rules
 
-- Exact brand plus a complete canonical identity contained as whole tokens: 0.95.
-- Exact brand plus a complete normalized alias contained as whole tokens: 0.96.
-- Exact brand plus a distinctive model/reference identifier: 0.97.
-- Exact complete title/model/variant behavior remains at its existing 0.90-0.98 scores.
-- A conflicting explicit input brand scores 0.20, regardless of a contained model.
-- A listing that extends a contained identity with `max`, `plus`, `pro`, or
 	`ultra` scores 0.30 for the shorter candidate. This prevents automatic
 	matching of a shorter sibling such as iPhone 15 Pro for iPhone 15 Pro Max.
-- When several catalog candidates are supplied, any high-scoring shorter
 	contained identity is reduced to 0.89 if a longer, independently contained
 	identity is present. Callers skip cases with multiple remaining high scores.
 
@@ -38,3 +31,25 @@ The matcher is bounded by brand and optional category before scoring in both
 the mobile lookup and the backfill snapshot. Product confidence and variant
 confidence remain separate: variants still need an exact variant-level name,
 alias, or product-plus-color/size match at 0.90 or above.
+
+## Acquisition index
+
+Acquisition builds one `CatalogMatcherIndex` from the exact canonical snapshot
+at the start of an acquisition run. It precomputes normalized and compact
+candidate text, token sets, aliases, and variant evidence, then reuses those
+representations for every record and discovery page. The index is passed
+explicitly through the run; it is never global and is not reused after the
+run's catalog snapshot changes. The current provider orchestration does not
+mutate the canonical snapshot during discovery, so a new invocation is the
+invalidation boundary.
+
+The reference matcher still scores every candidate. Acquisition classification
+may use a narrower pool only when an explicit incoming brand is present: a
+candidate with a different non-empty brand returns 0.20 before any other
+evidence, below the 0.70 possible-match threshold. Same-brand and empty-brand
+candidates remain in the pool, so this optimization cannot remove a candidate
+that could change acquisition classification, confidence, or ambiguity.
+
+Index metrics are bounded aggregates: build time/count, products and aliases
+indexed, records classified, candidates considered, scoring operations, and
+matcher timings. No per-record telemetry is retained.

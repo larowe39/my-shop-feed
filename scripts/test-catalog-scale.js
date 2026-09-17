@@ -186,6 +186,8 @@ const assert = require("assert");
   assert.strictEqual(discoveryRun.enriched, 12);
   assert.strictEqual(discoveryRun.pages, 3);
   assert.strictEqual(discoveryRun.providerErrors.length, 3, "the three simulated 404 enrichment failures must be reported as provider errors, not usable enrichments");
+  assert.strictEqual(discoveryRun.matcherMetrics.indexBuildCount, 1, "multi-page discovery must build the matcher index once");
+  assert.strictEqual(discoveryRun.matcherMetrics.recordsClassified, 11, "matcher telemetry must count valid classified records");
 
   const cliReport = acquisition.buildCatalogRunReportFromResult(discoveryRun, { requestedLimit: 12 });
   assert.strictEqual(cliReport.currentRunId, null, "a dry-run report has no persisted run ID to key off of");
