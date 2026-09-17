@@ -27,6 +27,7 @@ export type IcecatDiscoveryMode = "initial" | "daily";
 export type ProviderDiscoveryOptions = {
   limit?: number;
   pageSize?: number;
+  concurrency?: number;
   requestTimeoutMs?: number;
   inactivityTimeoutMs?: number;
   cursor?: string | null;
@@ -554,6 +555,8 @@ function buildIndexUrl(baseUrl: string, mode: string): string {
 
 const ICECAT_CHECKPOINT_VERSION = "icecat-index-v2";
 const ICECAT_PARSER_VERSION = "icecat-index-parser-v2";
+const DEFAULT_ICECAT_ENRICHMENT_CONCURRENCY = 1;
+const MAX_ICECAT_ENRICHMENT_CONCURRENCY = 5;
 
 function discoveryFilterIdentity(options: ProviderDiscoveryOptions): string {
   return createHash("sha256").update(JSON.stringify({
@@ -735,6 +738,8 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     const mode = (options.mode ?? "initial").toString().toLowerCase() === "daily" ? "daily" : "initial";
     const pageSize = Math.max(1, Math.min(options.pageSize ?? 25, 5000));
     const limit = Math.max(0, Math.min(options.limit ?? 100, 100000));
+    const concurrency = Math.max(1, Math.min(Math.floor(options.concurrency ?? DEFAULT_ICECAT_ENRICHMENT_CONCURRENCY), MAX_ICECAT_ENRICHMENT_CONCURRENCY));
+    const admissionWindow = concurrency === 1 ? 1 : concurrency * 2;
     const checkpoint = options.checkpoint ?? {};
     const url = buildIndexUrl(this.config.indexBaseUrl, mode);
     const headers = {
@@ -817,6 +822,10 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let currentCountryMarkets: string[] = [];
       let currentAlternateMpns: Array<{ value: string; supplierId: string | null; supplierName: string | null }> = [];
       let candidateRecords: IcecatIndexRecord[] = [];
+      type EnrichmentOutcome = { position: number; indexRecord: IcecatIndexRecord; record?: IcecatIndexRecord; error?: unknown };
+      const activeEnrichments = new Map<number, Promise<EnrichmentOutcome>>();
+      const completedEnrichments = new Map<number, EnrichmentOutcome>();
+      let nextCommitPosition: number | null = null;
       let page: IcecatIndexRecord[] = [];
       let pageErrors: ProviderFetchError[] = [];
       let readyPages: ProviderDiscoveryPage<IcecatIndexRecord>[] = [];
@@ -1055,55 +1064,66 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         throw error;
       });
 
+      const commitEnrichment = (outcome: EnrichmentOutcome) => {
+        if (limitReached) return;
+        if (outcome.error) {
+          const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+          const isDataError = /identity mismatch|MPN mismatch|conflicting Supplier names|missing ID\/Product_ID/.test(message);
+          pageErrors.push({ sourceExternalId: outcome.indexRecord.sourceExternalId, message: `Icecat product enrichment failed: ${message}`, retriable: !isDataError });
+          if (page.length + pageErrors.length >= pageSize) flushPage();
+          return;
+        }
+        if (!outcome.record || !matchesDiscoveryFilter(outcome.record, options)) return;
+        if (limit > 0 && emittedCount + page.length >= limit) {
+          flushPage();
+          return;
+        }
+        options.diagnostics?.onRecordQualified?.();
+        lastSourceIdentity = sourceIdentity(outcome.record);
+        lastUpdatedValue = outcome.record.updated ?? lastUpdatedValue;
+        page.push(outcome.record);
+        if (page.length >= pageSize || (limit > 0 && emittedCount + page.length >= limit)) flushPage();
+      };
+
+      const enrichOne = async (indexRecord: IcecatIndexRecord): Promise<EnrichmentOutcome> => {
+        enrichmentAttempts += 1;
+        options.diagnostics?.onEnrichmentAttempt?.();
+        try {
+          const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000, options.signal);
+          const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
+          if (detail.sourceExternalId !== indexRecord.sourceExternalId) throw new Error(`Icecat enrichment identity mismatch: index Product_ID ${indexRecord.sourceExternalId} does not match product ID ${detail.sourceExternalId}`);
+          if (indexRecord.mpn && detail.mpn && indexRecord.mpn !== detail.mpn) throw new Error(`Icecat enrichment MPN mismatch: index Prod_ID ${indexRecord.mpn} does not match product Prod_id ${detail.mpn}`);
+          return { position: indexRecord.encounterPosition!, indexRecord, record: { ...indexRecord, brand: detail.brand, productName: detail.productName, modelNumber: detail.modelNumber ?? indexRecord.modelNumber, mpn: detail.mpn ?? indexRecord.mpn, gtin: detail.gtin ?? indexRecord.gtin, imageUrl: detail.imageUrl ?? indexRecord.imageUrl, raw: { ...indexRecord.raw, indexProductId: indexRecord.sourceExternalId, detailProductId: detail.sourceExternalId, indexMpn: indexRecord.mpn, detailMpn: detail.mpn, enrichedProduct: detail.raw } } };
+        } catch (error) {
+          if (options.signal?.aborted) throw options.signal.reason ?? error;
+          return { position: indexRecord.encounterPosition!, indexRecord, error };
+        }
+      };
+
       const enrichCandidates = async () => {
-        while (candidateRecords.length && !limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
-          throwIfAborted(options.signal);
-          const indexRecord = candidateRecords.shift()!;
-          enrichmentAttempts += 1;
-          options.diagnostics?.onEnrichmentAttempt?.();
-          try {
-            const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000, options.signal);
-            const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
-            if (detail.sourceExternalId !== indexRecord.sourceExternalId) {
-              throw new Error(`Icecat enrichment identity mismatch: index Product_ID ${indexRecord.sourceExternalId} does not match product ID ${detail.sourceExternalId}`);
-            }
-            if (indexRecord.mpn && detail.mpn && indexRecord.mpn !== detail.mpn) {
-              throw new Error(`Icecat enrichment MPN mismatch: index Prod_ID ${indexRecord.mpn} does not match product Prod_id ${detail.mpn}`);
-            }
-            const enrichedRecord: IcecatIndexRecord = {
-              ...indexRecord,
-              brand: detail.brand,
-              productName: detail.productName,
-              modelNumber: detail.modelNumber ?? indexRecord.modelNumber,
-              mpn: detail.mpn ?? indexRecord.mpn,
-              gtin: detail.gtin ?? indexRecord.gtin,
-              imageUrl: detail.imageUrl ?? indexRecord.imageUrl,
-              raw: {
-                ...indexRecord.raw,
-                indexProductId: indexRecord.sourceExternalId,
-                detailProductId: detail.sourceExternalId,
-                indexMpn: indexRecord.mpn,
-                detailMpn: detail.mpn,
-                enrichedProduct: detail.raw,
-              },
-            };
-            if (!matchesDiscoveryFilter(enrichedRecord, options)) continue;
-            options.diagnostics?.onRecordQualified?.();
-            lastSourceIdentity = sourceIdentity(enrichedRecord);
-            lastUpdatedValue = enrichedRecord.updated ?? lastUpdatedValue;
-            page.push(enrichedRecord);
-            if (page.length >= pageSize || (limit > 0 && emittedCount + page.length >= limit)) flushPage();
-          } catch (error) {
-            if (options.signal?.aborted) throw options.signal.reason ?? error;
-            const message = error instanceof Error ? error.message : String(error);
-            const isDataError = /identity mismatch|MPN mismatch|conflicting Supplier names|missing ID\/Product_ID/.test(message);
-            pageErrors.push({
-              sourceExternalId: indexRecord.sourceExternalId,
-              message: `Icecat product enrichment failed: ${message}`,
-              retriable: !isDataError,
+        while (!limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
+          while (candidateRecords.length && activeEnrichments.size < concurrency && activeEnrichments.size + completedEnrichments.size < admissionWindow) {
+            throwIfAborted(options.signal);
+            const indexRecord = candidateRecords.shift()!;
+            nextCommitPosition ??= indexRecord.encounterPosition!;
+            const task = enrichOne(indexRecord).then((outcome) => {
+              activeEnrichments.delete(outcome.position);
+              completedEnrichments.set(outcome.position, outcome);
+              return outcome;
             });
-            if (page.length + pageErrors.length >= pageSize) flushPage();
+            activeEnrichments.set(indexRecord.encounterPosition!, task);
           }
+          const next = nextCommitPosition === null ? undefined : completedEnrichments.get(nextCommitPosition);
+          if (next && nextCommitPosition !== null) {
+            completedEnrichments.delete(nextCommitPosition);
+            commitEnrichment(next);
+            const pendingPositions = [...candidateRecords.map((record) => record.encounterPosition!), ...completedEnrichments.keys(), ...activeEnrichments.keys()]
+              .filter((position) => position > nextCommitPosition!);
+            nextCommitPosition = pendingPositions.length ? Math.min(...pendingPositions) : null;
+            continue;
+          }
+          if (!activeEnrichments.size) break;
+          await Promise.race(activeEnrichments.values());
         }
         if (enrichmentAttempts >= maxEnrichmentAttempts && !limitReached && candidateRecords.length) {
           pageErrors.push({ message: `Icecat discovery stopped after ${maxEnrichmentAttempts} bounded enrichment attempts`, retriable: true });
