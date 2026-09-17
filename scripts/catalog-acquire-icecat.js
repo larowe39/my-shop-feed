@@ -146,6 +146,7 @@ async function main() {
   if (!run.summary.qualityMetrics) {
     run.summary.qualityMetrics = calculateAcquisitionQualityMetrics(records, run.summary, { discovered: fetched, providerErrors: providerErrors.length });
   }
+  const taxonomyMetrics = run?.taxonomyMetrics ?? null;
   console.log(`PROVIDER: open-icecat`);
   console.log(`MODE: ${options.discover ? options.mode : "lookup"}`);
   console.log(`REQUESTED LIMIT: ${options.limit}`);
@@ -153,6 +154,14 @@ async function main() {
   console.log(`RECORDS ENRICHED: ${options.discover ? enriched : records.length}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
+  if (taxonomyMetrics) {
+    console.log(`TAXONOMY RESOLUTION COUNT: ${taxonomyMetrics.resolverCalls}`);
+    console.log(`TAXONOMY CACHE HITS: ${taxonomyMetrics.cacheHits}`);
+    console.log(`TAXONOMY CACHE MISSES: ${taxonomyMetrics.cacheMisses}`);
+    console.log(`TAXONOMY UNIQUE IDs: ${taxonomyMetrics.uniqueExternalTaxonomyIds}`);
+    console.log(`TAXONOMY RESOLUTION TOTAL MS: ${taxonomyMetrics.resolutionMs}`);
+    console.log(`TAXONOMY RESOLUTION AVERAGE MS: ${(taxonomyMetrics.averageResolutionMs ?? 0).toFixed(2)}`);
+  }
   if (run.providerMetrics) console.log(`ENRICHMENT ATTEMPTS NOT IN USABLE OUTPUT: ${Math.max(run.providerMetrics.enrichmentAttempts - enriched, 0)}`);
   console.log(`CANONICAL CATALOG LOAD MS: ${canonicalCatalogLoadMs}`);
   console.log(`CANONICAL CATALOG PRODUCTS: ${canonicalCatalog.length}`);
