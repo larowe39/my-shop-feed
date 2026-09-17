@@ -24,7 +24,7 @@ import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
 import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
 import { processDiscoveredPages } from "./catalogProviders.ts";
-import type { CatalogProvider, DiscoveryContinuation, DiscoveryTerminationReason, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
+import type { CatalogProvider, DiscoveryContinuation, DiscoveryTerminationReason, IcecatDiscoveryMetrics, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
 
 export type {
   CandidateClassification,
@@ -83,6 +83,7 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   enrichmentAttempts: number | null;
   continuation: DiscoveryContinuation | null;
   terminationReason: DiscoveryTerminationReason;
+  providerMetrics?: IcecatDiscoveryMetrics;
 };
 
 type ExistingImportRun = {
@@ -715,6 +716,17 @@ export async function acquireDiscoveredProducts<TRaw>(
   let continuation: DiscoveryContinuation | null = null;
   let terminationReason: DiscoveryTerminationReason = "source-exhausted";
   let existingRun: ExistingImportRun | undefined;
+  let providerMetrics: IcecatDiscoveryMetrics | undefined;
+  const providerDiscoveryOptions: ProviderDiscoveryOptions = {
+    ...discoveryOptions,
+    diagnostics: {
+      ...discoveryOptions.diagnostics,
+      onMetrics: (metrics) => {
+        providerMetrics = metrics;
+        discoveryOptions.diagnostics?.onMetrics?.(metrics);
+      },
+    },
+  };
 
   if (apply && store) {
     const source = await store.upsertSource({
@@ -750,7 +762,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     existingRun = { id: run.id, source };
   }
 
-  await processDiscoveredPages(provider, discoveryOptions, async (page) => {
+  await processDiscoveredPages(provider, providerDiscoveryOptions, async (page) => {
     fetched += page.records.length;
     pages += 1;
     providerErrors.push(...page.errors);
@@ -842,6 +854,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     enrichmentAttempts,
     continuation,
     terminationReason,
+    providerMetrics,
   };
 }
 

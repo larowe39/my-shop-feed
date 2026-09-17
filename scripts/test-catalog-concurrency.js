@@ -3,6 +3,7 @@ const assert = require("assert");
 
 (async () => {
   const { OpenIcecatProvider, decodeIcecatDiscoveryCursor } = await import("../lib/catalogProviders.ts");
+  const { acquireDiscoveredProducts } = await import("../lib/catalogAcquisition.ts");
   const ids = ["1", "2", "3", "4", "5", "6"];
   const index = `<ICECAT-interface><files.index>${ids.map((id) => `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`).join("")}</files.index></ICECAT-interface>`;
   const delays = { "1": 45, "2": 5, "3": 30, "4": 1, "5": 20, "6": 2 };
@@ -36,6 +37,25 @@ const assert = require("assert");
   }
 
   const reference = await run(1);
+  let acquisitionMaxActive = 0;
+  const acquisitionProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(index, { headers: { etag: "acquisition-snapshot" } });
+      const id = String(url).match(/\/(\d+)\.xml$/)[1];
+      acquisitionMaxActive += 1;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, delays[id]);
+        init.signal.addEventListener("abort", () => { clearTimeout(timer); reject(init.signal.reason); }, { once: true });
+      });
+      acquisitionMaxActive -= 1;
+      return new Response(detail(id));
+    },
+  });
+  const acquisitionRun = await acquireDiscoveredProducts(acquisitionProvider, { limit: 5, pageSize: 2, concurrency: 2 }, [], acquisitionProvider.getSourceMetadata(), { apply: false });
+  assert.strictEqual(acquisitionRun.providerMetrics?.concurrency, 2);
+  assert.strictEqual(acquisitionRun.providerMetrics?.maxActiveDetailRequests >= 2, true);
   for (const concurrency of [2, 3, 5]) {
     const result = await run(concurrency);
     assert.deepStrictEqual(result.pages.map((page) => page.ids), reference.pages.map((page) => page.ids), `page boundaries must match at concurrency ${concurrency}`);

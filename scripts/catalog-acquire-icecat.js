@@ -143,6 +143,16 @@ async function main() {
   console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
   console.log(`TERMINATION REASON: ${run.terminationReason || "source-exhausted"}`);
+  if (run.providerMetrics) {
+    console.log(`CONCURRENCY: ${run.providerMetrics.concurrency}`);
+    console.log(`MAX ACTIVE DETAIL REQUESTS: ${run.providerMetrics.maxActiveDetailRequests}`);
+    console.log(`ADMISSION WINDOW HIGH-WATER: ${run.providerMetrics.admittedWindowHighWaterMark}`);
+    console.log(`REORDER BUFFER HIGH-WATER: ${run.providerMetrics.reorderBufferHighWaterMark}`);
+    console.log(`DETAIL REQUEST COUNT: ${run.providerMetrics.detailLatencyCount}`);
+    console.log(`DETAIL REQUEST TOTAL MS: ${run.providerMetrics.detailLatencyTotalMs}`);
+    console.log(`DETAIL REQUEST AVERAGE MS: ${run.providerMetrics.averageDetailLatencyMs.toFixed(2)}`);
+    console.log(`SPECULATIVE CANCELLATIONS: ${run.providerMetrics.speculativeCancellationCount}`);
+  }
   console.log(`ACKNOWLEDGED CONTINUATION: ${run.continuation ? "available" : "none"}`);
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));

@@ -202,9 +202,11 @@ async function main() {
 
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(icecatCliSource, /acquireDiscoveredProducts\(provider, discoveryOptions/, "discovery CLI must use the single-run streaming acquisition orchestrator");
+  assert.match(icecatCliSource, /concurrency: options\.concurrency/, "discovery CLI must forward configured concurrency");
+  assert.match(icecatCliSource, /MAX ACTIVE DETAIL REQUESTS/, "discovery CLI must expose provider concurrency metrics");
   assert.doesNotMatch(icecatCliSource, /const discoveryPages = \[\]/, "discovery CLI must not retain every page");
   const acquisitionSource = fs.readFileSync(path.join(__dirname, "..", "lib", "catalogAcquisition.ts"), "utf8");
-  assert.match(acquisitionSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "the discovery orchestrator must process provider pages incrementally");
+  assert.match(acquisitionSource, /processDiscoveredPages\(provider, providerDiscoveryOptions, async \(page\)/, "the discovery orchestrator must process provider pages incrementally");
   assert.match(acquisitionSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the acquisition pipeline immediately");
 
   assert.doesNotThrow(() => assertProviderSupports(new OpenIcecatProvider({ username: "u", password: "p" }), "discovery"));
