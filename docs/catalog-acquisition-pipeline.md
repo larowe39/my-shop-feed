@@ -208,6 +208,9 @@ plus bounded latency totals. The worker admission window is `2 * concurrency`
 (or 1 in serial mode); synchronous SAX parsing has a separately bounded pending
 budget equal to the parser feed bound (128 by default, configurable up to 8192).
 The explicit total work bound is `worker admission window + parser pending bound`.
+Dry-run reports also expose index header/first-byte timing, parser traversal,
+detail enrichment wall time, qualification span, and downstream acquisition
+time so provider latency is not confused with serial catalog processing.
 Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
 reason and whether an acknowledged continuation was produced. Concurrency is
 bounded: the provider admits at most the configured worker count and a small

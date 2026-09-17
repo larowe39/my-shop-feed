@@ -17,7 +17,19 @@ const assert = require("assert");
       username: "u",
       password: "p",
       fetcher: async (url, init) => {
-        if (String(url).endsWith(".index.xml.gz")) return new Response(index, { headers: { etag: "fixture-snapshot" } });
+        if (String(url).endsWith(".index.xml.gz")) {
+          const encoder = new TextEncoder();
+          let offset = 0;
+          const source = new ReadableStream({
+            pull(controller) {
+              if (offset >= index.length) return controller.close();
+              const next = Math.min(index.length, offset + 37);
+              controller.enqueue(encoder.encode(index.slice(offset, next)));
+              offset = next;
+            },
+          });
+          return new Response(source, { headers: { etag: "fixture-snapshot" } });
+        }
         const id = String(url).match(/\/(\d+)\.xml$/)[1];
         active += 1;
         maxActive = Math.max(maxActive, active);
@@ -193,12 +205,12 @@ const assert = require("assert");
       return new Response(detail(id));
     },
   });
-  const mixedCancellationIterator = mixedCancellationProvider.discoverProducts({ limit: 5, pageSize: 1, concurrency: 3, parserFeedChars: 4096, signal: mixedCancellationController.signal })[Symbol.asyncIterator]();
+  const mixedCancellationIterator = mixedCancellationProvider.discoverProducts({ limit: 5, pageSize: 1, concurrency: 4, parserFeedChars: 4096, signal: mixedCancellationController.signal })[Symbol.asyncIterator]();
   const mixedFirstPage = await mixedCancellationIterator.next();
   assert.strictEqual(mixedFirstPage.done, false);
   assert.deepStrictEqual(mixedFirstPage.value.records.map((record) => record.sourceExternalId), ["1"]);
   assert.strictEqual(mixedFirstPage.value.checkpoint.acknowledgedCursor, undefined);
-  assert.strictEqual(mixedCancellationTimeline.length >= 4, true);
+  assert.strictEqual(mixedCancellationTimeline.length >= 4, true, JSON.stringify(mixedCancellationTimeline));
   assert.strictEqual(mixedCancellationTimeline.some((request) => request.completed && request.id === "2"), true, JSON.stringify(mixedCancellationTimeline));
   assert.strictEqual(mixedCancellationTimeline.filter((request) => !request.completed).length >= 2, true, JSON.stringify(mixedCancellationTimeline));
   const mixedRequestsAtCancellation = mixedCancellationTimeline.length;

@@ -61,6 +61,12 @@ export type IcecatDiscoveryMetrics = {
   detailLatencyCount: number;
   detailLatencyTotalMs: number;
   averageDetailLatencyMs: number;
+  indexHeadersMs: number;
+  timeToFirstIndexByteMs: number | null;
+  parserTraversalMs: number | null;
+  timeToFirstQualifyingMs: number | null;
+  qualifyingSpanMs: number | null;
+  detailEnrichmentWallMs: number | null;
   speculativeCancellationCount: number;
   terminationReason: DiscoveryTerminationReason | null;
   elapsedMs: number;
@@ -785,6 +791,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     const resumeEnabled = Boolean(resumeCursor);
     let cleanup: (() => Promise<void>) | undefined;
     let reportMetrics: ((terminationReason: DiscoveryTerminationReason | null) => void) | undefined;
+    let indexHeadersAt = startedAt;
 
     try {
       let response: Response;
@@ -805,6 +812,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         clearTimeout(requestTimeout);
       }
       if (!response.ok) throw new Error(`Icecat HTTP ${response.status} ${response.statusText}`);
+      indexHeadersAt = Date.now();
 
       const checkpointUrl = typeof checkpoint.sourceUrl === "string" ? checkpoint.sourceUrl : null;
       const checkpointMode = typeof checkpoint.mode === "string" ? checkpoint.mode : null;
@@ -856,6 +864,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let reorderBufferHighWaterMark = 0;
       let detailLatencyCount = 0;
       let detailLatencyTotalMs = 0;
+      let firstIndexByteAt: number | null = null;
+      let parserFinishedAt: number | null = null;
+      let firstQualifyingAt: number | null = null;
+      let lastQualifyingAt: number | null = null;
+      let firstDetailStartedAt: number | null = null;
+      let lastDetailSettledAt: number | null = null;
       let speculativeCancellationCount = 0;
       let page: IcecatIndexRecord[] = [];
       let pageErrors: ProviderFetchError[] = [];
@@ -891,6 +905,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         detailLatencyCount,
         detailLatencyTotalMs,
         averageDetailLatencyMs: detailLatencyCount ? detailLatencyTotalMs / detailLatencyCount : 0,
+        indexHeadersMs: indexHeadersAt - startedAt,
+        timeToFirstIndexByteMs: firstIndexByteAt === null ? null : firstIndexByteAt - startedAt,
+        parserTraversalMs: firstIndexByteAt === null || parserFinishedAt === null ? null : parserFinishedAt - firstIndexByteAt,
+        timeToFirstQualifyingMs: firstQualifyingAt === null ? null : firstQualifyingAt - startedAt,
+        qualifyingSpanMs: firstQualifyingAt === null || lastQualifyingAt === null ? null : lastQualifyingAt - firstQualifyingAt,
+        detailEnrichmentWallMs: firstDetailStartedAt === null || lastDetailSettledAt === null ? null : lastDetailSettledAt - firstDetailStartedAt,
         speculativeCancellationCount,
         terminationReason,
         elapsedMs: Date.now() - startedAt,
@@ -1133,6 +1153,9 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           return;
         }
         options.diagnostics?.onRecordQualified?.();
+        const qualifiedAt = Date.now();
+        firstQualifyingAt ??= qualifiedAt;
+        lastQualifyingAt = qualifiedAt;
         lastSourceIdentity = sourceIdentity(outcome.record);
         lastUpdatedValue = outcome.record.updated ?? lastUpdatedValue;
         page.push(outcome.record);
@@ -1155,44 +1178,46 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         }
       };
 
-      const enrichCandidates = async () => {
-        while (!limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
-          while (candidateRecords.length && activeEnrichments.size < concurrency && activeEnrichments.size + completedEnrichments.size < admissionWindow) {
-            throwIfAborted(options.signal);
-            const indexRecord = candidateRecords.shift()!;
-            nextCommitPosition ??= indexRecord.encounterPosition!;
-            const taskStartedAt = Date.now();
-            const task = enrichOne(indexRecord).then((outcome) => {
-              detailLatencyCount += 1;
-              detailLatencyTotalMs += Date.now() - taskStartedAt;
-              activeEnrichments.delete(outcome.position);
-              completedEnrichments.set(outcome.position, outcome);
-              return outcome;
-            });
-            activeEnrichments.set(indexRecord.encounterPosition!, task);
-            maxActiveDetailRequests = Math.max(maxActiveDetailRequests, activeEnrichments.size);
-            const admitted = activeEnrichments.size + completedEnrichments.size + candidateRecords.length;
-            admittedWindowHighWaterMark = Math.max(admittedWindowHighWaterMark, admitted);
-            reorderBufferHighWaterMark = Math.max(reorderBufferHighWaterMark, completedEnrichments.size);
-          }
-          const next = nextCommitPosition === null ? undefined : completedEnrichments.get(nextCommitPosition);
-          if (next && nextCommitPosition !== null) {
-            completedEnrichments.delete(nextCommitPosition);
-            commitEnrichment(next);
-            const pendingPositions = [...candidateRecords.map((record) => record.encounterPosition!), ...completedEnrichments.keys(), ...activeEnrichments.keys()]
-              .filter((position) => position > nextCommitPosition!);
-            nextCommitPosition = pendingPositions.length ? Math.min(...pendingPositions) : null;
-            if (readyPages.length) break;
-            continue;
-          }
-          if (!activeEnrichments.size) break;
-          await Promise.race(activeEnrichments.values());
+      const admitCandidates = () => {
+        while (!limitReached && enrichmentAttempts < maxEnrichmentAttempts && candidateRecords.length && activeEnrichments.size < concurrency && activeEnrichments.size + completedEnrichments.size < admissionWindow) {
+          throwIfAborted(options.signal);
+          const indexRecord = candidateRecords.shift()!;
+          nextCommitPosition ??= indexRecord.encounterPosition!;
+          const taskStartedAt = Date.now();
+          firstDetailStartedAt ??= taskStartedAt;
+          const task = enrichOne(indexRecord).then((outcome) => {
+            detailLatencyCount += 1;
+            detailLatencyTotalMs += Date.now() - taskStartedAt;
+            lastDetailSettledAt = Date.now();
+            activeEnrichments.delete(outcome.position);
+            completedEnrichments.set(outcome.position, outcome);
+            return outcome;
+          });
+          activeEnrichments.set(indexRecord.encounterPosition!, task);
+          maxActiveDetailRequests = Math.max(maxActiveDetailRequests, activeEnrichments.size);
+          const admitted = activeEnrichments.size + completedEnrichments.size + candidateRecords.length;
+          admittedWindowHighWaterMark = Math.max(admittedWindowHighWaterMark, admitted);
+          reorderBufferHighWaterMark = Math.max(reorderBufferHighWaterMark, completedEnrichments.size);
         }
-        if (enrichmentAttempts >= maxEnrichmentAttempts && !limitReached && candidateRecords.length) {
-          pageErrors.push({ message: `Icecat discovery stopped after ${maxEnrichmentAttempts} bounded enrichment attempts`, retriable: true });
-          candidateRecords = [];
-          flushPage();
-          limitReached = true;
+      };
+
+      const commitReadyEnrichment = () => {
+        if (nextCommitPosition === null) return false;
+        const next = completedEnrichments.get(nextCommitPosition);
+        if (!next) return false;
+        completedEnrichments.delete(nextCommitPosition);
+        commitEnrichment(next);
+        const pendingPositions = [...candidateRecords.map((record) => record.encounterPosition!), ...completedEnrichments.keys(), ...activeEnrichments.keys()]
+          .filter((position) => position > nextCommitPosition!);
+        nextCommitPosition = pendingPositions.length ? Math.min(...pendingPositions) : null;
+        return true;
+      };
+
+      const drainOneOrderedEnrichment = async () => {
+        while (!limitReached) {
+          if (commitReadyEnrichment()) return;
+          if (!activeEnrichments.size) return;
+          await Promise.race(activeEnrichments.values());
         }
       };
 
@@ -1200,11 +1225,11 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         const maxParserFeedChars = parserFeedChars;
         for (let offset = 0; offset < textChunk.length && !limitReached; offset += maxParserFeedChars) {
           parser.write(textChunk.slice(offset, offset + maxParserFeedChars));
-          await enrichCandidates();
+          admitCandidates();
+          if (activeEnrichments.size + completedEnrichments.size + candidateRecords.length >= admissionWindow) await drainOneOrderedEnrichment();
           while (readyPages.length) {
             yield readyPages.shift()!;
           }
-          if (!limitReached) await enrichCandidates();
         }
       };
 
@@ -1227,6 +1252,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         ]).finally(() => clearTimeout(inactivityTimer));
         if (nextChunk.done) break;
         const chunk = nextChunk.value;
+        firstIndexByteAt ??= Date.now();
         for await (const readyPage of feedParser(decoder.write(chunk))) {
           yield readyPage;
           if (readyPage.done) {
@@ -1239,7 +1265,21 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       if (!limitReached) {
         for await (const readyPage of feedParser(decoder.end())) yield readyPage;
         parser.close();
-        await enrichCandidates();
+        parserFinishedAt = Date.now();
+        while (!limitReached && (activeEnrichments.size || completedEnrichments.size || candidateRecords.length)) {
+          admitCandidates();
+          while (readyPages.length) {
+            const readyPage = readyPages.shift()!;
+            yield readyPage;
+            if (readyPage.done) {
+              await cleanup();
+              return;
+            }
+          }
+          if (commitReadyEnrichment()) continue;
+          if (activeEnrichments.size) await drainOneOrderedEnrichment();
+          else break;
+        }
         if (filesIndexSeen && fileElementsSeen > 0 && parsedFileRecords === 0) {
           throw new Error("Icecat files.index schema mismatch: file elements were present but none could be parsed");
         }

@@ -151,6 +151,13 @@ async function main() {
     console.log(`DETAIL REQUEST COUNT: ${run.providerMetrics.detailLatencyCount}`);
     console.log(`DETAIL REQUEST TOTAL MS: ${run.providerMetrics.detailLatencyTotalMs}`);
     console.log(`DETAIL REQUEST AVERAGE MS: ${run.providerMetrics.averageDetailLatencyMs.toFixed(2)}`);
+    console.log(`INDEX HEADERS MS: ${run.providerMetrics.indexHeadersMs}`);
+    console.log(`TIME TO FIRST INDEX BYTE MS: ${run.providerMetrics.timeToFirstIndexByteMs ?? "n/a"}`);
+    console.log(`PARSER TRAVERSAL MS: ${run.providerMetrics.parserTraversalMs ?? "n/a"}`);
+    console.log(`TIME TO FIRST QUALIFYING MS: ${run.providerMetrics.timeToFirstQualifyingMs ?? "n/a"}`);
+    console.log(`QUALIFYING SPAN MS: ${run.providerMetrics.qualifyingSpanMs ?? "n/a"}`);
+    console.log(`DETAIL ENRICHMENT WALL MS: ${run.providerMetrics.detailEnrichmentWallMs ?? "n/a"}`);
+    console.log(`DOWNSTREAM ACQUISITION MS: ${run.downstreamAcquisitionMs ?? "n/a"}`);
     console.log(`SPECULATIVE CANCELLATIONS: ${run.providerMetrics.speculativeCancellationCount}`);
   }
   console.log(`ACKNOWLEDGED CONTINUATION: ${run.continuation ? "available" : "none"}`);

@@ -84,6 +84,7 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   continuation: DiscoveryContinuation | null;
   terminationReason: DiscoveryTerminationReason;
   providerMetrics?: IcecatDiscoveryMetrics;
+  downstreamAcquisitionMs?: number;
 };
 
 type ExistingImportRun = {
@@ -717,6 +718,7 @@ export async function acquireDiscoveredProducts<TRaw>(
   let terminationReason: DiscoveryTerminationReason = "source-exhausted";
   let existingRun: ExistingImportRun | undefined;
   let providerMetrics: IcecatDiscoveryMetrics | undefined;
+  let downstreamAcquisitionMs = 0;
   const providerDiscoveryOptions: ProviderDiscoveryOptions = {
     ...discoveryOptions,
     diagnostics: {
@@ -783,11 +785,13 @@ export async function acquireDiscoveredProducts<TRaw>(
       }
     }
     metricRecords.push(...pageRecords);
+    const downstreamStartedAt = Date.now();
     const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
       ...options,
       existingRun,
       deferRunFinalization: Boolean(existingRun),
     }, store);
+    downstreamAcquisitionMs += Date.now() - downstreamStartedAt;
     for (const key of ["processed", "valid", "invalid", "exactExisting", "likelyExisting", "possibleExisting", "new", "conflict", "errors"] as const) {
       aggregate[key] += pageRun.summary[key];
     }
@@ -855,6 +859,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     continuation,
     terminationReason,
     providerMetrics,
+    downstreamAcquisitionMs,
   };
 }
 
