@@ -198,6 +198,7 @@ async function main() {
   await testLargeStreamingDiscovery(OpenIcecatProvider);
   await testTruncatedXmlFailure(OpenIcecatProvider);
   await testMalformedDiscoveryRecord(OpenIcecatProvider);
+  await testV2ContinuationContract(OpenIcecatProvider);
 
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(icecatCliSource, /acquireDiscoveredProducts\(provider, discoveryOptions/, "discovery CLI must use the single-run streaming acquisition orchestrator");
@@ -569,6 +570,71 @@ async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
   assert.strictEqual(pages.flatMap((page) => page.errors).length, 1);
   assert.match(pages[0].errors[0].message, /missing Product_ID, Model_Name\/Prod_ID, or product XML path/);
   console.log("testMalformedDiscoveryRecord passed.");
+}
+
+async function testV2ContinuationContract(OpenIcecatProvider) {
+  const index = '<ICECAT-interface><files.index>' + ["9", "10", "2"].map((id) => `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`).join("") + '</files.index></ICECAT-interface>';
+  const makeProvider = (headers = {}) => new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(index, { headers });
+      return makeIcecatDiscoveryFetcher(index)(url, init);
+    },
+  });
+
+  const uninterrupted = [];
+  for await (const page of makeProvider().discoverProducts({ limit: 10, pageSize: 1 })) uninterrupted.push(...page.records.map((record) => record.sourceExternalId));
+
+  const firstRun = [];
+  let acknowledgedCursor;
+  for await (const page of makeProvider().discoverProducts({ limit: 1, pageSize: 1 })) {
+    firstRun.push(...page.records.map((record) => record.sourceExternalId));
+    page.acknowledge();
+    acknowledgedCursor = page.checkpoint.acknowledgedCursor;
+  }
+  assert.ok(String(acknowledgedCursor).startsWith("ic2."), "generated continuation must be an opaque v2 token");
+
+  const resumed = [];
+  for await (const page of makeProvider().discoverProducts({ limit: 10, pageSize: 1, cursor: acknowledgedCursor })) resumed.push(...page.records.map((record) => record.sourceExternalId));
+  assert.deepStrictEqual(firstRun.concat(resumed), uninterrupted, "resumed output must equal uninterrupted output at the acknowledged boundary");
+  assert.deepStrictEqual(uninterrupted, ["9", "10", "2"], "numeric and lexical product-ID ordering must not affect encounter order");
+
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: acknowledgedCursor, brand: "Changed filter" })) void page;
+  }, /incompatible.*filters/i);
+  const snapshotFirst = makeProvider({ etag: "snapshot-a" });
+  let snapshotCursor;
+  for await (const page of snapshotFirst.discoverProducts({ limit: 1, pageSize: 1 })) {
+    page.acknowledge();
+    snapshotCursor = page.checkpoint.acknowledgedCursor;
+  }
+  await assert.rejects(async () => {
+    for await (const page of makeProvider({ etag: "snapshot-b" }).discoverProducts({ limit: 10, cursor: snapshotCursor })) void page;
+  }, /snapshot does not match/i);
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: "9|2026-09-16T00:00:00Z" })) void page;
+  }, /Unsupported.*v2|restart/i);
+
+  const controller = new AbortController();
+  let sourceCancelled = false;
+  const source = new ReadableStream({
+    start(streamController) { streamController.enqueue(new TextEncoder().encode("<ICECAT-interface><files.index>")); },
+    cancel() { sourceCancelled = true; },
+  });
+  const cancelledProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url) => String(url).endsWith(".index.xml.gz") ? new Response(source) : new Response("never"),
+  });
+  const pending = (async () => {
+    for await (const page of cancelledProvider.discoverProducts({ limit: 1, signal: controller.signal, inactivityTimeoutMs: 1000 })) void page;
+  })();
+  controller.abort();
+  await assert.rejects(pending);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(sourceCancelled, true, "cancellation must close the source iterator");
+  console.log("testV2ContinuationContract passed.");
 }
 
 async function testLargeStreamingDiscovery(OpenIcecatProvider) {

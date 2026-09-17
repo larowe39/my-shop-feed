@@ -22,6 +22,7 @@ function args() {
     country: getFlagValue(raw, "--country") || null,
     onMarket: getFlagValue(raw, "--on-market") || null,
     updatedSince: getFlagValue(raw, "--updated-since") || null,
+    cursor: getFlagValue(raw, "--cursor") || null,
     productCodes: raw.flatMap((arg, index) => arg === "--product-code" && raw[index + 1] ? [raw[index + 1]] : []).concat(
       raw.filter((arg) => arg.startsWith("--product-code=")).map((arg) => arg.slice("--product-code=".length))
     ),
@@ -84,6 +85,7 @@ async function main() {
       country: options.country || undefined,
       onMarket: options.onMarket === null ? undefined : options.onMarket,
       updatedSince: options.updatedSince || undefined,
+      cursor: options.cursor || undefined,
     };
     const discoveryRun = await acquireDiscoveredProducts(provider, discoveryOptions, canonicalCatalog, metadata, {
       apply: options.apply,
@@ -138,6 +140,8 @@ async function main() {
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
   console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
+  console.log(`TERMINATION REASON: ${run.terminationReason || "source-exhausted"}`);
+  console.log(`ACKNOWLEDGED CONTINUATION: ${run.continuation ? "available" : "none"}`);
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
   console.log(options.apply ? "APPLY -- staging data written; no approval or promotion performed." : "DRY RUN -- ZERO Supabase staging/canonical writes");

@@ -175,12 +175,27 @@ a genuinely stalled body without imposing a wall-clock deadline on the full
 index. Timeouts are reported as retriable provider request errors. Individual
 product lookup retains its independent per-request timeout.
 
-Discovery checkpoints retain the source URL, mode, ETag, Last-Modified value,
-content metadata, last source identity and Updated value, processed count, and
-checkpoint version. Resume is a **STREAMING RE-SCAN FROM BEGINNING**, not
-random-access seeking: records are streamed again and skipped until they sort
-after the saved cursor. A changed ETag or Last-Modified value fails the run
-rather than silently continuing against a different snapshot.
+Discovery checkpoints use an opaque `ic2.` token containing a version, provider,
+source URL, mode, ETag/Last-Modified/content-length snapshot evidence, a hash of
+the relevant filters, parser version, and explicit parsed/scheduled/completed/
+emitted/acknowledged positions. The position is the encounter number in the
+source snapshot plus an identity check (`Product_ID`, Updated, and product URL);
+product IDs are never used as ordering keys. Resume is a **STREAMING RE-SCAN
+FROM BEGINNING**, not random-access seeking: records are consumed until the
+exact acknowledged encounter position is found. Missing positions, legacy v1
+tokens, changed snapshots, or changed filters fail with an explicit restart
+requirement.
+
+Provider pages expose an explicit `acknowledge()` hook. Acquisition calls it
+only after downstream page processing succeeds, and returns the last
+acknowledged continuation metadata for reporting and tests. Emission alone
+does not advance the recovery frontier. The in-memory dry-run boundary is not
+a durable crash-recovery guarantee.
+
+Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
+reason and whether an acknowledged continuation was produced. Concurrency is
+intentionally serial: the provider admits and enriches one candidate at a
+time.
 
 The synthetic streaming tests verify bounded read-ahead, early cancellation,
 first-page delivery before source completion, malformed-record reporting, and
