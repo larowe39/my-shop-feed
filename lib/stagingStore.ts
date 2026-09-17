@@ -22,6 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@supabase/supabase-js";
+import { buildStagedAliasEntries } from "./catalogAlias.ts";
 import {
   SUPABASE_STAGING_ALIAS_BATCH_SIZE,
   SUPABASE_STAGING_READ_PAGE_SIZE,
@@ -230,6 +231,7 @@ export class LocalStagingStore implements StagingStore {
         const sameSourceExternalId = (row.sourceExternalId ?? "") === (candidate.sourceExternalId ?? "");
         return sameRun && sameFingerprint && sameSourceExternalId;
       });
+      let stagedProduct: StagedCatalogCandidate;
       if (existingIndex >= 0) {
         ledger.stagedProducts[existingIndex] = {
           ...ledger.stagedProducts[existingIndex],
@@ -237,21 +239,20 @@ export class LocalStagingStore implements StagingStore {
           id: ledger.stagedProducts[existingIndex].id,
           updatedAt: new Date().toISOString(),
         };
-        results.push(ledger.stagedProducts[existingIndex]);
-        continue;
+        stagedProduct = ledger.stagedProducts[existingIndex];
+      } else {
+        ledger.stagedProducts.push(candidate);
+        stagedProduct = candidate;
       }
-      ledger.stagedProducts.push(candidate);
-      results.push(candidate);
+      results.push(stagedProduct);
 
       // Brand alone is deliberately excluded: a bare brand name as a product
       // alias would cause false identity matches across every other product
       // from that brand. Product name/model number are distinctive enough to
       // be safe.
-      const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.productName, candidate.modelNumber ?? ""])).filter(Boolean);
-      for (const alias of aliasValues) {
-        const normalizedAlias = alias.toLowerCase();
-        if (ledger.stagedAliases.some((row) => row.stagedProductId === candidate.id && row.normalizedAlias === normalizedAlias)) continue;
-        ledger.stagedAliases.push({ id: makeId("alias"), stagedProductId: candidate.id, alias, normalizedAlias, createdAt: new Date().toISOString() });
+      for (const entry of buildStagedAliasEntries(stagedProduct)) {
+        if (ledger.stagedAliases.some((row) => row.stagedProductId === stagedProduct.id && row.normalizedAlias === entry.normalizedAlias)) continue;
+        ledger.stagedAliases.push({ id: makeId("alias"), stagedProductId: stagedProduct.id, alias: entry.alias, normalizedAlias: entry.normalizedAlias, createdAt: new Date().toISOString() });
       }
     }
     this.write(ledger);
@@ -435,7 +436,7 @@ export class SupabaseStagingStore implements StagingStore {
       promoted: input.promoted,
       staged: input.staged,
       errors: input.errors,
-      status: "completed",
+      status: input.status ?? "completed",
       summary: input.summary,
       createdAt: data.created_at,
     };
@@ -572,9 +573,8 @@ export class SupabaseStagingStore implements StagingStore {
         results.push(candidate);
         // Brand alone is deliberately excluded here too -- see the matching
         // comment in LocalStagingStore.upsertStagedCandidates.
-        const aliasValues = Array.from(new Set([...(candidate.aliases ?? []), candidate.productName, candidate.modelNumber ?? ""])).filter(Boolean);
-        for (const alias of aliasValues) {
-          aliasRows.push({ staged_product_id: stagedId, alias, normalized_alias: alias.toLowerCase() });
+        for (const entry of buildStagedAliasEntries(candidate)) {
+          aliasRows.push({ staged_product_id: stagedId, alias: entry.alias, normalized_alias: entry.normalizedAlias });
         }
       }
 

@@ -35,6 +35,7 @@
     "catalog:staging:reject": "node ./scripts/catalog-staging-reject.js",
     "catalog:promote": "node ./scripts/catalog-promote.js",
     "catalog:acquisition-test": "node ./scripts/test-catalog-acquisition.js",
+    "catalog:apply-safety-test": "node ./scripts/test-catalog-apply-safety.js",
     "catalog:provider-test": "node ./scripts/test-catalog-provider.js",
     "catalog:concurrency-test": "node ./scripts/test-catalog-concurrency.js",
     "catalog:taxonomy-test": "node ./scripts/test-catalog-taxonomy.js",

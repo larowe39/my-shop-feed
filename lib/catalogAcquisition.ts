@@ -31,6 +31,7 @@ import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
 import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
 import { processDiscoveredPages } from "./catalogProviders.ts";
+import { normalizeAliasConflictKey } from "./catalogAlias.ts";
 import type { CatalogProvider, DiscoveryContinuation, DiscoveryTerminationReason, IcecatDiscoveryMetrics, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
 
 export type {
@@ -282,7 +283,8 @@ function normalizeAliasList(value: unknown): string[] {
       .map((entry) => entry.trim())
       .filter(Boolean)
       .filter((entry, index, list) => list.indexOf(entry) === index)
-      .map((entry) => normalizeAcquisitionText(entry));
+      .map((entry) => normalizeAliasConflictKey(entry))
+      .filter((entry, index, list) => list.indexOf(entry) === index);
   }
   if (typeof value === "string") {
     return value
@@ -290,7 +292,8 @@ function normalizeAliasList(value: unknown): string[] {
       .map((entry) => entry.trim())
       .filter(Boolean)
       .filter((entry, index, list) => list.indexOf(entry) === index)
-      .map((entry) => normalizeAcquisitionText(entry));
+      .map((entry) => normalizeAliasConflictKey(entry))
+      .filter((entry, index, list) => list.indexOf(entry) === index);
   }
   return [];
 }
@@ -1058,7 +1061,8 @@ export async function acquireDiscoveredProducts<TRaw>(
     existingRun = { id: run.id, source };
   }
 
-  await processDiscoveredPages(provider, providerDiscoveryOptions, async (page) => {
+  try {
+    await processDiscoveredPages(provider, providerDiscoveryOptions, async (page) => {
     fetched += page.records.length;
     pages += 1;
     providerErrors.push(...page.errors);
@@ -1075,6 +1079,11 @@ export async function acquireDiscoveredProducts<TRaw>(
         providerErrors.push({
           message: error instanceof Error ? error.message : String(error),
           sourceExternalId: (record as { sourceExternalId?: string })?.sourceExternalId,
+        });
+        invalidRecords.push({
+          candidate: record as Partial<CatalogCandidateInput>,
+          errors: [`normalization failed: ${error instanceof Error ? error.message : String(error)}`],
+          classification: "INVALID",
         });
       }
     }
@@ -1093,6 +1102,9 @@ export async function acquireDiscoveredProducts<TRaw>(
         aggregatePhaseMetrics[key] += pageRun.downstreamPhaseMetrics[key];
       }
     }
+    aggregate.processed += page.records.length - pageRun.summary.processed;
+    aggregate.invalid += page.records.length - pageRecords.length;
+    aggregate.errors += page.records.length - pageRecords.length;
     for (const key of ["processed", "valid", "invalid", "exactExisting", "likelyExisting", "possibleExisting", "new", "conflict", "errors"] as const) {
       aggregate[key] += pageRun.summary[key];
     }
@@ -1125,7 +1137,30 @@ export async function acquireDiscoveredProducts<TRaw>(
     const acknowledged = page.checkpoint?.acknowledgedContinuation;
     if (acknowledged && typeof acknowledged === "object") continuation = acknowledged as DiscoveryContinuation;
     if (page.done) terminationReason = "limit-reached";
-  });
+    });
+  } catch (error) {
+    if (existingRun && store) {
+      await store.updateImportRun(existingRun.id, {
+        processed: aggregate.processed,
+        valid: aggregate.valid,
+        invalid: aggregate.invalid,
+        staged: aggregate.staged,
+        errors: aggregate.errors + 1,
+        status: "failed",
+        summary: {
+          requestedLimit: discoveryOptions.limit ?? null,
+          sourceRecords: fetched,
+          providerErrors: providerErrors.length,
+          invalidRecords: invalidRecords.map((entry) => ({
+            sourceExternalId: entry.candidate.sourceExternalId ?? null,
+            errors: entry.errors,
+          })),
+          failure: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+    throw error;
+  }
 
   aggregate.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, aggregate, {
     discovered: fetched,
@@ -1150,6 +1185,10 @@ export async function acquireDiscoveredProducts<TRaw>(
       filteredSuccessfulDetails: providerMetrics?.filteredSuccessfulDetails ?? null,
       successfulSpeculativeCompletions: providerMetrics?.successfulSpeculativeCompletions ?? null,
       cancelledDetailRequests: providerMetrics?.cancelledDetailRequests ?? null,
+      invalidRecords: invalidRecords.map((entry) => ({
+        sourceExternalId: entry.candidate.sourceExternalId ?? null,
+        errors: entry.errors,
+      })),
     };
     await store.updateImportRun(existingRun.id, {
       processed: aggregate.processed,
