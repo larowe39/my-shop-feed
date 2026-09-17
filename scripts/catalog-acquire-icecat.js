@@ -32,7 +32,18 @@ async function main() {
   const options = args();
   const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
   const { loadOpenIcecatTaxonomyCache } = await import("../lib/catalogProviderTaxonomy.ts");
-  const { acquireDiscoveredProducts, acquireFromRecords, calculateAcquisitionQualityMetrics, printAcquisitionSummary } = await import("../lib/catalogAcquisition.ts");
+  const {
+    acquireDiscoveredProducts,
+    acquireFromRecords,
+    calculateAcquisitionQualityMetrics,
+    printAcquisitionSummary,
+    buildCatalogRunReportFromResult,
+    evaluateControlledScaleGates,
+    formatCatalogRunReport,
+    formatControlledScaleGateReport,
+    rankTaxonomyGaps,
+    formatTaxonomyGapReport,
+  } = await import("../lib/catalogAcquisition.ts");
   const provider = new OpenIcecatProvider({
     apiToken: process.env.ICECAT_API_TOKEN,
     username: process.env.ICECAT_USERNAME,
@@ -130,6 +141,25 @@ async function main() {
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
   console.log(options.apply ? "APPLY -- staging data written; no approval or promotion performed." : "DRY RUN -- ZERO Supabase staging/canonical writes");
+
+  // Scale report/gates are built from the SAME in-memory run result so a
+  // dry-run (which never persists an import run or staged candidates) still
+  // gets the full report in this one CLI invocation.
+  const report = buildCatalogRunReportFromResult(run, { requestedLimit: options.limit });
+  console.log("");
+  console.log(formatCatalogRunReport(report));
+
+  console.log("");
+  let mappingRecords = [];
+  try {
+    mappingRecords = await taxonomyStore.listMappings({ provider: "open-icecat" });
+  } catch (error) {
+    console.log(`TAXONOMY GAPS (ranked by product count)\nUnavailable: ${error.message || error}`);
+  }
+  console.log(formatTaxonomyGapReport(rankTaxonomyGaps(report.currentRunId, report.candidates, mappingRecords)));
+
+  console.log("");
+  console.log(formatControlledScaleGateReport(evaluateControlledScaleGates(report)));
 }
 
 main().catch((error) => {

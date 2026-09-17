@@ -38,6 +38,7 @@ export type {
 
 export type AcquisitionRunResult = {
   source?: SourceRegistryEntry;
+  executionMode: "dry-run" | "apply";
   sourceId?: string;
   runId?: string;
   staged: StagedCatalogCandidate[];
@@ -50,12 +51,36 @@ export type AcquisitionRunResult = {
   persistence: string[];
 };
 
+export type ScaleProfile = {
+  key: string;
+  label: string;
+  limit: number;
+  pageSize: number;
+  dryRun: boolean;
+  description: string;
+};
+
+export type ControlledScaleGateStatus = "PASS" | "REVIEW" | "FAIL";
+
+export type ControlledScaleGateReport = {
+  discoveryHealth: ControlledScaleGateStatus;
+  advisory: true;
+  identityQuality: ControlledScaleGateStatus;
+  taxonomyCoverage: ControlledScaleGateStatus;
+  stagingSafety: ControlledScaleGateStatus;
+  canonicalSafety: ControlledScaleGateStatus;
+  overall: ControlledScaleGateStatus;
+  notes: string[];
+};
+
 export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   fetched: number;
   pages: number;
   providerErrors: ProviderFetchError[];
   enriched: number;
   elapsedMs: number;
+  indexCandidatesExamined: number | null;
+  enrichmentAttempts: number | null;
 };
 
 type ExistingImportRun = {
@@ -641,6 +666,7 @@ export async function acquireFromRecords(
   }
 
   return {
+    executionMode: apply ? "apply" : "dry-run",
     source,
     sourceId: source?.id,
     runId,
@@ -791,6 +817,7 @@ export async function acquireDiscoveredProducts<TRaw>(
   }
 
   return {
+    executionMode: apply ? "apply" : "dry-run",
     source: existingRun?.source,
     sourceId: existingRun?.source.id,
     runId: existingRun?.id,
@@ -803,6 +830,8 @@ export async function acquireDiscoveredProducts<TRaw>(
     providerErrors,
     enriched: metricRecords.length,
     elapsedMs,
+    indexCandidatesExamined,
+    enrichmentAttempts,
   };
 }
 
@@ -829,15 +858,25 @@ export type CatalogRunReportMetrics = {
   gtinCoverage: number;
   modelCoverage: number;
   brandCoverage: number;
+  productNameCoverage: number;
+  sourceExternalIdCoverage: number;
   externalTaxonomyCoverage: number;
   trustedMappingCoverage: number;
   unresolvedTaxonomy: number;
+  missingTaxonomyIdentity: number;
+  taxonomyResolvedProducts: number;
+  taxonomyResolvedPercentage: number;
   manualReviewRequired: number;
   promotionReady: number;
+  requestedLimitReached: boolean | null;
+  wouldStage: number;
+  blockedForReview: number;
+  duplicateFingerprintCollisions: number;
 };
 
 export type CatalogRunReport = {
   currentRunId: string | null;
+  executionMode: "dry-run" | "apply";
   run: ImportRunRecord | null;
   candidates: StagedCatalogCandidate[];
   metrics: CatalogRunReportMetrics;
@@ -853,6 +892,115 @@ export type CatalogRunReport = {
     externalTaxonomy: unknown;
   }>;
 };
+
+export function resolveScaleProfile(value: number | string, pageSize: number = 25): ScaleProfile {
+  const normalized = typeof value === "string" ? value.trim() : String(value);
+  const parsed = Number(normalized.replace(/[^0-9]/g, ""));
+  const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+  const profileKey = limit <= 100 ? "100" : limit <= 500 ? "500" : "1000";
+  const label = String(limit);
+  return {
+    key: profileKey,
+    label,
+    limit,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.max(1, Math.min(pageSize, limit || 25)) : 25,
+    dryRun: true,
+    description: `Dry-run controlled acquisition profile for ${label} products; this never writes to production staging unless --apply is explicitly supplied.`,
+  };
+}
+
+function readinessForCandidate(candidate: StagedCatalogCandidate): CandidateReadiness {
+  return assessCandidateReadiness({
+    brand: candidate.brand,
+    productName: candidate.productName,
+    modelNumber: candidate.modelNumber,
+    family: candidate.family,
+    category: candidate.category,
+    subcategory: candidate.subcategory,
+    sourceExternalId: candidate.sourceExternalId,
+    sourceId: candidate.sourceId,
+    raw: candidate.rawPayload,
+  }, candidate.classification);
+}
+
+function candidateHasTrustedTaxonomyMapping(candidate: StagedCatalogCandidate): boolean {
+  const mapping = candidate.rawPayload?.taxonomyMapping as Record<string, unknown> | null | undefined;
+  return Boolean(mapping && mapping.status === "verified" && (
+    Boolean(mapping.canonicalCategoryId) ||
+    Boolean(mapping.canonicalSubcategoryId)
+  ));
+}
+
+// Additive metrics derived purely from the candidate set itself, shared by
+// the persisted-run report builder and the in-memory (dry-run) report
+// builder so both paths agree on the same definitions.
+function computeCandidateDerivedMetrics(candidates: StagedCatalogCandidate[]): Pick<
+  CatalogRunReportMetrics,
+  "productNameCoverage" | "sourceExternalIdCoverage" | "missingTaxonomyIdentity" | "taxonomyResolvedProducts" | "taxonomyResolvedPercentage" | "wouldStage" | "blockedForReview" | "duplicateFingerprintCollisions"
+> {
+  const total = candidates.length;
+  const missingTaxonomyIdentity = candidates.filter((candidate) => !(candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy)).length;
+  const taxonomyResolvedProducts = candidates.filter((candidate) => candidateHasTrustedTaxonomyMapping(candidate) || Boolean(candidate.category || candidate.subcategory || candidate.family)).length;
+  const fingerprintCounts = new Map<string, number>();
+  for (const candidate of candidates) fingerprintCounts.set(candidate.fingerprint, (fingerprintCounts.get(candidate.fingerprint) ?? 0) + 1);
+  const duplicateFingerprintCollisions = [...fingerprintCounts.values()].filter((count) => count > 1).length;
+  return {
+    productNameCoverage: total ? candidates.filter((candidate) => Boolean(candidate.productName?.trim())).length / total : 0,
+    sourceExternalIdCoverage: total ? candidates.filter((candidate) => Boolean(candidate.sourceExternalId)).length / total : 0,
+    missingTaxonomyIdentity,
+    taxonomyResolvedProducts,
+    taxonomyResolvedPercentage: total ? taxonomyResolvedProducts / total : 0,
+    wouldStage: candidates.filter((candidate) => candidate.status === "pending").length,
+    blockedForReview: candidates.filter((candidate) => candidate.status === "needs_review").length,
+    duplicateFingerprintCollisions,
+  };
+}
+
+export function evaluateControlledScaleGates(report: CatalogRunReport): ControlledScaleGateReport {
+  const metrics = report.metrics;
+  const notes: string[] = [];
+
+  const requestedVsFetchedOk = metrics.requested > 0 && metrics.requested === metrics.fetched;
+  const limitReachedOk = metrics.requestedLimitReached !== false;
+  const discoveryHealth = requestedVsFetchedOk && metrics.providerErrors === 0 && limitReachedOk ? "PASS" : "REVIEW";
+  if (metrics.providerErrors !== 0) notes.push("Provider errors are present and should be reviewed");
+  if (!requestedVsFetchedOk) notes.push("Requested product count does not equal discovered records");
+  if (metrics.requestedLimitReached === false) notes.push("Requested usable enrichment limit was not reached");
+
+  const identityQuality = (metrics.invalid === 0 || metrics.invalid <= Math.max(0.05 * metrics.valid, 5)) && metrics.conflict === 0 && metrics.likelyExisting === 0 && metrics.possibleExisting === 0 ? "PASS" : "REVIEW";
+  if (metrics.invalid > 0) notes.push(`Invalid or unusable records: ${metrics.invalid}`);
+  if (metrics.conflict > 0) notes.push(`Conflict records surfaced: ${metrics.conflict}`);
+
+  const taxonomyCoverage = metrics.missingTaxonomyIdentity === 0 && metrics.unresolvedTaxonomy <= Math.max(0.1 * metrics.valid, 10) ? "PASS" : "REVIEW";
+  if (metrics.unresolvedTaxonomy > 0) notes.push(`Unresolved taxonomy products require review: ${metrics.unresolvedTaxonomy}`);
+  if (metrics.missingTaxonomyIdentity > 0) notes.push(`Products missing provider taxonomy identity: ${metrics.missingTaxonomyIdentity}`);
+
+  const collisionCount = metrics.duplicateFingerprintCollisions ?? 0;
+  const stagingSafety = (metrics.staged === 0 || metrics.staged <= metrics.requested) && collisionCount === 0 ? "PASS" : "REVIEW";
+  if (metrics.staged > metrics.requested) notes.push("Staging estimate exceeds requested output and should be inspected");
+  if (collisionCount > 0) notes.push(`Fingerprint collisions detected within the run: ${collisionCount}`);
+
+  // A dry-run acquisition (the only case this tooling is meant to validate)
+  // never persists an import run, so `report.run` is null and there is no
+  // positive signal of an apply run to distinguish from. Only flag REVIEW
+  // when a persisted run positively confirms this was NOT a dry run.
+  const canonicalSafety = report.executionMode === "apply" ? "REVIEW" : "PASS";
+  if (canonicalSafety === "REVIEW") notes.push("Apply mode is diagnostic only; gates never authorize canonical writes");
+
+  const statuses = [discoveryHealth, identityQuality, taxonomyCoverage, stagingSafety, canonicalSafety];
+  const overall = statuses.some((status) => status === "FAIL") ? "FAIL" : statuses.some((status) => status === "REVIEW") ? "REVIEW" : "PASS";
+
+  return {
+    advisory: true,
+    discoveryHealth,
+    identityQuality,
+    taxonomyCoverage,
+    stagingSafety,
+    canonicalSafety,
+    overall,
+    notes,
+  };
+}
 
 export function buildCatalogRunReport(runId: string | null | undefined, importRuns: ImportRunRecord[] = [], stagedCandidates: StagedCatalogCandidate[] = []): CatalogRunReport {
   const currentRun = typeof runId === "string" ? (importRuns.find((row) => row.id === runId) ?? null) : null;
@@ -887,7 +1035,7 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     : {};
   const persistedNumber = (key: string): number | null => typeof persistedSummary[key] === "number" ? persistedSummary[key] as number : null;
 
-  const metrics: CatalogRunReportMetrics = {
+  const baseMetrics = {
     requested: persistedNumber("requestedLimit") ?? currentRun?.processed ?? runCandidates.length,
     fetched: persistedNumber("sourceRecords") ?? currentRun?.processed ?? runCandidates.length,
     enriched: persistedNumber("successfulEnrichments") ?? currentRun?.valid ?? validRecords.length,
@@ -911,56 +1059,25 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     modelCoverage: typeof persistedMetrics?.modelRate === "number" ? persistedMetrics.modelRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / validRecords.length : 0),
     brandCoverage: typeof persistedMetrics?.trustworthyBrandRate === "number" ? persistedMetrics.trustworthyBrandRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.brand && candidate.brand.trim())).length / validRecords.length : 0),
     externalTaxonomyCoverage: validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy)).length / validRecords.length : 0,
-    trustedMappingCoverage: validRecords.length ? validRecords.filter((candidate) => {
-      const mapping = candidate.rawPayload?.taxonomyMapping as Record<string, unknown> | null | undefined;
-      return Boolean(mapping && (
-        mapping.status === "verified" ||
-        mapping.method === "manual" ||
-        Boolean(mapping.canonicalCategoryId) ||
-        Boolean(mapping.canonicalSubcategoryId)
-      ));
-    }).length / validRecords.length : 0,
+    trustedMappingCoverage: validRecords.length ? validRecords.filter((candidate) => candidateHasTrustedTaxonomyMapping(candidate)).length / validRecords.length : 0,
     unresolvedTaxonomy: validRecords.filter((candidate) => {
       const identity = candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy;
       const mapping = candidate.rawPayload?.taxonomyMapping;
       return Boolean(identity) && !mapping && !candidate.category && !candidate.subcategory && !candidate.family;
     }).length,
-    manualReviewRequired: validRecords.filter((candidate) => assessCandidateReadiness({
-      brand: candidate.brand,
-      productName: candidate.productName,
-      modelNumber: candidate.modelNumber,
-      family: candidate.family,
-      category: candidate.category,
-      subcategory: candidate.subcategory,
-      sourceExternalId: candidate.sourceExternalId,
-      sourceId: candidate.sourceId,
-      raw: candidate.rawPayload,
-    }, candidate.classification).reviewRequired).length,
-    promotionReady: validRecords.filter((candidate) => assessCandidateReadiness({
-      brand: candidate.brand,
-      productName: candidate.productName,
-      modelNumber: candidate.modelNumber,
-      family: candidate.family,
-      category: candidate.category,
-      subcategory: candidate.subcategory,
-      sourceExternalId: candidate.sourceExternalId,
-      sourceId: candidate.sourceId,
-      raw: candidate.rawPayload,
-    }, candidate.classification).promotionReady).length,
+    manualReviewRequired: validRecords.filter((candidate) => readinessForCandidate(candidate).reviewRequired).length,
+    promotionReady: validRecords.filter((candidate) => readinessForCandidate(candidate).promotionReady).length,
+  };
+
+  const derived = computeCandidateDerivedMetrics(validRecords);
+  const metrics: CatalogRunReportMetrics = {
+    ...baseMetrics,
+    ...derived,
+    requestedLimitReached: baseMetrics.requested > 0 ? baseMetrics.enriched >= baseMetrics.requested : null,
   };
 
   const sample = runCandidates.slice(0, 3).map((candidate) => {
-    const readiness = assessCandidateReadiness({
-      brand: candidate.brand,
-      productName: candidate.productName,
-      modelNumber: candidate.modelNumber,
-      family: candidate.family,
-      category: candidate.category,
-      subcategory: candidate.subcategory,
-      sourceExternalId: candidate.sourceExternalId,
-      sourceId: candidate.sourceId,
-      raw: candidate.rawPayload,
-    }, candidate.classification);
+    const readiness = readinessForCandidate(candidate);
     return {
       id: candidate.id,
       sourceExternalId: candidate.sourceExternalId ?? null,
@@ -974,7 +1091,84 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     };
   });
 
-  return { currentRunId: runId ?? currentRun?.id ?? null, run: currentRun, candidates: runCandidates, metrics, sample };
+  return { currentRunId: runId ?? currentRun?.id ?? null, executionMode: currentRun?.dryRun === false ? "apply" : "dry-run", run: currentRun, candidates: runCandidates, metrics, sample };
+}
+
+/**
+ * Builds the same CatalogRunReport shape as buildCatalogRunReport, but
+ * directly from an in-memory acquisition run result (AcquisitionRunResult /
+ * DiscoveryAcquisitionResult) instead of persisted import runs/staged rows.
+ * This is required for dry-run acquisition: dry-run never persists an
+ * import run or staged candidates, so there is nothing to look up
+ * afterwards -- the scale report must be produced from the same run in
+ * memory, in the same CLI invocation.
+ */
+export function buildCatalogRunReportFromResult(
+  run: AcquisitionRunResult | DiscoveryAcquisitionResult,
+  options: { requestedLimit?: number | null } = {}
+): CatalogRunReport {
+  const candidates = run.staged ?? [];
+  const summary = run.summary;
+  const qualityMetrics = summary.qualityMetrics;
+  const discovery = run as Partial<DiscoveryAcquisitionResult>;
+
+  const baseMetrics = {
+    requested: options.requestedLimit ?? summary.processed,
+    fetched: typeof discovery.fetched === "number" ? discovery.fetched : summary.processed,
+    enriched: typeof discovery.enriched === "number" ? discovery.enriched : summary.valid,
+    processed: summary.processed,
+    valid: summary.valid,
+    invalid: summary.invalid,
+    exactExisting: summary.exactExisting,
+    likelyExisting: summary.likelyExisting,
+    possibleExisting: summary.possibleExisting,
+    new: summary.new,
+    conflict: summary.conflict,
+    staged: summary.staged,
+    errors: summary.errors,
+    providerErrors: Array.isArray(discovery.providerErrors) ? discovery.providerErrors.length : null,
+    elapsedMs: typeof discovery.elapsedMs === "number" ? discovery.elapsedMs : null,
+    providerPages: typeof discovery.pages === "number" ? discovery.pages : null,
+    indexCandidatesExamined: typeof discovery.indexCandidatesExamined === "number" ? discovery.indexCandidatesExamined : null,
+    enrichmentAttempts: typeof discovery.enrichmentAttempts === "number" ? discovery.enrichmentAttempts : null,
+    imageCoverage: typeof qualityMetrics?.imageRate === "number" ? qualityMetrics.imageRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.imageUrl)).length / candidates.length : 0),
+    gtinCoverage: typeof qualityMetrics?.gtinRate === "number" ? qualityMetrics.gtinRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / candidates.length : 0),
+    modelCoverage: typeof qualityMetrics?.modelRate === "number" ? qualityMetrics.modelRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / candidates.length : 0),
+    brandCoverage: typeof qualityMetrics?.trustworthyBrandRate === "number" ? qualityMetrics.trustworthyBrandRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.brand?.trim())).length / candidates.length : 0),
+    externalTaxonomyCoverage: candidates.length ? candidates.filter((candidate) => Boolean(candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy)).length / candidates.length : 0,
+    trustedMappingCoverage: candidates.length ? candidates.filter((candidate) => candidateHasTrustedTaxonomyMapping(candidate)).length / candidates.length : 0,
+    unresolvedTaxonomy: candidates.filter((candidate) => {
+      const identity = candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy;
+      const mapping = candidate.rawPayload?.taxonomyMapping;
+      return Boolean(identity) && !mapping && !candidate.category && !candidate.subcategory && !candidate.family;
+    }).length,
+    manualReviewRequired: candidates.filter((candidate) => readinessForCandidate(candidate).reviewRequired).length,
+    promotionReady: candidates.filter((candidate) => readinessForCandidate(candidate).promotionReady).length,
+  };
+
+  const derived = computeCandidateDerivedMetrics(candidates);
+  const metrics: CatalogRunReportMetrics = {
+    ...baseMetrics,
+    ...derived,
+    requestedLimitReached: baseMetrics.requested > 0 ? baseMetrics.enriched >= baseMetrics.requested : null,
+  };
+
+  const sample = candidates.slice(0, 3).map((candidate) => {
+    const readiness = readinessForCandidate(candidate);
+    return {
+      id: candidate.id,
+      sourceExternalId: candidate.sourceExternalId ?? null,
+      brand: candidate.brand,
+      productName: candidate.productName,
+      modelNumber: candidate.modelNumber ?? null,
+      classification: candidate.classification,
+      manualReviewRequired: readiness.reviewRequired,
+      promotionReady: readiness.promotionReady,
+      externalTaxonomy: candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy ?? null,
+    };
+  });
+
+  return { currentRunId: run.runId ?? null, executionMode: run.executionMode, run: null, candidates, metrics, sample };
 }
 
 export function rankTaxonomyGaps(
@@ -1035,16 +1229,33 @@ export function rankTaxonomyGaps(
 
 export function formatCatalogRunReport(report: CatalogRunReport): string {
   const metrics = report.metrics;
+  const attemptedEnrichments = metrics.enrichmentAttempts;
+  const enrichmentFailures = attemptedEnrichments === null ? null : Math.max(attemptedEnrichments - metrics.enriched, 0);
   const lines = [
     "CATALOG ACQUISITION RUN",
     `Provider: open-icecat`,
+    `Execution mode: ${report.executionMode}`,
     `Run: ${report.currentRunId ?? "n/a"}`,
+    "",
+    "DISCOVERY",
     `Requested: ${metrics.requested}`,
-    `Source records: ${metrics.fetched}`,
-    `Successful enrichments: ${metrics.enriched}`,
-    `Processed: ${metrics.processed}`,
-    `Valid: ${metrics.valid}`,
-    `Invalid: ${metrics.invalid}`,
+    `Fetched: ${metrics.fetched}`,
+    `Enriched (usable): ${metrics.enriched}`,
+    `Attempted enrichments: ${attemptedEnrichments === null ? "unavailable" : attemptedEnrichments}`,
+    `Enrichment failures (attempted but not usable): ${enrichmentFailures === null ? "unavailable" : enrichmentFailures}`,
+    `Pages: ${metrics.providerPages === null ? "unavailable" : metrics.providerPages}`,
+    `Provider errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
+    `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,
+    `Requested usable limit reached: ${metrics.requestedLimitReached === null ? "unavailable" : (metrics.requestedLimitReached ? "yes" : "no")}`,
+    "",
+    "DATA QUALITY",
+    `Brand: ${formatRate(metrics.brandCoverage)}`,
+    `Model/MPN: ${formatRate(metrics.modelCoverage)}`,
+    `GTIN: ${formatRate(metrics.gtinCoverage)}`,
+    `Image: ${formatRate(metrics.imageCoverage)}`,
+    `Product name: ${formatRate(metrics.productNameCoverage)}`,
+    `Provider taxonomy ID present: ${formatRate(metrics.externalTaxonomyCoverage)}`,
+    `Source external ID: ${formatRate(metrics.sourceExternalIdCoverage)}`,
     "",
     "IDENTITY",
     `Exact existing: ${metrics.exactExisting}`,
@@ -1052,34 +1263,58 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     `Possible existing: ${metrics.possibleExisting}`,
     `New: ${metrics.new}`,
     `Conflict: ${metrics.conflict}`,
-    "",
-    "QUALITY",
-    `GTIN: ${formatRate(metrics.gtinCoverage)}`,
-    `Image: ${formatRate(metrics.imageCoverage)}`,
-    `Model/MPN: ${formatRate(metrics.modelCoverage)}`,
-    `Trustworthy brand: ${formatRate(metrics.brandCoverage)}`,
+    `Invalid: ${metrics.invalid}`,
     "",
     "TAXONOMY",
-    `External taxonomy present: ${formatRate(metrics.externalTaxonomyCoverage)}`,
-    `Trusted mapping: ${formatRate(metrics.trustedMappingCoverage)}`,
-    `Unresolved: ${formatRate(metrics.unresolvedTaxonomy ? (metrics.unresolvedTaxonomy / Math.max(metrics.valid, 1)) : 0)}`,
+    `Resolved products: ${metrics.taxonomyResolvedProducts}`,
+    `Unresolved products: ${metrics.unresolvedTaxonomy}`,
+    `Missing taxonomy identity: ${metrics.missingTaxonomyIdentity}`,
+    `Resolved percentage: ${formatRate(metrics.taxonomyResolvedPercentage)}`,
+    `Trusted (verified persisted mapping) coverage: ${formatRate(metrics.trustedMappingCoverage)}`,
+    "(unresolved external taxonomy IDs ranked by product count are reported separately)",
+    "",
+    "STAGING IMPACT",
+    `Would stage: ${metrics.wouldStage}`,
+    `Blocked for review: ${metrics.blockedForReview}`,
+    `Fingerprint collisions in this run: ${metrics.duplicateFingerprintCollisions}`,
     "",
     "READINESS",
     `Manual review required: ${metrics.manualReviewRequired}`,
     `Promotion ready: ${metrics.promotionReady}`,
-    "",
-    "PROVIDER",
-    `Pages: ${metrics.providerPages === null ? "unavailable" : metrics.providerPages}`,
-    `Index candidates examined: ${metrics.indexCandidatesExamined === null ? "unavailable" : metrics.indexCandidatesExamined}`,
-    `Enrichment attempts: ${metrics.enrichmentAttempts === null ? "unavailable" : metrics.enrichmentAttempts}`,
-    `Errors: ${metrics.providerErrors === null ? "unavailable" : metrics.providerErrors}`,
-    `Elapsed: ${metrics.elapsedMs === null ? "unavailable" : `${metrics.elapsedMs}ms`}`,
   ];
   if (report.sample.length) {
     lines.push("", "SAMPLE");
     for (const row of report.sample) {
       lines.push(`- ${row.brand} / ${row.productName}${row.modelNumber ? ` (${row.modelNumber})` : ""} | ${row.classification}`);
     }
+  }
+  return lines.join("\n");
+}
+
+export function formatControlledScaleGateReport(gate: ControlledScaleGateReport): string {
+  const lines = [
+    "SCALE GATES (ADVISORY ONLY)",
+    `Discovery health: ${gate.discoveryHealth}`,
+    `Identity quality: ${gate.identityQuality}`,
+    `Taxonomy coverage: ${gate.taxonomyCoverage}`,
+    `Staging safety: ${gate.stagingSafety}`,
+    `Canonical safety: ${gate.canonicalSafety}`,
+    `Overall: ${gate.overall}`,
+  ];
+  if (gate.notes.length) {
+    lines.push("", "NOTES");
+    for (const note of gate.notes) lines.push(`- ${note}`);
+  }
+  return lines.join("\n");
+}
+
+export function formatTaxonomyGapReport(gaps: ReturnType<typeof rankTaxonomyGaps>): string {
+  if (!gaps.length) return "TAXONOMY GAPS (ranked by product count)\nNone.";
+  const lines = ["TAXONOMY GAPS (ranked by product count)"];
+  for (const gap of gaps) {
+    lines.push(
+      `- ${gap.provider}:${gap.externalId} | products=${gap.candidateCount} | name=${gap.name ?? "unavailable"} | path=${gap.path ?? "unavailable"} | verifiedMapping=${gap.verifiedMapping} | suggestedMapping=${gap.suggestedMapping}`
+    );
   }
   return lines.join("\n");
 }

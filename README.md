@@ -35,6 +35,49 @@ npm run reset-project
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
+## Controlled Open Icecat scale-up procedure
+
+The controlled rollout is intentionally read-only until the operator explicitly chooses a bounded production run. The default path is a dry-run evaluation profile that preserves the existing acquisition, matching, taxonomy, staging, and promotion gates.
+
+### Recommended operator sequence
+
+1. Validate the repository and local environment.
+2. Run the 500-product dry-run:
+   ```bash
+   npm run catalog:acquire:icecat -- --discover --mode initial --limit 500 --page-size 50 --dry-run
+   ```
+3. Inspect the scale report printed by that same command. Dry-run data is not persisted and cannot be reconstructed afterward. For an explicit apply run only, inspect the persisted run later with:
+   ```bash
+   npm run catalog:run:report -- --run-id <RUN_ID>
+   ```
+4. Inspect unresolved taxonomy concentration by external ID and product count.
+5. Check identity and data-quality coverage for brand, model, GTIN, image, and source provenance.
+6. Decide whether corrections are required before the next gate.
+7. Only then run a bounded production acquisition with explicit `--apply`.
+8. Verify the resulting import run and review staged candidates.
+9. Do not approve or promote automatically.
+10. Repeat the same flow at 1000 only after the 500 gate passes.
+
+### Gate separation
+
+- ACQUISITION: provider discovery, enrichment, normalisation, and run accounting.
+- TAXONOMY RESOLUTION: persisted verified mappings and provider taxonomy provenance.
+- STAGING REVIEW: human review of candidates and identity conflicts.
+- APPROVAL: explicit review decision, still independent of promotion.
+- CANONICAL PROMOTION: a separate explicit step that remains dry-run by default.
+
+### Scale profile defaults
+
+The project exposes bounded dry-run profiles for controlled evaluation:
+
+```bash
+npm run catalog:acquire:icecat -- --discover --mode initial --limit 100 --page-size 25
+npm run catalog:acquire:icecat -- --discover --mode initial --limit 500 --page-size 50
+npm run catalog:acquire:icecat -- --discover --mode initial --limit 1000 --page-size 50
+```
+
+These profiles keep the acquisition bounded and dry-run by default; production persistence continues to require an explicit `--apply` action.
+
 ## Demo social network seeder
 
 `scripts/seed-social-demo.js` creates ~10 realistic demo seller accounts for
