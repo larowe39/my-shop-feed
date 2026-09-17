@@ -77,6 +77,7 @@ async function main() {
   assert.match(icecatCliSource, /acquireDiscoveredProducts/, "Icecat discovery must use the single-run multi-page orchestrator");
   assert.doesNotMatch(icecatCliSource, /acquireFromRecords\(pageRecords/, "Icecat discovery must not create a complete import run per provider page");
   assert.doesNotMatch(icecatCliSource, /approveCandidate|rejectCandidate|promoteApprovedCandidates|resolveCanonicalPromotionStore/, "Icecat acquisition must not approve or promote");
+  assert.match(icecatCliSource, /SPECULATIVE ATTEMPTS NOT IN USABLE OUTPUT/, "harmless speculative detail attempts must not be labeled provider failures");
   const approveCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-approve.js"), "utf8");
   const showCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-show.js"), "utf8");
   const reviewCliSource = fs.readFileSync(path.join(__dirname, "catalog-staging-review.js"), "utf8");
@@ -263,6 +264,18 @@ async function main() {
   assert.strictEqual(storeCalls, 0, "dry-run acquisition must never call the staging store");
   assert.strictEqual(dryRunResult.persistence.length, 0);
   assert.deepStrictEqual(await localStore.listStagedCandidates(), []);
+  const dryRunPhases = dryRunResult.downstreamPhaseMetrics;
+  assert.ok(dryRunPhases, "acquisition must expose downstream phase timings");
+  assert.strictEqual(dryRunPhases.normalizationValidationCalls, 1);
+  assert.strictEqual(dryRunPhases.taxonomyResolverCalls, 0);
+  assert.strictEqual(dryRunPhases.matcherClassificationCalls, 1);
+  assert.strictEqual(dryRunPhases.readinessStatusCalls, 1);
+  assert.strictEqual(dryRunPhases.stagingCandidateBuildCalls, 1);
+  assert.strictEqual(dryRunPhases.persistenceCalls, 0);
+  const dryRunAccountedMs = dryRunPhases.normalizationValidationMs + dryRunPhases.taxonomyMs + dryRunPhases.matcherClassificationMs +
+    dryRunPhases.readinessStatusMs + dryRunPhases.stagingCandidateBuildMs + dryRunPhases.reportAggregationMs +
+    dryRunPhases.persistenceMs + dryRunPhases.otherUnattributedMs;
+  assert.ok(Math.abs(dryRunPhases.totalMs - dryRunAccountedMs) < 0.001, "downstream phases must reconcile to acquireFromRecords wall time");
 
   // acquireFromRecords must refuse apply=true without a store (fail closed, no implicit local fallback)
   await assert.rejects(() => acquireFromRecords(dryRunRecords, [], {}, { apply: true }), /StagingStore is required/);
@@ -802,6 +815,14 @@ async function main() {
     const report = buildCatalogRunReport(discoveryRun.runId, runs, persisted);
     assert.strictEqual(runs.length, 1, `${total} records must create exactly one logical import run`);
     assert.strictEqual(discoveryRun.pages, Math.ceil(total / 25));
+    assert.strictEqual(discoveryRun.downstreamPhaseMetrics.normalizationValidationCalls, total, "page phase metrics must aggregate across the whole discovery run");
+    assert.strictEqual(discoveryRun.downstreamPhaseMetrics.matcherClassificationCalls, total);
+    assert.strictEqual(discoveryRun.downstreamPhaseMetrics.readinessStatusCalls, total);
+    assert.strictEqual(discoveryRun.downstreamPhaseMetrics.stagingCandidateBuildCalls, total);
+    assert.ok(
+      Math.abs(discoveryRun.downstreamAcquisitionMs - discoveryRun.downstreamPhaseMetrics.totalMs) <= Math.max(5, discoveryRun.downstreamAcquisitionMs * 0.05),
+      "aggregated phase wall time must closely reconcile with downstream acquisition wall time"
+    );
     assert.strictEqual(persisted.length, total);
     assert.strictEqual(new Set(persisted.map((candidate) => candidate.sourceExternalId)).size, total, "page boundaries must not overwrite earlier source records");
     assert.ok(persisted.some((candidate) => candidate.sourceExternalId === "icecat-distinct-1"));

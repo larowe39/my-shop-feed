@@ -69,17 +69,7 @@ async function main() {
   const metadata = provider.getSourceMetadata();
   const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
   const taxonomyStore = resolveTaxonomyMappingStore({ backend: options.backend || undefined });
-  let taxonomyResolutionCount = 0;
-  let taxonomyResolutionMs = 0;
-  const resolveTrustedMapping = async (identity) => {
-    const startedAt = Date.now();
-    try {
-      return await taxonomyStore.resolveTrustedMapping(identity);
-    } finally {
-      taxonomyResolutionCount += 1;
-      taxonomyResolutionMs += Date.now() - startedAt;
-    }
-  };
+  const resolveTrustedMapping = async (identity) => taxonomyStore.resolveTrustedMapping(identity);
 
   let records = [];
   let providerErrors = [];
@@ -146,6 +136,7 @@ async function main() {
   if (!run.summary.qualityMetrics) {
     run.summary.qualityMetrics = calculateAcquisitionQualityMetrics(records, run.summary, { discovered: fetched, providerErrors: providerErrors.length });
   }
+  const taxonomyMetrics = run?.taxonomyMetrics ?? null;
   console.log(`PROVIDER: open-icecat`);
   console.log(`MODE: ${options.discover ? options.mode : "lookup"}`);
   console.log(`REQUESTED LIMIT: ${options.limit}`);
@@ -153,12 +144,34 @@ async function main() {
   console.log(`RECORDS ENRICHED: ${options.discover ? enriched : records.length}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
-  if (run.providerMetrics) console.log(`ENRICHMENT ATTEMPTS NOT IN USABLE OUTPUT: ${Math.max(run.providerMetrics.enrichmentAttempts - enriched, 0)}`);
+  if (taxonomyMetrics) {
+    console.log(`TAXONOMY RESOLUTION COUNT: ${taxonomyMetrics.resolverCalls}`);
+    console.log(`TAXONOMY CACHE HITS: ${taxonomyMetrics.cacheHits}`);
+    console.log(`TAXONOMY CACHE MISSES: ${taxonomyMetrics.cacheMisses}`);
+    console.log(`TAXONOMY UNIQUE IDs: ${taxonomyMetrics.uniqueExternalTaxonomyIds}`);
+    console.log(`TAXONOMY RESOLUTION TOTAL MS: ${taxonomyMetrics.resolutionMs}`);
+    console.log(`TAXONOMY RESOLUTION AVERAGE MS: ${(taxonomyMetrics.averageResolutionMs ?? 0).toFixed(2)}`);
+  }
+  if (run.providerMetrics) console.log(`SPECULATIVE ATTEMPTS NOT IN USABLE OUTPUT: ${Math.max(run.providerMetrics.enrichmentAttempts - enriched, 0)}`);
   console.log(`CANONICAL CATALOG LOAD MS: ${canonicalCatalogLoadMs}`);
   console.log(`CANONICAL CATALOG PRODUCTS: ${canonicalCatalog.length}`);
-  console.log(`TAXONOMY RESOLUTION COUNT: ${taxonomyResolutionCount}`);
-  console.log(`TAXONOMY RESOLUTION TOTAL MS: ${taxonomyResolutionMs}`);
-  console.log(`TAXONOMY RESOLUTION AVERAGE MS: ${taxonomyResolutionCount ? (taxonomyResolutionMs / taxonomyResolutionCount).toFixed(2) : "0.00"}`);
+  if (run.downstreamPhaseMetrics) {
+    const phaseMetrics = run.downstreamPhaseMetrics;
+    const phaseAccountedMs = phaseMetrics.normalizationValidationMs + phaseMetrics.taxonomyMs + phaseMetrics.matcherClassificationMs +
+      phaseMetrics.readinessStatusMs + phaseMetrics.stagingCandidateBuildMs + phaseMetrics.reportAggregationMs +
+      phaseMetrics.persistenceMs + phaseMetrics.otherUnattributedMs;
+    console.log(`DOWNSTREAM PHASE TOTAL MS: ${phaseMetrics.totalMs.toFixed(2)}`);
+    console.log(`NORMALIZATION / VALIDATION MS: ${phaseMetrics.normalizationValidationMs.toFixed(2)} (${phaseMetrics.normalizationValidationCalls} calls)`);
+    console.log(`TAXONOMY MS: ${phaseMetrics.taxonomyMs.toFixed(2)} (${phaseMetrics.taxonomyResolverCalls} calls)`);
+    console.log(`MATCHER / CLASSIFICATION MS: ${phaseMetrics.matcherClassificationMs.toFixed(2)} (${phaseMetrics.matcherClassificationCalls} calls)`);
+    console.log(`READINESS / STATUS MS: ${phaseMetrics.readinessStatusMs.toFixed(2)} (${phaseMetrics.readinessStatusCalls} calls)`);
+    console.log(`STAGING-CANDIDATE BUILD MS: ${phaseMetrics.stagingCandidateBuildMs.toFixed(2)} (${phaseMetrics.stagingCandidateBuildCalls} calls)`);
+    console.log(`REPORT / AGGREGATION MS: ${phaseMetrics.reportAggregationMs.toFixed(2)}`);
+    console.log(`PERSISTENCE MS: ${phaseMetrics.persistenceMs.toFixed(2)} (${phaseMetrics.persistenceCalls} calls)`);
+    console.log(`OTHER / UNATTRIBUTED DOWNSTREAM MS: ${phaseMetrics.otherUnattributedMs.toFixed(2)}`);
+    console.log(`DOWNSTREAM PHASE ACCOUNTED MS: ${phaseAccountedMs.toFixed(2)}`);
+    console.log(`DOWNSTREAM RECONCILIATION DELTA MS: ${Math.abs((run.downstreamAcquisitionMs ?? phaseMetrics.totalMs) - phaseAccountedMs).toFixed(2)}`);
+  }
   console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
   console.log(`TERMINATION REASON: ${run.terminationReason || "source-exhausted"}`);
