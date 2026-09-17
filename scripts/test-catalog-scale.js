@@ -19,6 +19,7 @@ const assert = require("assert");
 
   const report = {
     currentRunId: "run-scale-1",
+    executionMode: "dry-run",
     run: null,
     candidates: [],
     metrics: {
@@ -47,6 +48,7 @@ const assert = require("assert");
       externalTaxonomyCoverage: 0.75,
       trustedMappingCoverage: 0.65,
       unresolvedTaxonomy: 200,
+      missingTaxonomyIdentity: 0,
       manualReviewRequired: 25,
       promotionReady: 300,
     },
@@ -54,8 +56,9 @@ const assert = require("assert");
   };
 
   const gate = acquisition.evaluateControlledScaleGates(report);
+  assert.strictEqual(gate.advisory, true);
   assert.strictEqual(gate.discoveryHealth, "PASS");
-  assert.strictEqual(gate.identityQuality, "PASS");
+  assert.strictEqual(gate.identityQuality, "REVIEW");
   assert.strictEqual(gate.taxonomyCoverage, "REVIEW");
   assert.strictEqual(gate.stagingSafety, "PASS");
   assert.strictEqual(gate.canonicalSafety, "PASS");
@@ -186,6 +189,7 @@ const assert = require("assert");
 
   const cliReport = acquisition.buildCatalogRunReportFromResult(discoveryRun, { requestedLimit: 12 });
   assert.strictEqual(cliReport.currentRunId, null, "a dry-run report has no persisted run ID to key off of");
+  assert.strictEqual(cliReport.executionMode, "dry-run");
   assert.strictEqual(cliReport.metrics.requested, 12);
   assert.strictEqual(cliReport.metrics.fetched, 12);
   assert.strictEqual(cliReport.metrics.enriched, 12, "RECORDS ENRICHED must count only usable enrichments, not attempts");
@@ -209,12 +213,17 @@ const assert = require("assert");
   assert.strictEqual(cliReport.metrics.externalTaxonomyCoverage, 5 / 11, "provider taxonomy ID coverage must reflect records carrying an external taxonomy identity");
   assert.strictEqual(cliReport.metrics.taxonomyResolvedProducts, 2, "only the two verified-mapping laptop records are resolved");
   assert.strictEqual(cliReport.metrics.unresolvedTaxonomy, 3, "the three printer records with an unmapped external taxonomy ID must be unresolved");
+  assert.strictEqual(cliReport.metrics.missingTaxonomyIdentity, 6, "records without provider taxonomy identity must remain visible in taxonomy reporting");
   assert.strictEqual(cliReport.metrics.trustedMappingCoverage, 2 / 11);
   assert.strictEqual(cliReport.metrics.taxonomyResolvedPercentage, 2 / 11);
   assert.strictEqual(cliReport.metrics.wouldStage, 2, "only records with a resolved canonical hierarchy are stage-ready without review");
   assert.strictEqual(cliReport.metrics.blockedForReview, 9);
   assert.strictEqual(cliReport.metrics.duplicateFingerprintCollisions, 0);
   assert.strictEqual(cliReport.candidates.length, 11);
+
+  const applyReport = acquisition.buildCatalogRunReportFromResult({ ...discoveryRun, executionMode: "apply" }, { requestedLimit: 12 });
+  assert.strictEqual(applyReport.executionMode, "apply");
+  assert.strictEqual(acquisition.evaluateControlledScaleGates(applyReport).canonicalSafety, "REVIEW", "apply mode must never receive canonical-safety PASS");
 
   const mappingRecords = [verifiedLaptopMapping];
   const gaps = acquisition.rankTaxonomyGaps(cliReport.currentRunId, cliReport.candidates, mappingRecords);
@@ -227,10 +236,12 @@ const assert = require("assert");
   const cliGate = acquisition.evaluateControlledScaleGates(cliReport);
   assert.strictEqual(cliGate.discoveryHealth, "REVIEW", "non-zero provider errors must surface for review, never be silently PASS");
   assert.strictEqual(cliGate.identityQuality, "PASS");
-  assert.strictEqual(cliGate.taxonomyCoverage, "PASS");
+  assert.strictEqual(cliGate.taxonomyCoverage, "REVIEW");
   assert.strictEqual(cliGate.stagingSafety, "PASS");
   assert.strictEqual(cliGate.canonicalSafety, "PASS", "a genuine dry-run report (no persisted run) must not be misclassified as unsafe");
   assert.strictEqual(cliGate.overall, "REVIEW");
+  assert.strictEqual(cliGate.advisory, true, "gates are diagnostics and cannot authorize writes or workflow actions");
+  assert.strictEqual(acquisition.evaluateControlledScaleGates({ ...cliReport, metrics: { ...cliReport.metrics, conflict: 1 } }).identityQuality, "REVIEW", "conflicts must remain visible as a review diagnostic");
 
   const formattedReport = acquisition.formatCatalogRunReport(cliReport);
   assert.match(formattedReport, /DISCOVERY/);
@@ -239,6 +250,7 @@ const assert = require("assert");
   assert.match(formattedReport, /STAGING IMPACT/);
   assert.match(formattedReport, /Resolved products: 2/);
   assert.match(formattedReport, /Unresolved products: 3/);
+  assert.match(formattedReport, /Missing taxonomy identity: 6/);
   assert.match(formattedReport, /Attempted enrichments: 15/);
   assert.match(formattedReport, /Enrichment failures \(attempted but not usable\): 3/);
 

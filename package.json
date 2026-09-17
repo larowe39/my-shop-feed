@@ -10,6 +10,7 @@
     "catalog:backfill": "node ./scripts/backfill-catalog-matches.js",
     "catalog:validate": "node ./scripts/validate-catalog-data.js",
     "catalog:test": "node ./scripts/test-catalog-data.js",
+    "catalog:data-test": "node ./scripts/test-catalog-data.js",
     "catalog:matcher-test": "node ./scripts/test-catalog-matcher.js",
     "catalog:matcher-report": "node ./scripts/report-catalog-matcher.js",
     "catalog:import": "node ./scripts/import-catalog-data.js",

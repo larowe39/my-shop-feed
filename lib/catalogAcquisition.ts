@@ -38,6 +38,7 @@ export type {
 
 export type AcquisitionRunResult = {
   source?: SourceRegistryEntry;
+  executionMode: "dry-run" | "apply";
   sourceId?: string;
   runId?: string;
   staged: StagedCatalogCandidate[];
@@ -63,6 +64,7 @@ export type ControlledScaleGateStatus = "PASS" | "REVIEW" | "FAIL";
 
 export type ControlledScaleGateReport = {
   discoveryHealth: ControlledScaleGateStatus;
+  advisory: true;
   identityQuality: ControlledScaleGateStatus;
   taxonomyCoverage: ControlledScaleGateStatus;
   stagingSafety: ControlledScaleGateStatus;
@@ -664,6 +666,7 @@ export async function acquireFromRecords(
   }
 
   return {
+    executionMode: apply ? "apply" : "dry-run",
     source,
     sourceId: source?.id,
     runId,
@@ -814,6 +817,7 @@ export async function acquireDiscoveredProducts<TRaw>(
   }
 
   return {
+    executionMode: apply ? "apply" : "dry-run",
     source: existingRun?.source,
     sourceId: existingRun?.source.id,
     runId: existingRun?.id,
@@ -859,6 +863,7 @@ export type CatalogRunReportMetrics = {
   externalTaxonomyCoverage: number;
   trustedMappingCoverage: number;
   unresolvedTaxonomy: number;
+  missingTaxonomyIdentity: number;
   taxonomyResolvedProducts: number;
   taxonomyResolvedPercentage: number;
   manualReviewRequired: number;
@@ -871,6 +876,7 @@ export type CatalogRunReportMetrics = {
 
 export type CatalogRunReport = {
   currentRunId: string | null;
+  executionMode: "dry-run" | "apply";
   run: ImportRunRecord | null;
   candidates: StagedCatalogCandidate[];
   metrics: CatalogRunReportMetrics;
@@ -919,9 +925,7 @@ function readinessForCandidate(candidate: StagedCatalogCandidate): CandidateRead
 
 function candidateHasTrustedTaxonomyMapping(candidate: StagedCatalogCandidate): boolean {
   const mapping = candidate.rawPayload?.taxonomyMapping as Record<string, unknown> | null | undefined;
-  return Boolean(mapping && (
-    mapping.status === "verified" ||
-    mapping.method === "manual" ||
+  return Boolean(mapping && mapping.status === "verified" && (
     Boolean(mapping.canonicalCategoryId) ||
     Boolean(mapping.canonicalSubcategoryId)
   ));
@@ -932,9 +936,10 @@ function candidateHasTrustedTaxonomyMapping(candidate: StagedCatalogCandidate): 
 // builder so both paths agree on the same definitions.
 function computeCandidateDerivedMetrics(candidates: StagedCatalogCandidate[]): Pick<
   CatalogRunReportMetrics,
-  "productNameCoverage" | "sourceExternalIdCoverage" | "taxonomyResolvedProducts" | "taxonomyResolvedPercentage" | "wouldStage" | "blockedForReview" | "duplicateFingerprintCollisions"
+  "productNameCoverage" | "sourceExternalIdCoverage" | "missingTaxonomyIdentity" | "taxonomyResolvedProducts" | "taxonomyResolvedPercentage" | "wouldStage" | "blockedForReview" | "duplicateFingerprintCollisions"
 > {
   const total = candidates.length;
+  const missingTaxonomyIdentity = candidates.filter((candidate) => !(candidate.externalTaxonomy ?? candidate.rawPayload?.externalTaxonomy)).length;
   const taxonomyResolvedProducts = candidates.filter((candidate) => candidateHasTrustedTaxonomyMapping(candidate) || Boolean(candidate.category || candidate.subcategory || candidate.family)).length;
   const fingerprintCounts = new Map<string, number>();
   for (const candidate of candidates) fingerprintCounts.set(candidate.fingerprint, (fingerprintCounts.get(candidate.fingerprint) ?? 0) + 1);
@@ -942,6 +947,7 @@ function computeCandidateDerivedMetrics(candidates: StagedCatalogCandidate[]): P
   return {
     productNameCoverage: total ? candidates.filter((candidate) => Boolean(candidate.productName?.trim())).length / total : 0,
     sourceExternalIdCoverage: total ? candidates.filter((candidate) => Boolean(candidate.sourceExternalId)).length / total : 0,
+    missingTaxonomyIdentity,
     taxonomyResolvedProducts,
     taxonomyResolvedPercentage: total ? taxonomyResolvedProducts / total : 0,
     wouldStage: candidates.filter((candidate) => candidate.status === "pending").length,
@@ -961,12 +967,13 @@ export function evaluateControlledScaleGates(report: CatalogRunReport): Controll
   if (!requestedVsFetchedOk) notes.push("Requested product count does not equal discovered records");
   if (metrics.requestedLimitReached === false) notes.push("Requested usable enrichment limit was not reached");
 
-  const identityQuality = metrics.invalid === 0 || metrics.invalid <= Math.max(0.05 * metrics.valid, 5) ? "PASS" : "REVIEW";
+  const identityQuality = (metrics.invalid === 0 || metrics.invalid <= Math.max(0.05 * metrics.valid, 5)) && metrics.conflict === 0 && metrics.likelyExisting === 0 && metrics.possibleExisting === 0 ? "PASS" : "REVIEW";
   if (metrics.invalid > 0) notes.push(`Invalid or unusable records: ${metrics.invalid}`);
   if (metrics.conflict > 0) notes.push(`Conflict records surfaced: ${metrics.conflict}`);
 
-  const taxonomyCoverage = metrics.unresolvedTaxonomy <= Math.max(0.1 * metrics.valid, 10) ? "PASS" : "REVIEW";
+  const taxonomyCoverage = metrics.missingTaxonomyIdentity === 0 && metrics.unresolvedTaxonomy <= Math.max(0.1 * metrics.valid, 10) ? "PASS" : "REVIEW";
   if (metrics.unresolvedTaxonomy > 0) notes.push(`Unresolved taxonomy products require review: ${metrics.unresolvedTaxonomy}`);
+  if (metrics.missingTaxonomyIdentity > 0) notes.push(`Products missing provider taxonomy identity: ${metrics.missingTaxonomyIdentity}`);
 
   const collisionCount = metrics.duplicateFingerprintCollisions ?? 0;
   const stagingSafety = (metrics.staged === 0 || metrics.staged <= metrics.requested) && collisionCount === 0 ? "PASS" : "REVIEW";
@@ -977,13 +984,14 @@ export function evaluateControlledScaleGates(report: CatalogRunReport): Controll
   // never persists an import run, so `report.run` is null and there is no
   // positive signal of an apply run to distinguish from. Only flag REVIEW
   // when a persisted run positively confirms this was NOT a dry run.
-  const canonicalSafety = report.run !== null && report.run.dryRun === false ? "REVIEW" : "PASS";
-  if (canonicalSafety === "REVIEW") notes.push("A non-dry-run run should not be used for controlled scale-up validation");
+  const canonicalSafety = report.executionMode === "apply" ? "REVIEW" : "PASS";
+  if (canonicalSafety === "REVIEW") notes.push("Apply mode is diagnostic only; gates never authorize canonical writes");
 
   const statuses = [discoveryHealth, identityQuality, taxonomyCoverage, stagingSafety, canonicalSafety];
   const overall = statuses.some((status) => status === "FAIL") ? "FAIL" : statuses.some((status) => status === "REVIEW") ? "REVIEW" : "PASS";
 
   return {
+    advisory: true,
     discoveryHealth,
     identityQuality,
     taxonomyCoverage,
@@ -1083,7 +1091,7 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     };
   });
 
-  return { currentRunId: runId ?? currentRun?.id ?? null, run: currentRun, candidates: runCandidates, metrics, sample };
+  return { currentRunId: runId ?? currentRun?.id ?? null, executionMode: currentRun?.dryRun === false ? "apply" : "dry-run", run: currentRun, candidates: runCandidates, metrics, sample };
 }
 
 /**
@@ -1160,7 +1168,7 @@ export function buildCatalogRunReportFromResult(
     };
   });
 
-  return { currentRunId: run.runId ?? null, run: null, candidates, metrics, sample };
+  return { currentRunId: run.runId ?? null, executionMode: run.executionMode, run: null, candidates, metrics, sample };
 }
 
 export function rankTaxonomyGaps(
@@ -1226,6 +1234,7 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
   const lines = [
     "CATALOG ACQUISITION RUN",
     `Provider: open-icecat`,
+    `Execution mode: ${report.executionMode}`,
     `Run: ${report.currentRunId ?? "n/a"}`,
     "",
     "DISCOVERY",
@@ -1259,6 +1268,7 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     "TAXONOMY",
     `Resolved products: ${metrics.taxonomyResolvedProducts}`,
     `Unresolved products: ${metrics.unresolvedTaxonomy}`,
+    `Missing taxonomy identity: ${metrics.missingTaxonomyIdentity}`,
     `Resolved percentage: ${formatRate(metrics.taxonomyResolvedPercentage)}`,
     `Trusted (verified persisted mapping) coverage: ${formatRate(metrics.trustedMappingCoverage)}`,
     "(unresolved external taxonomy IDs ranked by product count are reported separately)",
@@ -1283,7 +1293,7 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
 
 export function formatControlledScaleGateReport(gate: ControlledScaleGateReport): string {
   const lines = [
-    "SCALE GATES",
+    "SCALE GATES (ADVISORY ONLY)",
     `Discovery health: ${gate.discoveryHealth}`,
     `Identity quality: ${gate.identityQuality}`,
     `Taxonomy coverage: ${gate.taxonomyCoverage}`,

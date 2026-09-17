@@ -46,7 +46,7 @@ The controlled rollout is intentionally read-only until the operator explicitly 
    ```bash
    npm run catalog:acquire:icecat -- --discover --mode initial --limit 500 --page-size 50 --dry-run
    ```
-3. Inspect the scale report:
+3. Inspect the scale report printed by that same command. Dry-run data is not persisted and cannot be reconstructed afterward. For an explicit apply run only, inspect the persisted run later with:
    ```bash
    npm run catalog:run:report -- --run-id <RUN_ID>
    ```
