@@ -89,7 +89,6 @@ const assert = require("assert");
 
   const consumerController = new AbortController();
   let consumerRequests = 0;
-  let consumerAborts = 0;
   const consumerProvider = new OpenIcecatProvider({
     username: "u",
     password: "p",
@@ -99,7 +98,7 @@ const assert = require("assert");
       const id = String(url).match(/\/(\d+)\.xml$/)[1];
       await new Promise((resolve, reject) => {
         const timer = setTimeout(resolve, id === "1" ? 10 : 500);
-        init.signal.addEventListener("abort", () => { clearTimeout(timer); consumerAborts += 1; reject(init.signal.reason); }, { once: true });
+        init.signal.addEventListener("abort", () => { clearTimeout(timer); reject(init.signal.reason); }, { once: true });
       });
       return new Response(detail(id));
     },
@@ -112,31 +111,82 @@ const assert = require("assert");
   await assert.rejects(consumerIterator.throw(new Error("consumer failure before acknowledgment")), /consumer failure/);
   await new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(consumerRequests, requestsAtCancellation);
-  assert.strictEqual(consumerAborts >= 0, true);
 
   const cancellationController = new AbortController();
+  const cancellationTimeline = [];
   let cancellationRequests = 0;
-  let cancellationAborts = 0;
+  let cancellationClosed = false;
   const cancellationProvider = new OpenIcecatProvider({
     username: "u",
     password: "p",
     fetcher: async (url, init) => {
       if (String(url).endsWith(".index.xml.gz")) return new Response(index);
+      const id = String(url).match(/\/(\d+)\.xml$/)[1];
+      const request = { id, position: Number(id), started: true, activeAtAbort: false, signalAbortedAtAbort: false, abortEvent: false, settled: false, settlement: null };
       cancellationRequests += 1;
+      cancellationTimeline.push(request);
+      if (cancellationClosed) throw new Error("request started after cancellation");
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, 1000);
-        init.signal.addEventListener("abort", () => { clearTimeout(timer); cancellationAborts += 1; reject(init.signal.reason); }, { once: true });
+        const abort = () => {
+          request.activeAtAbort = true;
+          request.signalAbortedAtAbort = init.signal.aborted;
+          request.abortEvent = true;
+          request.settlement = "abort";
+          request.settled = true;
+          reject(init.signal.reason);
+        };
+        init.signal.addEventListener("abort", abort, { once: true });
       });
-      return new Response(detail(String(url).match(/\/(\d+)\.xml$/)[1]));
+      request.settlement = "success";
+      request.settled = true;
+      return new Response(detail(id));
     },
   });
   const cancellationPending = (async () => {
-    for await (const page of cancellationProvider.discoverProducts({ limit: 5, concurrency: 3, signal: cancellationController.signal })) void page;
+    for await (const page of cancellationProvider.discoverProducts({ limit: 5, concurrency: 3, parserFeedChars: 4096, signal: cancellationController.signal })) void page;
   })();
   while (cancellationRequests < 3) await new Promise((resolve) => setImmediate(resolve));
+  cancellationClosed = true;
+  const activeBeforeCancellation = cancellationTimeline.filter((request) => !request.settled);
+  assert.strictEqual(activeBeforeCancellation.length, 3);
   cancellationController.abort(new Error("multi-active-cancel"));
   await assert.rejects(cancellationPending, /multi-active-cancel/);
-  assert.strictEqual(cancellationAborts >= 1, true, `expected active request abort delivery: requests=${cancellationRequests}, aborts=${cancellationAborts}`);
+  assert.strictEqual(cancellationTimeline.length, 3);
+  assert.strictEqual(cancellationTimeline.every((request) => request.activeAtAbort && request.signalAbortedAtAbort && request.abortEvent && request.settled && request.settlement === "abort"), true);
+  assert.strictEqual(cancellationRequests, 3);
+
+  const mixedCancellationController = new AbortController();
+  const mixedCancellationTimeline = [];
+  const mixedCancellationProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(index, { headers: { etag: "mixed-cancel-snapshot" } });
+      const id = String(url).match(/\/(\d+)\.xml$/)[1];
+      const request = { id, started: true, completed: false, aborted: false };
+      mixedCancellationTimeline.push(request);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, id === "1" ? 15 : id === "2" ? 1 : 1000);
+        init.signal.addEventListener("abort", () => { clearTimeout(timer); request.aborted = true; reject(init.signal.reason); }, { once: true });
+      });
+      request.completed = true;
+      return new Response(detail(id));
+    },
+  });
+  const mixedCancellationIterator = mixedCancellationProvider.discoverProducts({ limit: 5, pageSize: 1, concurrency: 3, parserFeedChars: 4096, signal: mixedCancellationController.signal })[Symbol.asyncIterator]();
+  const mixedFirstPage = await mixedCancellationIterator.next();
+  assert.strictEqual(mixedFirstPage.done, false);
+  assert.deepStrictEqual(mixedFirstPage.value.records.map((record) => record.sourceExternalId), ["1"]);
+  assert.strictEqual(mixedFirstPage.value.checkpoint.acknowledgedCursor, undefined);
+  assert.strictEqual(mixedCancellationTimeline.length >= 4, true);
+  assert.strictEqual(mixedCancellationTimeline.some((request) => request.completed && request.id === "2"), true, JSON.stringify(mixedCancellationTimeline));
+  assert.strictEqual(mixedCancellationTimeline.filter((request) => !request.completed).length >= 2, true, JSON.stringify(mixedCancellationTimeline));
+  const mixedRequestsAtCancellation = mixedCancellationTimeline.length;
+  mixedCancellationController.abort(new Error("mixed-consumer-failure"));
+  await assert.rejects(mixedCancellationIterator.throw(new Error("mixed-consumer-failure")), /mixed-consumer-failure/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(mixedCancellationTimeline.filter((request) => request.aborted).length >= 2, true, JSON.stringify(mixedCancellationTimeline));
+  assert.strictEqual(mixedCancellationTimeline.length, mixedRequestsAtCancellation);
 
   const serialPartial = await run(1, { limit: 2 });
   const serialCursor = serialPartial.pages.at(-1).checkpoint.acknowledgedCursor;
