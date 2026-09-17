@@ -133,7 +133,7 @@ async function main() {
     fetcher: makeIcecatDiscoveryFetcher(indexFixture),
   });
   const dailyDiscoveryPages = [];
-  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-09-16T06:02:02Z" })) {
+  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-09-16T06:02:02Z", concurrency: 2 })) {
     dailyDiscoveryPages.push(page);
   }
   assert.strictEqual(dailyDiscoveryPages.length, 2);
@@ -202,9 +202,11 @@ async function main() {
 
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(icecatCliSource, /acquireDiscoveredProducts\(provider, discoveryOptions/, "discovery CLI must use the single-run streaming acquisition orchestrator");
+  assert.match(icecatCliSource, /concurrency: options\.concurrency/, "discovery CLI must forward configured concurrency");
+  assert.match(icecatCliSource, /MAX ACTIVE DETAIL REQUESTS/, "discovery CLI must expose provider concurrency metrics");
   assert.doesNotMatch(icecatCliSource, /const discoveryPages = \[\]/, "discovery CLI must not retain every page");
   const acquisitionSource = fs.readFileSync(path.join(__dirname, "..", "lib", "catalogAcquisition.ts"), "utf8");
-  assert.match(acquisitionSource, /processDiscoveredPages\(provider, discoveryOptions, async \(page\)/, "the discovery orchestrator must process provider pages incrementally");
+  assert.match(acquisitionSource, /processDiscoveredPages\(provider, providerDiscoveryOptions, async \(page\)/, "the discovery orchestrator must process provider pages incrementally");
   assert.match(acquisitionSource, /acquireFromRecords\(pageRecords, canonicalCatalog/, "each discovery page must enter the acquisition pipeline immediately");
 
   assert.doesNotThrow(() => assertProviderSupports(new OpenIcecatProvider({ username: "u", password: "p" }), "discovery"));
@@ -429,7 +431,7 @@ async function testUsableRecordLimitAfterEnrichmentFailure(OpenIcecatProvider) {
   });
   const records = [];
   const errors = [];
-  for await (const page of provider.discoverProducts({ limit: 10, pageSize: 25 })) {
+  for await (const page of provider.discoverProducts({ limit: 10, pageSize: 25, concurrency: 1 })) {
     records.push(...page.records);
     errors.push(...page.errors);
   }
@@ -742,7 +744,7 @@ async function testV2ContinuationContract(OpenIcecatProvider, decodeIcecatDiscov
     },
   });
   const detailPending = (async () => {
-    for await (const page of detailAbortProvider.discoverProducts({ signal: detailAbortController.signal, limit: 2 })) void page;
+    for await (const page of detailAbortProvider.discoverProducts({ signal: detailAbortController.signal, limit: 2, concurrency: 1 })) void page;
   })();
   while (detailRequests === 0) await new Promise((resolve) => setImmediate(resolve));
   detailAbortController.abort(new Error("detail-cancelled"));

@@ -17,6 +17,7 @@ function args() {
     limit: Number(getFlagValue(raw, "--limit") || 10),
     pages: Number(getFlagValue(raw, "--pages") || 1),
     pageSize: Number(getFlagValue(raw, "--page-size") || 25),
+    concurrency: Number(getFlagValue(raw, "--concurrency") || 1),
     brand: getFlagValue(raw, "--brand") || null,
     category: getFlagValue(raw, "--category") || null,
     country: getFlagValue(raw, "--country") || null,
@@ -57,7 +58,9 @@ async function main() {
   }
 
   const { resolveCanonicalCatalogEntries } = await import("../lib/catalogCanonicalLookup.ts");
+  const canonicalLoadStartedAt = Date.now();
   const canonicalCatalog = await resolveCanonicalCatalogEntries({ backend: options.backend || undefined });
+  const canonicalCatalogLoadMs = Date.now() - canonicalLoadStartedAt;
   let store;
   if (options.apply) {
     const { resolveStagingStore } = await import("../lib/stagingStore.ts");
@@ -66,6 +69,17 @@ async function main() {
   const metadata = provider.getSourceMetadata();
   const { resolveTaxonomyMappingStore } = await import("../lib/catalogTaxonomyMappings.ts");
   const taxonomyStore = resolveTaxonomyMappingStore({ backend: options.backend || undefined });
+  let taxonomyResolutionCount = 0;
+  let taxonomyResolutionMs = 0;
+  const resolveTrustedMapping = async (identity) => {
+    const startedAt = Date.now();
+    try {
+      return await taxonomyStore.resolveTrustedMapping(identity);
+    } finally {
+      taxonomyResolutionCount += 1;
+      taxonomyResolutionMs += Date.now() - startedAt;
+    }
+  };
 
   let records = [];
   let providerErrors = [];
@@ -80,6 +94,7 @@ async function main() {
       mode: options.mode,
       limit: options.limit,
       pageSize: options.pageSize,
+      concurrency: options.concurrency,
       brand: options.brand || undefined,
       category: options.category || undefined,
       country: options.country || undefined,
@@ -91,7 +106,7 @@ async function main() {
       apply: options.apply,
       adapter: "open-icecat",
       sourcePath: options.source,
-      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
+      taxonomyResolver: resolveTrustedMapping,
     }, store);
     fetched = discoveryRun.fetched;
     pages = discoveryRun.pages;
@@ -125,7 +140,7 @@ async function main() {
       apply: options.apply,
       adapter: "open-icecat",
       sourcePath: options.source,
-      taxonomyResolver: (identity) => taxonomyStore.resolveTrustedMapping(identity),
+      taxonomyResolver: resolveTrustedMapping,
     }, store);
   }
   if (!run.summary.qualityMetrics) {
@@ -138,9 +153,32 @@ async function main() {
   console.log(`RECORDS ENRICHED: ${options.discover ? enriched : records.length}`);
   console.log(`PAGES: ${pages}`);
   console.log(`PROVIDER ERRORS: ${providerErrors.length}`);
+  if (run.providerMetrics) console.log(`ENRICHMENT ATTEMPTS NOT IN USABLE OUTPUT: ${Math.max(run.providerMetrics.enrichmentAttempts - enriched, 0)}`);
+  console.log(`CANONICAL CATALOG LOAD MS: ${canonicalCatalogLoadMs}`);
+  console.log(`CANONICAL CATALOG PRODUCTS: ${canonicalCatalog.length}`);
+  console.log(`TAXONOMY RESOLUTION COUNT: ${taxonomyResolutionCount}`);
+  console.log(`TAXONOMY RESOLUTION TOTAL MS: ${taxonomyResolutionMs}`);
+  console.log(`TAXONOMY RESOLUTION AVERAGE MS: ${taxonomyResolutionCount ? (taxonomyResolutionMs / taxonomyResolutionCount).toFixed(2) : "0.00"}`);
   console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
   console.log(`TERMINATION REASON: ${run.terminationReason || "source-exhausted"}`);
+  if (run.providerMetrics) {
+    console.log(`CONCURRENCY: ${run.providerMetrics.concurrency}`);
+    console.log(`MAX ACTIVE DETAIL REQUESTS: ${run.providerMetrics.maxActiveDetailRequests}`);
+    console.log(`ADMISSION WINDOW HIGH-WATER: ${run.providerMetrics.admittedWindowHighWaterMark}`);
+    console.log(`REORDER BUFFER HIGH-WATER: ${run.providerMetrics.reorderBufferHighWaterMark}`);
+    console.log(`DETAIL REQUEST COUNT: ${run.providerMetrics.detailLatencyCount}`);
+    console.log(`DETAIL REQUEST TOTAL MS: ${run.providerMetrics.detailLatencyTotalMs}`);
+    console.log(`DETAIL REQUEST AVERAGE MS: ${run.providerMetrics.averageDetailLatencyMs.toFixed(2)}`);
+    console.log(`INDEX HEADERS MS: ${run.providerMetrics.indexHeadersMs}`);
+    console.log(`TIME TO FIRST INDEX BYTE MS: ${run.providerMetrics.timeToFirstIndexByteMs ?? "n/a"}`);
+    console.log(`PARSER TRAVERSAL MS: ${run.providerMetrics.parserTraversalMs ?? "n/a"}`);
+    console.log(`TIME TO FIRST QUALIFYING MS: ${run.providerMetrics.timeToFirstQualifyingMs ?? "n/a"}`);
+    console.log(`QUALIFYING SPAN MS: ${run.providerMetrics.qualifyingSpanMs ?? "n/a"}`);
+    console.log(`DETAIL ENRICHMENT WALL MS: ${run.providerMetrics.detailEnrichmentWallMs ?? "n/a"}`);
+    console.log(`DOWNSTREAM ACQUISITION MS: ${run.downstreamAcquisitionMs ?? "n/a"}`);
+    console.log(`SPECULATIVE CANCELLATIONS: ${run.providerMetrics.speculativeCancellationCount}`);
+  }
   console.log(`ACKNOWLEDGED CONTINUATION: ${run.continuation ? "available" : "none"}`);
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));

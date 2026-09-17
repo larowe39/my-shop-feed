@@ -200,10 +200,21 @@ continuation metadata for reporting and tests. Emission alone does not advance
 the recovery frontier. The in-memory dry-run boundary is not a durable
 crash-recovery guarantee.
 
+Discovery detail enrichment accepts `--concurrency`, bounded to 1 through 5;
+the default is 1 and concurrency 1 is the deterministic serial reference;
+explicit higher values are available for offline validation and controlled rollout.
+Runtime diagnostics report active-request and admission/reorder high-water marks
+plus bounded latency totals. The worker admission window is `2 * concurrency`
+(or 1 in serial mode); synchronous SAX parsing has a separately bounded pending
+budget equal to the parser feed bound (128 by default, configurable up to 8192).
+The explicit total work bound is `worker admission window + parser pending bound`.
+Dry-run reports also expose index header/first-byte timing, parser traversal,
+detail enrichment wall time, qualification span, and downstream acquisition
+time so provider latency is not confused with serial catalog processing.
 Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
 reason and whether an acknowledged continuation was produced. Concurrency is
-intentionally serial: the provider admits and enriches one candidate at a
-time.
+bounded: the provider admits at most the configured worker count and a small
+reorder window, while committing outcomes in encounter order.
 
 The synthetic streaming tests verify bounded read-ahead, early cancellation,
 first-page delivery before source completion, malformed-record reporting, and
