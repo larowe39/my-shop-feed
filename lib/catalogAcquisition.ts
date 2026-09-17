@@ -10,6 +10,7 @@
 // lib/catalogMatching.ts (Matcher V2) is imported read-only and never modified
 // by this file.
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { CATALOG_CONFIDENCE_THRESHOLDS, findCatalogMatches } from "./catalogMatching.ts";
 import type {
   CandidateClassification,
@@ -49,6 +50,8 @@ export type AcquisitionRunResult = {
   }>;
   summary: AcquisitionSummary;
   persistence: string[];
+  taxonomyMetrics?: TaxonomyResolutionMetrics;
+  downstreamPhaseMetrics?: DownstreamPhaseMetrics;
 };
 
 export type ScaleProfile = {
@@ -73,6 +76,24 @@ export type ControlledScaleGateReport = {
   notes: string[];
 };
 
+export type DownstreamPhaseMetrics = {
+  totalMs: number;
+  normalizationValidationMs: number;
+  taxonomyMs: number;
+  matcherClassificationMs: number;
+  readinessStatusMs: number;
+  stagingCandidateBuildMs: number;
+  reportAggregationMs: number;
+  persistenceMs: number;
+  otherUnattributedMs: number;
+  normalizationValidationCalls: number;
+  taxonomyResolverCalls: number;
+  matcherClassificationCalls: number;
+  readinessStatusCalls: number;
+  stagingCandidateBuildCalls: number;
+  persistenceCalls: number;
+};
+
 export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   fetched: number;
   pages: number;
@@ -85,7 +106,6 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   terminationReason: DiscoveryTerminationReason;
   providerMetrics?: IcecatDiscoveryMetrics;
   downstreamAcquisitionMs?: number;
-  taxonomyMetrics?: TaxonomyResolutionMetrics;
 };
 
 type ExistingImportRun = {
@@ -116,6 +136,10 @@ export type TaxonomyResolutionMetrics = {
 export type RunScopedTaxonomyResolver = TaxonomyMappingResolver & {
   getMetrics: () => TaxonomyResolutionMetrics;
 };
+
+export function isRunScopedTaxonomyResolver(value: TaxonomyMappingResolver | RunScopedTaxonomyResolver | undefined): value is RunScopedTaxonomyResolver {
+  return Boolean(value && typeof value === "function" && typeof (value as RunScopedTaxonomyResolver).getMetrics === "function");
+}
 
 export function createRunScopedTaxonomyResolver(baseResolver?: TaxonomyMappingResolver): RunScopedTaxonomyResolver | undefined {
   if (!baseResolver) return undefined;
@@ -542,13 +566,34 @@ export async function acquireFromRecords(
   options: AcquisitionOptions = {},
   store?: StagingStore
 ): Promise<AcquisitionRunResult> {
+  const downstreamStartedAt = performance.now();
   const apply = options.apply ?? false;
   if (apply && !store) {
     throw new Error("acquireFromRecords: a StagingStore is required when apply=true. Resolve one via resolveStagingStore().");
   }
 
-  const resolvedTaxonomyResolver = createRunScopedTaxonomyResolver(options.taxonomyResolver);
+  const resolvedTaxonomyResolver = isRunScopedTaxonomyResolver(options.taxonomyResolver)
+    ? options.taxonomyResolver
+    : createRunScopedTaxonomyResolver(options.taxonomyResolver);
   const effectiveTaxonomyResolver = resolvedTaxonomyResolver ?? options.taxonomyResolver;
+
+  const phaseCounters = {
+    totalMs: 0,
+    normalizationValidationMs: 0,
+    taxonomyMs: 0,
+    matcherClassificationMs: 0,
+    readinessStatusMs: 0,
+    stagingCandidateBuildMs: 0,
+    reportAggregationMs: 0,
+    persistenceMs: 0,
+    otherUnattributedMs: 0,
+    normalizationValidationCalls: 0,
+    taxonomyResolverCalls: 0,
+    matcherClassificationCalls: 0,
+    readinessStatusCalls: 0,
+    stagingCandidateBuildCalls: 0,
+    persistenceCalls: 0,
+  };
 
   const summary: AcquisitionSummary = {
     processed: records.length,
@@ -571,7 +616,11 @@ export async function acquireFromRecords(
     const rawRecord = records[index] ?? {};
     let resolvedRecord = rawRecord;
     if (rawRecord.externalTaxonomy && effectiveTaxonomyResolver) {
+      const taxonomyStart = performance.now();
       const mapping = await effectiveTaxonomyResolver(rawRecord.externalTaxonomy);
+      phaseCounters.taxonomyMs += performance.now() - taxonomyStart;
+      phaseCounters.taxonomyResolverCalls += 1;
+      const normalizationStart = performance.now();
       const trustedMapping = mappingIsTrusted(mapping) ? mapping : null;
       if (trustedMapping) {
         resolvedRecord = {
@@ -592,8 +641,13 @@ export async function acquireFromRecords(
           },
         };
       }
+      phaseCounters.normalizationValidationMs += performance.now() - normalizationStart;
     }
+
+    const validationStart = performance.now();
     const validation = validateCatalogCandidate(resolvedRecord as CatalogCandidateInput);
+    phaseCounters.normalizationValidationMs += performance.now() - validationStart;
+    phaseCounters.normalizationValidationCalls += 1;
     if (!validation.valid) {
       summary.invalid += 1;
       summary.errors += 1;
@@ -603,7 +657,10 @@ export async function acquireFromRecords(
 
     summary.valid += 1;
     resolvedRecordsForMetrics.push(resolvedRecord);
+    const matcherStart = performance.now();
     const classification = classifyCandidate(resolvedRecord as CatalogCandidateInput, canonicalCatalog);
+    phaseCounters.matcherClassificationMs += performance.now() - matcherStart;
+    phaseCounters.matcherClassificationCalls += 1;
 
     if (classification === "EXACT_EXISTING") {
       summary.exactExisting += 1;
@@ -614,8 +671,13 @@ export async function acquireFromRecords(
     else if (classification === "NEW") summary.new += 1;
     else if (classification === "CONFLICT") summary.conflict += 1;
 
+    const readinessStart = performance.now();
     const readiness = assessCandidateReadiness(resolvedRecord, classification);
     const status: ReviewStatus = readiness.reviewRequired ? "needs_review" : "pending";
+    phaseCounters.readinessStatusMs += performance.now() - readinessStart;
+    phaseCounters.readinessStatusCalls += 1;
+
+    const buildStart = performance.now();
     const fingerprint = sourceFingerprint({
       sourceId: sourceInfo.id ?? resolvedRecord.sourceId ?? null,
       sourceExternalId: resolvedRecord.sourceExternalId ?? null,
@@ -659,10 +721,14 @@ export async function acquireFromRecords(
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    phaseCounters.stagingCandidateBuildMs += performance.now() - buildStart;
+    phaseCounters.stagingCandidateBuildCalls += 1;
     summary.staged += 1;
   }
 
+  const reportStart = performance.now();
   summary.qualityMetrics = calculateAcquisitionQualityMetrics(resolvedRecordsForMetrics, summary);
+  phaseCounters.reportAggregationMs = performance.now() - reportStart;
 
   const persistenceMessages: string[] = [];
   let source: SourceRegistryEntry | undefined;
@@ -670,6 +736,7 @@ export async function acquireFromRecords(
   let stagedResult = candidates;
 
   if (apply && store) {
+    const persistenceStart = performance.now();
     source = options.existingRun?.source ?? await store.upsertSource({
         id: sourceInfo.id,
         name: sourceInfo.name ?? "fixture-source",
@@ -680,6 +747,7 @@ export async function acquireFromRecords(
         notes: sourceInfo.notes ?? null,
         metadata: sourceInfo.metadata ?? {},
       });
+    phaseCounters.persistenceCalls += options.existingRun?.source ? 0 : 1;
     for (const candidate of candidates) candidate.sourceId = source.id ?? candidate.sourceId;
 
     if (options.existingRun) {
@@ -705,9 +773,11 @@ export async function acquireFromRecords(
         summary,
       };
       runId = (await store.createImportRun(source, runInput)).id;
+      phaseCounters.persistenceCalls += 1;
     }
     for (const candidate of candidates) candidate.importRunId = runId;
     stagedResult = await store.upsertStagedCandidates(candidates);
+    phaseCounters.persistenceCalls += 1;
     summary.staged = stagedResult.length;
     if (!options.deferRunFinalization) await store.updateImportRun(runId, {
       processed: summary.processed,
@@ -722,8 +792,13 @@ export async function acquireFromRecords(
       errors: summary.errors,
       summary,
     });
+    if (!options.deferRunFinalization) phaseCounters.persistenceCalls += 1;
+    phaseCounters.persistenceMs += performance.now() - persistenceStart;
     persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
+
+  phaseCounters.totalMs = performance.now() - downstreamStartedAt;
+  phaseCounters.otherUnattributedMs = Math.max(0, phaseCounters.totalMs - measuredDownstreamPhaseMs(phaseCounters));
 
   const result: AcquisitionRunResult = {
     executionMode: apply ? "apply" : "dry-run",
@@ -735,13 +810,23 @@ export async function acquireFromRecords(
     summary,
     persistence: persistenceMessages,
   };
+  attachPhaseMetrics(result, phaseCounters);
   attachTaxonomyMetrics(result, effectiveTaxonomyResolver);
   return result;
 }
 
+function measuredDownstreamPhaseMs(metrics: DownstreamPhaseMetrics): number {
+  return metrics.normalizationValidationMs + metrics.taxonomyMs + metrics.matcherClassificationMs +
+    metrics.readinessStatusMs + metrics.stagingCandidateBuildMs + metrics.reportAggregationMs + metrics.persistenceMs;
+}
+
+function attachPhaseMetrics(run: AcquisitionRunResult | DiscoveryAcquisitionResult, phaseCounters: DownstreamPhaseMetrics): void {
+  run.downstreamPhaseMetrics = { ...phaseCounters };
+}
+
 function attachTaxonomyMetrics(run: AcquisitionRunResult | DiscoveryAcquisitionResult, resolver?: RunScopedTaxonomyResolver | TaxonomyMappingResolver): void {
   if (typeof (resolver as RunScopedTaxonomyResolver | undefined)?.getMetrics === "function") {
-    (run as DiscoveryAcquisitionResult).taxonomyMetrics = (resolver as RunScopedTaxonomyResolver).getMetrics();
+    run.taxonomyMetrics = (resolver as RunScopedTaxonomyResolver).getMetrics();
   }
 }
 
@@ -783,7 +868,26 @@ export async function acquireDiscoveredProducts<TRaw>(
   let existingRun: ExistingImportRun | undefined;
   let providerMetrics: IcecatDiscoveryMetrics | undefined;
   let downstreamAcquisitionMs = 0;
-  const runScopedTaxonomyResolver = createRunScopedTaxonomyResolver(options.taxonomyResolver);
+  const aggregatePhaseMetrics: DownstreamPhaseMetrics = {
+    totalMs: 0,
+    normalizationValidationMs: 0,
+    taxonomyMs: 0,
+    matcherClassificationMs: 0,
+    readinessStatusMs: 0,
+    stagingCandidateBuildMs: 0,
+    reportAggregationMs: 0,
+    persistenceMs: 0,
+    otherUnattributedMs: 0,
+    normalizationValidationCalls: 0,
+    taxonomyResolverCalls: 0,
+    matcherClassificationCalls: 0,
+    readinessStatusCalls: 0,
+    stagingCandidateBuildCalls: 0,
+    persistenceCalls: 0,
+  };
+  const runScopedTaxonomyResolver = isRunScopedTaxonomyResolver(options.taxonomyResolver)
+    ? options.taxonomyResolver
+    : createRunScopedTaxonomyResolver(options.taxonomyResolver);
   const taxonomyResolverForPage = runScopedTaxonomyResolver ?? options.taxonomyResolver;
   const providerDiscoveryOptions: ProviderDiscoveryOptions = {
     ...discoveryOptions,
@@ -851,14 +955,19 @@ export async function acquireDiscoveredProducts<TRaw>(
       }
     }
     metricRecords.push(...pageRecords);
-    const downstreamStartedAt = Date.now();
+    const downstreamStartedAt = performance.now();
     const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
       ...options,
       taxonomyResolver: taxonomyResolverForPage,
       existingRun,
       deferRunFinalization: Boolean(existingRun),
     }, store);
-    downstreamAcquisitionMs += Date.now() - downstreamStartedAt;
+    downstreamAcquisitionMs += performance.now() - downstreamStartedAt;
+    if (pageRun.downstreamPhaseMetrics) {
+      for (const key of Object.keys(aggregatePhaseMetrics) as Array<keyof DownstreamPhaseMetrics>) {
+        aggregatePhaseMetrics[key] += pageRun.downstreamPhaseMetrics[key];
+      }
+    }
     for (const key of ["processed", "valid", "invalid", "exactExisting", "likelyExisting", "possibleExisting", "new", "conflict", "errors"] as const) {
       aggregate[key] += pageRun.summary[key];
     }
@@ -928,6 +1037,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     providerMetrics,
     downstreamAcquisitionMs,
   };
+  attachPhaseMetrics(result, aggregatePhaseMetrics);
   attachTaxonomyMetrics(result, taxonomyResolverForPage);
   return result;
 }

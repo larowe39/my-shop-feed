@@ -16,7 +16,7 @@ async function main() {
   const providers = await import("../lib/catalogProviders.ts");
   const { mappingKey, mappingIsTrusted } = taxonomy;
   const { LocalTaxonomyMappingStore } = mappings;
-  const { acquireFromRecords, assessCandidateReadiness } = acquisition;
+  const { acquireFromRecords, assessCandidateReadiness, createRunScopedTaxonomyResolver } = acquisition;
   const { LocalStagingStore } = staging;
   const { OPEN_ICECAT_CATEGORIES_URL, parseOpenIcecatCategoriesXml, fetchOpenIcecatTaxonomy, loadOpenIcecatTaxonomyCache, saveOpenIcecatTaxonomyCache } = providerTaxonomy;
   const { normalizeIcecatProduct } = providers;
@@ -298,7 +298,10 @@ async function main() {
     externalTaxonomy: { provider: "open-icecat", externalId: repeatedIds[index % repeatedIds.length], name: `Category ${repeatedIds[index % repeatedIds.length]}` },
     raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: repeatedIds[index % repeatedIds.length], name: `Category ${repeatedIds[index % repeatedIds.length]}` } },
   }));
-  await acquireFromRecords(repeatedBatch, [], { name: "taxonomy-batch", type: "external-provider" }, { taxonomyResolver: repeatedResolver });
+  const repeatedScopedResolver = createRunScopedTaxonomyResolver(repeatedResolver);
+  await acquireFromRecords(repeatedBatch, [], { name: "taxonomy-batch", type: "external-provider" }, { taxonomyResolver: repeatedScopedResolver });
+  assert.ok(repeatedScopedResolver.getMetrics().cacheHits >= 95, `reused taxonomy IDs must count as cache hits; saw ${repeatedScopedResolver.getMetrics().cacheHits} hits for 100 repeated records`);
+  assert.ok(repeatedScopedResolver.getMetrics().cacheMisses <= repeatedIds.length, `cache misses must remain bounded by unique taxonomy IDs; saw ${repeatedScopedResolver.getMetrics().cacheMisses} misses for ${repeatedIds.length} unique IDs`);
   assert.ok(repeatedResolverCalls <= repeatedIds.length, `repeated taxonomy IDs must reuse a run-scoped cache instead of resolving once per product; saw ${repeatedResolverCalls} calls for ${repeatedIds.length} unique ids`);
 
   const pageResolverCalls = [];
