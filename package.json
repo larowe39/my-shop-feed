@@ -13,6 +13,7 @@
     "catalog:data-test": "node ./scripts/test-catalog-data.js",
     "catalog:matcher-test": "node ./scripts/test-catalog-matcher.js",
     "catalog:matcher-equivalence-test": "node ./scripts/test-catalog-matcher-equivalence.js",
+    "catalog:matcher-differential-test": "node ./scripts/test-catalog-matcher-differential.js",
     "catalog:matcher-performance": "node ./scripts/benchmark-catalog-matcher.js",
     "catalog:matcher-report": "node ./scripts/report-catalog-matcher.js",
     "catalog:import": "node ./scripts/import-catalog-data.js",

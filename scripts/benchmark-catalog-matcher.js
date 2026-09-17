@@ -37,6 +37,8 @@ async function main() {
     { name: "larger-bounded", incoming: 1000, canonical: 1000 },
   ];
 
+  console.log("Matcher V2 microbenchmark only; timings do not represent end-to-end acquisition throughput.");
+
   for (const scale of scales) {
     const catalog = Array.from({ length: scale.canonical }, (_, index) => candidate(index));
     const records = Array.from({ length: scale.incoming }, (_, index) => ({
@@ -52,12 +54,20 @@ async function main() {
     const buildStartedAt = performance.now();
     const index = createCatalogMatcherIndex(catalog);
     const indexBuildMs = performance.now() - buildStartedAt;
-    const metrics = { candidatesConsidered: 0, scoringOperations: 0 };
+    const metrics = {
+      canonicalEntriesExamined: 0,
+      scorerInvocations: 0,
+      specificityWitnessChecks: 0,
+      candidateRetrievalMs: 0,
+      scoringMs: 0,
+      finalizationMs: 0,
+    };
     const optimizedStartedAt = performance.now();
     for (const record of records) findCatalogMatchesWithIndex(record, index, metrics, true);
     const optimizedMs = performance.now() - optimizedStartedAt;
     const comparisons = scale.incoming * scale.canonical;
     console.log(JSON.stringify({
+      benchmark: "matcher-microbenchmark",
       scale: scale.name,
       incoming: scale.incoming,
       canonical: scale.canonical,
@@ -65,12 +75,16 @@ async function main() {
       productsIndexed: index.productsIndexed,
       aliasesIndexed: index.aliasesIndexed,
       referenceComparisons: comparisons,
-      optimizedCandidatesConsidered: metrics.candidatesConsidered,
-      optimizedScoringOperations: metrics.scoringOperations,
+      indexedCanonicalEntriesExamined: metrics.canonicalEntriesExamined,
+      indexedScorerInvocations: metrics.scorerInvocations,
+      indexedSpecificityWitnessChecks: metrics.specificityWitnessChecks,
+      indexedCandidateRetrievalMs: Number(metrics.candidateRetrievalMs.toFixed(2)),
+      indexedScoringMs: Number(metrics.scoringMs.toFixed(2)),
+      indexedFinalizationMs: Number(metrics.finalizationMs.toFixed(2)),
       referenceMeasured: measureReference,
-      referenceMs: referenceMs === null ? null : Number(referenceMs.toFixed(2)),
-      optimizedMs: Number(optimizedMs.toFixed(2)),
-      wallClockRatio: referenceMs === null ? null : Number((referenceMs / Math.max(optimizedMs, 0.001)).toFixed(2)),
+      referenceMatcherMs: referenceMs === null ? null : Number(referenceMs.toFixed(2)),
+      indexedMatcherExecutionMs: Number(optimizedMs.toFixed(2)),
+      referenceToIndexedMatcherRatio: referenceMs === null ? null : Number((referenceMs / Math.max(optimizedMs, 0.001)).toFixed(2)),
     }));
   }
 }

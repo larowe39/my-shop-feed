@@ -75,8 +75,12 @@ export type ResolvedCatalogMatch = {
 };
 
 export type CatalogMatcherMetrics = {
-  candidatesConsidered: number;
-  scoringOperations: number;
+  canonicalEntriesExamined: number;
+  scorerInvocations: number;
+  specificityWitnessChecks: number;
+  candidateRetrievalMs: number;
+  scoringMs: number;
+  finalizationMs: number;
 };
 
 type PreparedVariant = {
@@ -109,9 +113,9 @@ type PreparedMatchInput = {
   title: string;
   brand: string;
   category: string;
-  titleForms: string[];
-  compactTitleForms: string[];
+  titleWithoutBrand: string;
   compactTitle: string;
+  compactTitleWithoutBrand: string;
   titleTokens: Set<string>;
 };
 
@@ -377,9 +381,9 @@ function prepareMatchInput(input: CatalogMatchInput): PreparedMatchInput {
     title,
     brand,
     category,
-    titleForms: [title, titleWithoutBrand],
-    compactTitleForms: [compact(title), compact(titleWithoutBrand)],
+    titleWithoutBrand,
     compactTitle: compact(title),
+    compactTitleWithoutBrand: compact(titleWithoutBrand),
     titleTokens: new Set(tokens(title)),
   };
 }
@@ -408,11 +412,15 @@ function scorePreparedCandidate(
   metrics?: CatalogMatcherMetrics,
   preparedInput: PreparedMatchInput = prepareMatchInput(input)
 ): CatalogMatch {
-  metrics && (metrics.scoringOperations += 1);
-  const { title, brand, category, titleForms, compactTitleForms, compactTitle, titleTokens } = preparedInput;
+  metrics && (metrics.scorerInvocations += 1);
+  const { title, brand, category, titleWithoutBrand, compactTitle, compactTitleWithoutBrand, titleTokens } = preparedInput;
   const brandMatches = Boolean(brand && prepared.brandName && brand === prepared.brandName);
   const brandConflicts = Boolean(brand && prepared.brandName && brand !== prepared.brandName);
   const categoryMatches = Boolean(category && prepared.categoryName && category === prepared.categoryName);
+  const titleForms = brandMatches ? [title, titleWithoutBrand] : [title, title];
+  const compactTitleForms = brandMatches
+    ? [compactTitle, compactTitleWithoutBrand]
+    : [compactTitle, compactTitle];
   const exactProductMatch = titleForms.some(
     (titleForm, index) => catalogTextMatchesPrepared(titleForm, compactTitleForms[index], prepared.productName, prepared.compactProductName) ||
       (prepared.modelNumber && catalogTextMatchesPrepared(titleForm, compactTitleForms[index], prepared.modelNumber, prepared.compactModelNumber))
@@ -508,22 +516,48 @@ export function findCatalogMatchesWithIndex(
   metrics?: CatalogMatcherMetrics,
   safeBrandPool = false
 ): CatalogMatch[] {
+  const retrievalStartedAt = performance.now();
   const title = normalizeCatalogText(input.title);
   const preparedInput = prepareMatchInput(input);
-  const candidates = safeBrandPool && preparedInput.brand
-    ? index.candidates.filter((prepared) => !prepared.brandName || prepared.brandName === preparedInput.brand)
-    : index.candidates;
-  const scored = candidates.map((prepared) => {
-    metrics && (metrics.candidatesConsidered += 1);
+  const candidates = index.candidates.map((prepared) => ({
+    prepared,
+    requiresScoring: !(safeBrandPool && preparedInput.brand && prepared.brandName && prepared.brandName !== preparedInput.brand),
+  }));
+  if (metrics) {
+    metrics.canonicalEntriesExamined += candidates.length;
+    metrics.candidateRetrievalMs += performance.now() - retrievalStartedAt;
+  }
+
+  const scoringStartedAt = performance.now();
+  const scored = candidates.map(({ prepared, requiresScoring }) => {
+    if (!requiresScoring) {
+      return {
+        candidate: prepared,
+        match: {
+          productId: prepared.candidate.product.id,
+          confidence: 0.2,
+          reason: "Conflicting explicit brand",
+        },
+      };
+    }
     return { candidate: prepared, match: scorePreparedCandidate(input, prepared, metrics, preparedInput) };
   });
-  return scored
+  if (metrics) metrics.scoringMs += performance.now() - scoringStartedAt;
+
+  const finalizationStartedAt = performance.now();
+  const containedSpecificityWitnesses = scored.filter(({ candidate }) => {
+    metrics && (metrics.specificityWitnessChecks += 1);
+    return containsWholePhrase(title, candidate.productName);
+  });
+  const finalized = scored
     .map(({ candidate, match }) => {
-      const hasMoreSpecificIdentity = scored.some(({ candidate: other }) => {
+      metrics && (metrics.specificityWitnessChecks += 1);
+      const candidateIdentityIsContained = containsWholePhrase(title, candidate.productName);
+      const hasMoreSpecificIdentity = match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.high && candidateIdentityIsContained &&
+        containedSpecificityWitnesses.some(({ candidate: other }) => {
+        metrics && (metrics.specificityWitnessChecks += 1);
         const remainingTokens = tokens(other.productName).slice(tokens(candidate.productName).length);
         return other.candidate.product.id !== candidate.candidate.product.id &&
-          containsWholePhrase(title, candidate.productName) &&
-          containsWholePhrase(title, other.productName) &&
           other.productName.startsWith(`${candidate.productName} `) &&
           (remainingTokens.length > 1 || SPECIFICITY_SUFFIXES.has(remainingTokens[0]));
       });
@@ -533,6 +567,8 @@ export function findCatalogMatchesWithIndex(
       return match;
     })
     .sort((left, right) => right.confidence - left.confidence || left.productId.localeCompare(right.productId));
+  if (metrics) metrics.finalizationMs += performance.now() - finalizationStartedAt;
+  return finalized;
 }
 
 export function findCatalogMatches(

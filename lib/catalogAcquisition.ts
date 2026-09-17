@@ -67,9 +67,8 @@ export type MatcherAcquisitionMetrics = CatalogMatcherMetrics & {
   productsIndexed: number;
   aliasesIndexed: number;
   recordsClassified: number;
-  candidateRetrievalMs: number;
-  scoringMs: number;
-  totalMs: number;
+  matcherExecutionMs: number;
+  totalIncludingIndexBuildMs: number;
 };
 
 export type ScaleProfile = {
@@ -496,6 +495,7 @@ export function classifyCandidateWithIndex(
   const productName = validation.normalized.productName;
   const modelNumber = validation.normalized.modelNumber;
   const exactMatch = canonicalCatalog.some((entry) => {
+    matcherMetrics && (matcherMetrics.canonicalEntriesExamined += 1);
     const sameBrand = identityTokenMatches(brand, entry.brand);
     if (!sameBrand) return false;
     if (modelNumber && identityTokenMatches(modelNumber, entry.modelNumber)) return true;
@@ -508,6 +508,7 @@ export function classifyCandidateWithIndex(
   if (exactMatch) return "EXACT_EXISTING";
 
   const sameBrandSimilar = canonicalCatalog.some((entry) => {
+    matcherMetrics && (matcherMetrics.canonicalEntriesExamined += 1);
     if (!identityTokenMatches(brand, entry.brand)) return false;
     const sameName = identityTokenMatches(productName, entry.productName);
     const sameModel = Boolean(modelNumber && entry.modelNumber && identityTokenMatches(modelNumber, entry.modelNumber));
@@ -519,12 +520,10 @@ export function classifyCandidateWithIndex(
   if (sameBrandSimilar) return "LIKELY_EXISTING";
 
   const candidateInput = { title: productName, brand };
-  const scoringStartedAt = performance.now();
   // A non-empty explicit brand makes every conflicting non-empty canonical
   // brand score 0.2 before any other evidence, so those candidates cannot
   // affect the possible-match threshold. Empty canonical brands stay eligible.
   const matches = findCatalogMatchesWithIndex(candidateInput, matcherIndex, matcherMetrics, true);
-  if (matcherMetrics) matcherMetrics.scoringMs += performance.now() - scoringStartedAt;
   const best = matches.find((match) => match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.possible);
   return best ? "POSSIBLE_EXISTING" : "NEW";
 }
@@ -621,16 +620,37 @@ function makeId(prefix: string): string {
 
 function createMatcherMetrics(index: CatalogMatcherIndex): MatcherAcquisitionMetrics {
   return {
-    candidatesConsidered: 0,
-    scoringOperations: 0,
+    canonicalEntriesExamined: 0,
+    scorerInvocations: 0,
+    specificityWitnessChecks: 0,
+    candidateRetrievalMs: 0,
+    scoringMs: 0,
+    finalizationMs: 0,
     indexBuildMs: 0,
     indexBuildCount: 0,
     productsIndexed: index.productsIndexed,
     aliasesIndexed: index.aliasesIndexed,
     recordsClassified: 0,
-    candidateRetrievalMs: 0,
-    scoringMs: 0,
-    totalMs: 0,
+    matcherExecutionMs: 0,
+    totalIncludingIndexBuildMs: 0,
+  };
+}
+
+function matcherMetricsSummary(metrics: MatcherAcquisitionMetrics): Record<string, number> {
+  return {
+    matcherIndexBuildMs: metrics.indexBuildMs,
+    matcherIndexBuildCount: metrics.indexBuildCount,
+    matcherProductsIndexed: metrics.productsIndexed,
+    matcherAliasesIndexed: metrics.aliasesIndexed,
+    matcherRecordsClassified: metrics.recordsClassified,
+    matcherCanonicalEntriesExamined: metrics.canonicalEntriesExamined,
+    matcherScorerInvocations: metrics.scorerInvocations,
+    matcherSpecificityWitnessChecks: metrics.specificityWitnessChecks,
+    matcherCandidateRetrievalMs: metrics.candidateRetrievalMs,
+    matcherScoringMs: metrics.scoringMs,
+    matcherFinalizationMs: metrics.finalizationMs,
+    matcherExecutionMs: metrics.matcherExecutionMs,
+    matcherTotalIncludingIndexBuildMs: metrics.totalIncludingIndexBuildMs,
   };
 }
 
@@ -665,6 +685,7 @@ export async function acquireFromRecords(
     matcherMetrics = createMatcherMetrics(matcherIndex);
     matcherMetrics.indexBuildMs = performance.now() - indexStartedAt;
     matcherMetrics.indexBuildCount = 1;
+    matcherMetrics.totalIncludingIndexBuildMs = matcherMetrics.indexBuildMs;
   }
   if (!matcherMetrics) matcherMetrics = createMatcherMetrics(matcherIndex);
 
@@ -754,7 +775,8 @@ export async function acquireFromRecords(
     phaseCounters.matcherClassificationMs += matcherElapsedMs;
     phaseCounters.matcherClassificationCalls += 1;
     matcherMetrics.recordsClassified += 1;
-    matcherMetrics.totalMs += matcherElapsedMs;
+    matcherMetrics.matcherExecutionMs += matcherElapsedMs;
+    matcherMetrics.totalIncludingIndexBuildMs = matcherMetrics.indexBuildMs + matcherMetrics.matcherExecutionMs;
 
     if (classification === "EXACT_EXISTING") {
       summary.exactExisting += 1;
@@ -864,7 +886,7 @@ export async function acquireFromRecords(
         promoted: 0,
         staged: summary.staged,
         errors: summary.errors,
-        summary,
+        summary: { ...summary, ...matcherMetricsSummary(matcherMetrics) },
       };
       runId = (await store.createImportRun(source, runInput)).id;
       phaseCounters.persistenceCalls += 1;
@@ -884,7 +906,7 @@ export async function acquireFromRecords(
       conflictRecords: summary.conflict,
       staged: summary.staged,
       errors: summary.errors,
-      summary,
+      summary: { ...summary, ...matcherMetricsSummary(matcherMetrics) },
     });
     if (!options.deferRunFinalization) phaseCounters.persistenceCalls += 1;
     phaseCounters.persistenceMs += performance.now() - persistenceStart;
@@ -989,6 +1011,7 @@ export async function acquireDiscoveredProducts<TRaw>(
   const matcherMetrics = createMatcherMetrics(matcherIndex);
   matcherMetrics.indexBuildMs = performance.now() - matcherIndexStartedAt;
   matcherMetrics.indexBuildCount = 1;
+  matcherMetrics.totalIncludingIndexBuildMs = matcherMetrics.indexBuildMs;
   const providerDiscoveryOptions: ProviderDiscoveryOptions = {
     ...discoveryOptions,
     diagnostics: {
@@ -1091,6 +1114,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     aggregate.staged = await store.countStagedCandidatesByRun(existingRun.id);
     const persistedSummary = {
       ...aggregate,
+      ...matcherMetricsSummary(matcherMetrics),
       requestedLimit: discoveryOptions.limit ?? null,
       sourceRecords: fetched,
       successfulEnrichments: metricRecords.length,
@@ -1182,16 +1206,19 @@ export type CatalogRunReportMetrics = {
   wouldStage: number;
   blockedForReview: number;
   duplicateFingerprintCollisions: number;
-  matcherIndexBuildMs: number;
-  matcherIndexBuildCount: number;
-  matcherProductsIndexed: number;
-  matcherAliasesIndexed: number;
-  matcherRecordsClassified: number;
-  matcherCandidatesConsidered: number;
-  matcherScoringOperations: number;
-  matcherCandidateRetrievalMs: number;
-  matcherScoringMs: number;
-  matcherTotalMs: number;
+  matcherIndexBuildMs: number | null;
+  matcherIndexBuildCount: number | null;
+  matcherProductsIndexed: number | null;
+  matcherAliasesIndexed: number | null;
+  matcherRecordsClassified: number | null;
+  matcherCanonicalEntriesExamined: number | null;
+  matcherScorerInvocations: number | null;
+  matcherSpecificityWitnessChecks: number | null;
+  matcherCandidateRetrievalMs: number | null;
+  matcherScoringMs: number | null;
+  matcherFinalizationMs: number | null;
+  matcherExecutionMs: number | null;
+  matcherTotalIncludingIndexBuildMs: number | null;
 };
 
 export type CatalogRunReport = {
@@ -1374,16 +1401,19 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     providerPages: persistedNumber("providerPages"),
     indexCandidatesExamined: persistedNumber("indexCandidatesExamined"),
     enrichmentAttempts: persistedNumber("enrichmentAttempts"),
-    matcherIndexBuildMs: persistedNumber("matcherIndexBuildMs") ?? 0,
-    matcherIndexBuildCount: persistedNumber("matcherIndexBuildCount") ?? 0,
-    matcherProductsIndexed: persistedNumber("matcherProductsIndexed") ?? 0,
-    matcherAliasesIndexed: persistedNumber("matcherAliasesIndexed") ?? 0,
-    matcherRecordsClassified: persistedNumber("matcherRecordsClassified") ?? 0,
-    matcherCandidatesConsidered: persistedNumber("matcherCandidatesConsidered") ?? 0,
-    matcherScoringOperations: persistedNumber("matcherScoringOperations") ?? 0,
-    matcherCandidateRetrievalMs: persistedNumber("matcherCandidateRetrievalMs") ?? 0,
-    matcherScoringMs: persistedNumber("matcherScoringMs") ?? 0,
-    matcherTotalMs: persistedNumber("matcherTotalMs") ?? 0,
+    matcherIndexBuildMs: persistedNumber("matcherIndexBuildMs"),
+    matcherIndexBuildCount: persistedNumber("matcherIndexBuildCount"),
+    matcherProductsIndexed: persistedNumber("matcherProductsIndexed"),
+    matcherAliasesIndexed: persistedNumber("matcherAliasesIndexed"),
+    matcherRecordsClassified: persistedNumber("matcherRecordsClassified"),
+    matcherCanonicalEntriesExamined: persistedNumber("matcherCanonicalEntriesExamined"),
+    matcherScorerInvocations: persistedNumber("matcherScorerInvocations"),
+    matcherSpecificityWitnessChecks: persistedNumber("matcherSpecificityWitnessChecks"),
+    matcherCandidateRetrievalMs: persistedNumber("matcherCandidateRetrievalMs"),
+    matcherScoringMs: persistedNumber("matcherScoringMs"),
+    matcherFinalizationMs: persistedNumber("matcherFinalizationMs"),
+    matcherExecutionMs: persistedNumber("matcherExecutionMs"),
+    matcherTotalIncludingIndexBuildMs: persistedNumber("matcherTotalIncludingIndexBuildMs"),
     imageCoverage: typeof persistedMetrics?.imageRate === "number" ? persistedMetrics.imageRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.imageUrl)).length / validRecords.length : 0),
     gtinCoverage: typeof persistedMetrics?.gtinRate === "number" ? persistedMetrics.gtinRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / validRecords.length : 0),
     modelCoverage: typeof persistedMetrics?.modelRate === "number" ? persistedMetrics.modelRate : (validRecords.length ? validRecords.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / validRecords.length : 0),
@@ -1461,16 +1491,19 @@ export function buildCatalogRunReportFromResult(
     providerPages: typeof discovery.pages === "number" ? discovery.pages : null,
     indexCandidatesExamined: typeof discovery.indexCandidatesExamined === "number" ? discovery.indexCandidatesExamined : null,
     enrichmentAttempts: typeof discovery.enrichmentAttempts === "number" ? discovery.enrichmentAttempts : null,
-    matcherIndexBuildMs: run.matcherMetrics?.indexBuildMs ?? 0,
-    matcherIndexBuildCount: run.matcherMetrics?.indexBuildCount ?? 0,
-    matcherProductsIndexed: run.matcherMetrics?.productsIndexed ?? 0,
-    matcherAliasesIndexed: run.matcherMetrics?.aliasesIndexed ?? 0,
-    matcherRecordsClassified: run.matcherMetrics?.recordsClassified ?? 0,
-    matcherCandidatesConsidered: run.matcherMetrics?.candidatesConsidered ?? 0,
-    matcherScoringOperations: run.matcherMetrics?.scoringOperations ?? 0,
-    matcherCandidateRetrievalMs: run.matcherMetrics?.candidateRetrievalMs ?? 0,
-    matcherScoringMs: run.matcherMetrics?.scoringMs ?? 0,
-    matcherTotalMs: run.matcherMetrics?.totalMs ?? 0,
+    matcherIndexBuildMs: run.matcherMetrics?.indexBuildMs ?? null,
+    matcherIndexBuildCount: run.matcherMetrics?.indexBuildCount ?? null,
+    matcherProductsIndexed: run.matcherMetrics?.productsIndexed ?? null,
+    matcherAliasesIndexed: run.matcherMetrics?.aliasesIndexed ?? null,
+    matcherRecordsClassified: run.matcherMetrics?.recordsClassified ?? null,
+    matcherCanonicalEntriesExamined: run.matcherMetrics?.canonicalEntriesExamined ?? null,
+    matcherScorerInvocations: run.matcherMetrics?.scorerInvocations ?? null,
+    matcherSpecificityWitnessChecks: run.matcherMetrics?.specificityWitnessChecks ?? null,
+    matcherCandidateRetrievalMs: run.matcherMetrics?.candidateRetrievalMs ?? null,
+    matcherScoringMs: run.matcherMetrics?.scoringMs ?? null,
+    matcherFinalizationMs: run.matcherMetrics?.finalizationMs ?? null,
+    matcherExecutionMs: run.matcherMetrics?.matcherExecutionMs ?? null,
+    matcherTotalIncludingIndexBuildMs: run.matcherMetrics?.totalIncludingIndexBuildMs ?? null,
     imageCoverage: typeof qualityMetrics?.imageRate === "number" ? qualityMetrics.imageRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.imageUrl)).length / candidates.length : 0),
     gtinCoverage: typeof qualityMetrics?.gtinRate === "number" ? qualityMetrics.gtinRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.gtin || candidate.upc)).length / candidates.length : 0),
     modelCoverage: typeof qualityMetrics?.modelRate === "number" ? qualityMetrics.modelRate : (candidates.length ? candidates.filter((candidate) => Boolean(candidate.modelNumber || candidate.mpn)).length / candidates.length : 0),
