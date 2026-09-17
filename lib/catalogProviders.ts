@@ -72,6 +72,10 @@ export type ProviderDiscoveryPage<TRaw> = {
   acknowledge?: () => void;
 };
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+}
+
 export type ProviderFetchError = {
   message: string;
   sourceExternalId?: string;
@@ -497,6 +501,7 @@ function buildRequestUrl(baseUrl: string, code: string, parameter: "productcode"
 }
 
 async function fetchWithTimeout(fetcher: typeof fetch, url: string, headers: Record<string, string>, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort(signal?.reason);
@@ -578,8 +583,23 @@ export function decodeIcecatDiscoveryCursor(cursor: string | null | undefined): 
   } catch {
     throw new Error("Invalid Open Icecat v2 continuation token; restart discovery.");
   }
-  const value = decoded as Partial<DiscoveryContinuation>;
-  if (value.version !== 2 || typeof value.sourceUrl !== "string" || typeof value.sourceIdentity !== "string" || typeof value.acknowledgedPosition !== "number") {
+  const value = decoded as Partial<DiscoveryContinuation> & { snapshot?: Partial<DiscoveryContinuation["snapshot"]> };
+  const snapshot = value.snapshot;
+  const integerFields = [value.parsedPosition, value.scheduledPosition, value.completedPosition, value.emittedPosition, value.acknowledgedPosition];
+  const snapshotShape = snapshot && [snapshot.etag, snapshot.lastModified, snapshot.contentLength].every((entry) => entry === null || typeof entry === "string");
+  const hasSnapshotEvidence = Boolean(snapshot && (snapshot.etag || snapshot.lastModified));
+  if (
+    value.version !== 2 ||
+    value.provider !== "open-icecat" ||
+    typeof value.sourceUrl !== "string" ||
+    typeof value.mode !== "string" ||
+    typeof value.filterIdentity !== "string" ||
+    typeof value.parserVersion !== "string" ||
+    typeof value.sourceIdentity !== "string" ||
+    !snapshotShape ||
+    !hasSnapshotEvidence ||
+    integerFields.some((entry) => typeof entry !== "number" || !Number.isInteger(entry) || entry < 0)
+  ) {
     throw new Error("Invalid Open Icecat v2 continuation token; restart discovery.");
   }
   return value as DiscoveryContinuation;
@@ -723,6 +743,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     };
 
     const controller = new AbortController();
+    if (options.signal?.aborted) controller.abort(options.signal.reason);
     const callerAbort = () => {
       controller.abort(options.signal?.reason);
       void cleanup?.();
@@ -738,6 +759,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     try {
       let response: Response;
       try {
+        throwIfAborted(options.signal);
         response = await this.config.fetcher(url, { headers, signal: controller.signal });
       } catch (error) {
         if (controller.signal.aborted && !options.signal?.aborted) {
@@ -774,6 +796,9 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       if (checkpoint.etag && currentMeta.etag && checkpoint.etag !== currentMeta.etag) throw new Error("Icecat discovery checkpoint ETag does not match the current source snapshot.");
       if (checkpoint.lastModified && currentMeta.lastModified && checkpoint.lastModified !== currentMeta.lastModified) throw new Error("Icecat discovery checkpoint Last-Modified does not match the current source snapshot.");
       if (resumeCursor) {
+        if (!currentMeta.etag && !currentMeta.lastModified) {
+          throw new Error("Open Icecat continuation lacks source snapshot evidence; restart discovery.");
+        }
         if (resumeCursor.provider !== "open-icecat" || resumeCursor.sourceUrl !== url || resumeCursor.mode !== mode || resumeCursor.parserVersion !== currentMeta.parserVersion || resumeCursor.filterIdentity !== discoveryFilterIdentity(options)) {
           throw new Error("Open Icecat continuation is incompatible with the requested source, mode, parser, or filters; restart discovery.");
         }
@@ -806,6 +831,10 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let encounterPosition = 0;
       let emittedPosition = resumeCursor?.acknowledgedPosition ?? 0;
       let acknowledgedPosition = resumeCursor?.acknowledgedPosition ?? 0;
+      let nextPageSequence = 1;
+      let nextAcknowledgedPageSequence = 1;
+      const acknowledgedPageSequences = new Set<number>();
+      const pageStates = new Map<number, { page: ProviderDiscoveryPage<IcecatIndexRecord>; continuation: DiscoveryContinuation | null; errors: ProviderFetchError[] }>();
       let limitReached = false;
       let resumeSatisfied = !resumeEnabled;
       const maxEnrichmentAttempts = limit > 0 ? Math.min(100000, Math.max(pageSize, limit * 10)) : 100000;
@@ -816,6 +845,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         const currentErrors = pageErrors.slice();
         const lastRecord = currentPage[currentPage.length - 1];
         if (lastRecord?.encounterPosition) emittedPosition = lastRecord.encounterPosition;
+        const pageSequence = nextPageSequence++;
         const continuation = lastRecord ? {
           version: 2 as const,
           provider: "open-icecat",
@@ -831,13 +861,13 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           acknowledgedPosition,
           sourceIdentity: sourceIdentity(lastRecord),
         } satisfies DiscoveryContinuation : null;
-        const nextCursor = continuation ? encodeIcecatDiscoveryCursor(continuation) : null;
+        const emittedCursor = continuation ? encodeIcecatDiscoveryCursor(continuation) : null;
         page = [];
         pageErrors = [];
         emittedCount += currentPage.length;
         const nextPage: ProviderDiscoveryPage<IcecatIndexRecord> = {
           records: currentPage,
-          nextCursor,
+          nextCursor: null,
           done: limit > 0 && emittedCount >= limit,
           errors: currentErrors,
           checkpoint: {
@@ -853,16 +883,32 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             lastProcessedUpdated: lastUpdatedValue,
             processedCount,
             enrichmentAttempts,
-            cursor: nextCursor,
+            cursor: null,
+            emittedCursor,
             continuation,
-            acknowledgedContinuation: continuation && acknowledgedPosition === emittedPosition ? continuation : null,
+            acknowledgedContinuation: null,
           },
         };
+        const pageState = { page: nextPage, continuation, errors: currentErrors };
+        pageStates.set(pageSequence, pageState);
         nextPage.acknowledge = () => {
-          if (!continuation) return;
-          acknowledgedPosition = emittedPosition;
-          const acknowledged = { ...continuation, acknowledgedPosition, completedPosition: emittedPosition } satisfies DiscoveryContinuation;
-          nextPage.checkpoint = { ...nextPage.checkpoint, acknowledgedContinuation: acknowledged, acknowledgedCursor: encodeIcecatDiscoveryCursor(acknowledged) };
+          if (!continuation || currentErrors.length || !currentMeta.etag && !currentMeta.lastModified) return;
+          acknowledgedPageSequences.add(pageSequence);
+          while (acknowledgedPageSequences.has(nextAcknowledgedPageSequence)) {
+            const acknowledgedState = pageStates.get(nextAcknowledgedPageSequence);
+            if (!acknowledgedState?.continuation || acknowledgedState.errors.length) break;
+            acknowledgedPageSequences.delete(nextAcknowledgedPageSequence);
+            acknowledgedPosition = acknowledgedState.continuation.emittedPosition;
+            const acknowledged = { ...acknowledgedState.continuation, acknowledgedPosition, completedPosition: acknowledgedPosition } satisfies DiscoveryContinuation;
+            acknowledgedState.page.nextCursor = encodeIcecatDiscoveryCursor(acknowledged);
+            acknowledgedState.page.checkpoint = {
+              ...acknowledgedState.page.checkpoint,
+              cursor: acknowledgedState.page.nextCursor,
+              acknowledgedContinuation: acknowledged,
+              acknowledgedCursor: acknowledgedState.page.nextCursor,
+            };
+            nextAcknowledgedPageSequence += 1;
+          }
         };
         readyPages.push(nextPage);
         if (nextPage.done) limitReached = true;
@@ -877,6 +923,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       };
 
       parser.on("opentag", (node) => {
+        throwIfAborted(options.signal);
         if (limitReached) return;
         const attributes = { ...(node.attributes as Record<string, unknown> as Record<string, string>) };
         if (node.name === "files.index") filesIndexSeen = true;
@@ -902,6 +949,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       });
 
       parser.on("closetag", (node) => {
+        throwIfAborted(options.signal);
         if (limitReached) return;
         if (node.name === "M_Prod_ID" && currentTextElement) {
           const value = currentTextElement.value.trim();
@@ -1009,6 +1057,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
 
       const enrichCandidates = async () => {
         while (candidateRecords.length && !limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
+          throwIfAborted(options.signal);
           const indexRecord = candidateRecords.shift()!;
           enrichmentAttempts += 1;
           options.diagnostics?.onEnrichmentAttempt?.();
@@ -1045,6 +1094,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             page.push(enrichedRecord);
             if (page.length >= pageSize || (limit > 0 && emittedCount + page.length >= limit)) flushPage();
           } catch (error) {
+            if (options.signal?.aborted) throw options.signal.reason ?? error;
             const message = error instanceof Error ? error.message : String(error);
             const isDataError = /identity mismatch|MPN mismatch|conflicting Supplier names|missing ID\/Product_ID/.test(message);
             pageErrors.push({

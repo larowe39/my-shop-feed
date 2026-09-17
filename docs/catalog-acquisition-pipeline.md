@@ -100,9 +100,12 @@ Providers advertise capabilities explicitly:
   cursors -> normalization -> the same acquisition pipeline.
 
 Discovery is optional. Its generic contract is an async iterable of bounded
-pages containing records, errors, `nextCursor`, completion state, and an
-optional checkpoint. A future caller can process each page immediately through
-`acquireFromRecords` and persist its cursor, so a provider need not hold
+pages containing records, errors, completion state, and an optional checkpoint.
+For Open Icecat, `nextCursor` is null until that exact page is acknowledged;
+only then does it contain a safe recovery continuation. The emitted-only
+position is retained as `checkpoint.emittedCursor` for diagnostics and must not
+be used for recovery. A future caller can process each page immediately through
+`acquireFromRecords` and persist its acknowledged cursor, so a provider need not hold
 100,000-plus records in memory. Providers supporting both operations advertise
 both capabilities.
 
@@ -176,7 +179,8 @@ index. Timeouts are reported as retriable provider request errors. Individual
 product lookup retains its independent per-request timeout.
 
 Discovery checkpoints use an opaque `ic2.` token containing a version, provider,
-source URL, mode, ETag/Last-Modified/content-length snapshot evidence, a hash of
+source URL, mode, ETag or Last-Modified snapshot evidence, optional content
+length corroboration, a hash of
 the relevant filters, parser version, and explicit parsed/scheduled/completed/
 emitted/acknowledged positions. The position is the encounter number in the
 source snapshot plus an identity check (`Product_ID`, Updated, and product URL);
@@ -186,11 +190,15 @@ exact acknowledged encounter position is found. Missing positions, legacy v1
 tokens, changed snapshots, or changed filters fail with an explicit restart
 requirement.
 
-Provider pages expose an explicit `acknowledge()` hook. Acquisition calls it
-only after downstream page processing succeeds, and returns the last
-acknowledged continuation metadata for reporting and tests. Emission alone
-does not advance the recovery frontier. The in-memory dry-run boundary is not
-a durable crash-recovery guarantee.
+Provider pages expose an explicit `acknowledge()` hook. Each page captures its
+own immutable frontier; acknowledgment is ordered and cannot advance beyond
+an earlier unacknowledged page. Pages containing provider errors, and pages
+following an error-only page, remain replayable rather than silently skipping
+failed source positions. Acquisition calls acknowledgment only after
+downstream page processing succeeds, and returns the last acknowledged
+continuation metadata for reporting and tests. Emission alone does not advance
+the recovery frontier. The in-memory dry-run boundary is not a durable
+crash-recovery guarantee.
 
 Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
 reason and whether an acknowledged continuation was produced. Concurrency is
