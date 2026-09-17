@@ -7,7 +7,7 @@ const { gzipSync } = require("zlib");
 async function main() {
   const provider = await import("../lib/catalogProviders.ts");
   const acquisition = await import("../lib/catalogAcquisition.ts");
-  const { OpenIcecatProvider, parseIcecatXml, parseIcecatProductsXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages } = provider;
+  const { OpenIcecatProvider, parseIcecatXml, parseIcecatProductsXml, normalizeIcecatProduct, mapIcecatCategory, assertProviderSupports, processDiscoveredPages, decodeIcecatDiscoveryCursor, encodeIcecatDiscoveryCursor } = provider;
   const fixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-products.xml"), "utf8");
   const indexFixture = fs.readFileSync(path.join(__dirname, "__fixtures__", "catalog-acquisition", "open-icecat-files-index.xml"), "utf8");
   const first = normalizeIcecatProduct(parseIcecatXml(fixture));
@@ -198,6 +198,7 @@ async function main() {
   await testLargeStreamingDiscovery(OpenIcecatProvider);
   await testTruncatedXmlFailure(OpenIcecatProvider);
   await testMalformedDiscoveryRecord(OpenIcecatProvider);
+  await testV2ContinuationContract(OpenIcecatProvider, decodeIcecatDiscoveryCursor, encodeIcecatDiscoveryCursor);
 
   const icecatCliSource = fs.readFileSync(path.join(__dirname, "catalog-acquire-icecat.js"), "utf8");
   assert.match(icecatCliSource, /acquireDiscoveredProducts\(provider, discoveryOptions/, "discovery CLI must use the single-run streaming acquisition orchestrator");
@@ -569,6 +570,186 @@ async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
   assert.strictEqual(pages.flatMap((page) => page.errors).length, 1);
   assert.match(pages[0].errors[0].message, /missing Product_ID, Model_Name\/Prod_ID, or product XML path/);
   console.log("testMalformedDiscoveryRecord passed.");
+}
+
+async function testV2ContinuationContract(OpenIcecatProvider, decodeIcecatDiscoveryCursor, encodeIcecatDiscoveryCursor) {
+  const index = '<ICECAT-interface><files.index>' + ["9", "10", "2"].map((id) => `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`).join("") + '</files.index></ICECAT-interface>';
+  const makeProvider = (headers = { etag: "fixture-snapshot" }, indexXml = index, indexBaseUrl) => new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    indexBaseUrl,
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(indexXml, { headers });
+      return makeIcecatDiscoveryFetcher(indexXml)(url, init);
+    },
+  });
+
+  const uninterrupted = [];
+  for await (const page of makeProvider().discoverProducts({ limit: 10, pageSize: 1 })) uninterrupted.push(...page.records.map((record) => record.sourceExternalId));
+
+  const firstRun = [];
+  let acknowledgedCursor;
+  for await (const page of makeProvider().discoverProducts({ limit: 1, pageSize: 1 })) {
+    firstRun.push(...page.records.map((record) => record.sourceExternalId));
+    page.acknowledge();
+    acknowledgedCursor = page.checkpoint.acknowledgedCursor;
+  }
+  assert.ok(String(acknowledgedCursor).startsWith("ic2."), "generated continuation must be an opaque v2 token");
+
+  const resumed = [];
+  for await (const page of makeProvider().discoverProducts({ limit: 10, pageSize: 1, cursor: acknowledgedCursor })) resumed.push(...page.records.map((record) => record.sourceExternalId));
+  assert.deepStrictEqual(firstRun.concat(resumed), uninterrupted, "resumed output must equal uninterrupted output at the acknowledged boundary");
+  assert.deepStrictEqual(uninterrupted, ["9", "10", "2"], "numeric and lexical product-ID ordering must not affect encounter order");
+
+  const orderedIterator = makeProvider().discoverProducts({ limit: 3, pageSize: 1 })[Symbol.asyncIterator]();
+  const pageOne = (await orderedIterator.next()).value;
+  const pageTwo = (await orderedIterator.next()).value;
+  assert.strictEqual(pageOne.nextCursor, null, "emission alone must not expose a recovery cursor");
+  pageOne.acknowledge();
+  assert.strictEqual(decodeIcecatDiscoveryCursor(pageOne.checkpoint.acknowledgedCursor).acknowledgedPosition, 1, "page one acknowledgment must remain page-local");
+  assert.strictEqual(pageTwo.checkpoint.acknowledgedCursor, undefined, "later emission must not be acknowledged by page one");
+  pageTwo.acknowledge();
+  assert.strictEqual(decodeIcecatDiscoveryCursor(pageTwo.checkpoint.acknowledgedCursor).acknowledgedPosition, 2, "page two acknowledgment must advance exactly to page two");
+  await orderedIterator.return();
+
+  const repeatedIndex = '<ICECAT-interface><files.index>' + ["7", "7"].map((id) => `<file path="export/freexml/INT/7.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`).join("") + '</files.index></ICECAT-interface>';
+  const repeatedIterator = makeProvider({ etag: "repeated-snapshot" }, repeatedIndex).discoverProducts({ limit: 2, pageSize: 1 })[Symbol.asyncIterator]();
+  const repeatedOne = (await repeatedIterator.next()).value;
+  const repeatedTwo = (await repeatedIterator.next()).value;
+  repeatedOne.acknowledge();
+  repeatedTwo.acknowledge();
+  assert.strictEqual(decodeIcecatDiscoveryCursor(repeatedTwo.checkpoint.acknowledgedCursor).acknowledgedPosition, 2, "adjacent repeated identities must still use positional frontiers");
+  await repeatedIterator.return();
+
+  const failedConsumerIterator = makeProvider().discoverProducts({ limit: 3, pageSize: 1 })[Symbol.asyncIterator]();
+  const unacknowledgedPage = (await failedConsumerIterator.next()).value;
+  assert.strictEqual(unacknowledgedPage.checkpoint.acknowledgedCursor, undefined, "consumer failure before acknowledgment must leave no recovery cursor");
+  await failedConsumerIterator.return();
+
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: acknowledgedCursor, brand: "Changed filter" })) void page;
+  }, /incompatible.*filters/i);
+  const snapshotFirst = makeProvider({ etag: "snapshot-a", "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT", "content-length": "123" });
+  let snapshotCursor;
+  for await (const page of snapshotFirst.discoverProducts({ limit: 1, pageSize: 1 })) {
+    page.acknowledge();
+    snapshotCursor = page.checkpoint.acknowledgedCursor;
+  }
+  await assert.rejects(async () => {
+    for await (const page of makeProvider({ etag: "snapshot-b" }).discoverProducts({ limit: 10, cursor: snapshotCursor })) void page;
+  }, /snapshot does not match/i);
+  await assert.rejects(async () => {
+    for await (const page of makeProvider({ etag: "snapshot-a", "last-modified": "Tue, 02 Jan 2024 00:00:00 GMT", "content-length": "123" }).discoverProducts({ limit: 10, cursor: snapshotCursor })) void page;
+  }, /snapshot does not match/i);
+  await assert.rejects(async () => {
+    for await (const page of makeProvider({ etag: "snapshot-a", "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT", "content-length": "456" }).discoverProducts({ limit: 10, cursor: snapshotCursor })) void page;
+  }, /snapshot does not match/i);
+  await assert.rejects(async () => {
+    for await (const page of makeProvider({ etag: "snapshot-a" }, index, "https://other.example/export/freexml").discoverProducts({ limit: 10, cursor: snapshotCursor })) void page;
+  }, /incompatible.*source/i);
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ mode: "daily", limit: 10, cursor: snapshotCursor })) void page;
+  }, /incompatible.*source/i);
+  const changedParserToken = encodeIcecatDiscoveryCursor({ ...decodeIcecatDiscoveryCursor(snapshotCursor), parserVersion: "changed-parser" });
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: changedParserToken })) void page;
+  }, /incompatible.*parser/i);
+  const missingEvidenceToken = encodeIcecatDiscoveryCursor({ ...decodeIcecatDiscoveryCursor(snapshotCursor), snapshot: { etag: null, lastModified: null, contentLength: null } });
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: missingEvidenceToken })) void page;
+  }, /Invalid.*continuation|snapshot evidence/i);
+  const noEvidencePage = (await makeProvider({}).discoverProducts({ limit: 1, pageSize: 1 })[Symbol.asyncIterator]().next()).value;
+  noEvidencePage.acknowledge();
+  assert.strictEqual(noEvidencePage.checkpoint.acknowledgedCursor, undefined, "no snapshot evidence must not produce a recovery cursor");
+  const lengthOnlyPage = (await makeProvider({ "content-length": "123" }).discoverProducts({ limit: 1, pageSize: 1 })[Symbol.asyncIterator]().next()).value;
+  lengthOnlyPage.acknowledge();
+  assert.strictEqual(lengthOnlyPage.checkpoint.acknowledgedCursor, undefined, "content length alone must not produce a recovery cursor");
+  const malformedTokens = ["ic2.e30=", "ic2." + Buffer.from(JSON.stringify({ version: 2, provider: "open-icecat" })).toString("base64url")];
+  for (const malformedToken of malformedTokens) await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: malformedToken })) void page;
+  }, /Invalid.*continuation|restart/i);
+  await assert.rejects(async () => {
+    for await (const page of makeProvider().discoverProducts({ limit: 10, cursor: "9|2026-09-16T00:00:00Z" })) void page;
+  }, /Unsupported.*v2|restart/i);
+
+  const errorIndex = '<ICECAT-interface><files.index><file Product_ID="bad" Model_Name="Missing path"/><file path="export/freexml/INT/2.xml" Product_ID="2" Prod_ID="MPN-2" Model_Name="Model 2"/></files.index></ICECAT-interface>';
+  const errorProvider = makeProvider({ etag: "error-snapshot" }, errorIndex);
+  const errorPages = [];
+  for await (const page of errorProvider.discoverProducts({ limit: 1, pageSize: 1 })) {
+    errorPages.push(page);
+    page.acknowledge();
+  }
+  assert.strictEqual(errorPages[0].records.length, 0, "error-only pages must remain replayable");
+  assert.strictEqual(errorPages[0].nextCursor, null, "error-only pages must not advance recovery");
+
+  const controller = new AbortController();
+  let sourceCancelled = false;
+  const source = new ReadableStream({
+    start(streamController) { streamController.enqueue(new TextEncoder().encode("<ICECAT-interface><files.index>")); },
+    cancel() { sourceCancelled = true; },
+  });
+  const cancelledProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url) => String(url).endsWith(".index.xml.gz") ? new Response(source) : new Response("never"),
+  });
+  const pending = (async () => {
+    for await (const page of cancelledProvider.discoverProducts({ limit: 1, signal: controller.signal, inactivityTimeoutMs: 1000 })) void page;
+  })();
+  controller.abort();
+  await assert.rejects(pending);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(sourceCancelled, true, "cancellation must close the source iterator");
+
+  const preAbortedIndexController = new AbortController();
+  preAbortedIndexController.abort(new Error("pre-aborted-index"));
+  let preAbortedIndexRequests = 0;
+  await assert.rejects(async () => {
+    for await (const page of new OpenIcecatProvider({ username: "u", password: "p", fetcher: async () => { preAbortedIndexRequests += 1; return new Response(index); } }).discoverProducts({ signal: preAbortedIndexController.signal })) void page;
+  }, /pre-aborted-index/);
+  assert.strictEqual(preAbortedIndexRequests, 0, "pre-aborted index discovery must not start a request");
+
+  const preAbortedDetailController = new AbortController();
+  let preAbortedDetailRequests = 0;
+  const preAbortedDetailProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url) => {
+      if (String(url).endsWith(".index.xml.gz")) {
+        preAbortedDetailController.abort(new Error("pre-aborted-detail"));
+        return new Response(index);
+      }
+      preAbortedDetailRequests += 1;
+      return new Response("never");
+    },
+  });
+  await assert.rejects(async () => {
+    for await (const page of preAbortedDetailProvider.discoverProducts({ signal: preAbortedDetailController.signal })) void page;
+  }, /pre-aborted-detail/);
+  assert.strictEqual(preAbortedDetailRequests, 0, "pre-aborted detail enrichment must not start a request");
+
+  const detailAbortController = new AbortController();
+  let detailRequests = 0;
+  let detailAborted = false;
+  const twoCandidateIndex = '<ICECAT-interface><files.index>' + ["1", "2"].map((id) => `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`).join("") + '</files.index></ICECAT-interface>';
+  const detailAbortProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(twoCandidateIndex);
+      detailRequests += 1;
+      return new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => { detailAborted = true; reject(init.signal.reason); }, { once: true }));
+    },
+  });
+  const detailPending = (async () => {
+    for await (const page of detailAbortProvider.discoverProducts({ signal: detailAbortController.signal, limit: 2 })) void page;
+  })();
+  while (detailRequests === 0) await new Promise((resolve) => setImmediate(resolve));
+  detailAbortController.abort(new Error("detail-cancelled"));
+  await assert.rejects(detailPending, /detail-cancelled/);
+  assert.strictEqual(detailAborted, true, "detail request must receive cancellation");
+  assert.strictEqual(detailRequests, 1, "cancellation must prevent subsequent detail requests");
+  console.log("testV2ContinuationContract passed.");
 }
 
 async function testLargeStreamingDiscovery(OpenIcecatProvider) {

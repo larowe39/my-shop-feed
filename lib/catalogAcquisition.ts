@@ -24,7 +24,7 @@ import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
 import { mappingIsTrusted } from "./catalogTaxonomyTypes.ts";
 import { processDiscoveredPages } from "./catalogProviders.ts";
-import type { CatalogProvider, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
+import type { CatalogProvider, DiscoveryContinuation, DiscoveryTerminationReason, ProviderDiscoveryOptions, ProviderFetchError } from "./catalogProviders.ts";
 
 export type {
   CandidateClassification,
@@ -81,6 +81,8 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   elapsedMs: number;
   indexCandidatesExamined: number | null;
   enrichmentAttempts: number | null;
+  continuation: DiscoveryContinuation | null;
+  terminationReason: DiscoveryTerminationReason;
 };
 
 type ExistingImportRun = {
@@ -710,6 +712,8 @@ export async function acquireDiscoveredProducts<TRaw>(
   let pages = 0;
   let indexCandidatesExamined: number | null = null;
   let enrichmentAttempts: number | null = null;
+  let continuation: DiscoveryContinuation | null = null;
+  let terminationReason: DiscoveryTerminationReason = "source-exhausted";
   let existingRun: ExistingImportRun | undefined;
 
   if (apply && store) {
@@ -778,6 +782,10 @@ export async function acquireDiscoveredProducts<TRaw>(
     staged.push(...pageRun.staged);
     invalidRecords.push(...pageRun.invalidRecords);
     for (const entry of pageRun.persistence) persistence.add(entry);
+    page.acknowledge?.();
+    const acknowledged = page.checkpoint?.acknowledgedContinuation;
+    if (acknowledged && typeof acknowledged === "object") continuation = acknowledged as DiscoveryContinuation;
+    if (page.done) terminationReason = "limit-reached";
   });
 
   aggregate.qualityMetrics = calculateAcquisitionQualityMetrics(metricRecords, aggregate, {
@@ -832,6 +840,8 @@ export async function acquireDiscoveredProducts<TRaw>(
     elapsedMs,
     indexCandidatesExamined,
     enrichmentAttempts,
+    continuation,
+    terminationReason,
   };
 }
 

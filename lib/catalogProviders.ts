@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 import { createGunzip, gunzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 import { SaxesParser } from "saxes";
 import type { CatalogCandidateInput, ExternalTaxonomyIdentity } from "./catalogStagingTypes.ts";
@@ -44,13 +45,36 @@ export type ProviderDiscoveryOptions = {
   };
 };
 
+export type DiscoveryTerminationReason = "limit-reached" | "source-exhausted" | "attempt-budget-exhausted" | "cancelled" | "failed";
+
+export type DiscoveryContinuation = {
+  version: 2;
+  provider: string;
+  sourceUrl: string;
+  mode: string;
+  snapshot: { etag: string | null; lastModified: string | null; contentLength: string | null };
+  filterIdentity: string;
+  parserVersion: string;
+  parsedPosition: number;
+  scheduledPosition: number;
+  completedPosition: number;
+  emittedPosition: number;
+  acknowledgedPosition: number;
+  sourceIdentity: string;
+};
+
 export type ProviderDiscoveryPage<TRaw> = {
   records: TRaw[];
   nextCursor: string | null;
   done: boolean;
   errors: ProviderFetchError[];
   checkpoint?: Record<string, unknown>;
+  acknowledge?: () => void;
 };
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+}
 
 export type ProviderFetchError = {
   message: string;
@@ -237,6 +261,7 @@ export type IcecatIndexRecord = {
   imageUrl: string | null;
   countryMarkets: string[];
   raw: Record<string, unknown>;
+  encounterPosition?: number;
 };
 
 function normalizeIcecatTimestamp(value: string | null): string | null {
@@ -475,9 +500,12 @@ function buildRequestUrl(baseUrl: string, code: string, parameter: "productcode"
   return url.toString();
 }
 
-async function fetchWithTimeout(fetcher: typeof fetch, url: string, headers: Record<string, string>, timeoutMs: number): Promise<string> {
+async function fetchWithTimeout(fetcher: typeof fetch, url: string, headers: Record<string, string>, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
   try {
     const response = await fetcher(url, { headers, signal: controller.signal });
     if (!response.ok) throw new Error(`Icecat HTTP ${response.status} ${response.statusText}`);
@@ -486,6 +514,7 @@ async function fetchWithTimeout(fetcher: typeof fetch, url: string, headers: Rec
     return (isGzipPayload ? gunzipSync(buffer) : buffer).toString("utf8");
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -523,16 +552,57 @@ function buildIndexUrl(baseUrl: string, mode: string): string {
   return url.toString();
 }
 
-function encodeDiscoveryCursor(record: IcecatIndexRecord): string {
-  const productId = String(record.sourceExternalId ?? "");
-  const updated = record.updated ?? "";
-  return productId && updated ? `${productId}|${updated}` : productId || "";
+const ICECAT_CHECKPOINT_VERSION = "icecat-index-v2";
+const ICECAT_PARSER_VERSION = "icecat-index-parser-v2";
+
+function discoveryFilterIdentity(options: ProviderDiscoveryOptions): string {
+  return createHash("sha256").update(JSON.stringify({
+    mode: options.mode ?? "initial",
+    brand: options.brand ?? null,
+    category: options.category ?? null,
+    country: options.country ?? null,
+    onMarket: options.onMarket ?? null,
+    updatedSince: options.updatedSince ?? null,
+  })).digest("hex");
 }
 
-function decodeDiscoveryCursor(cursor: string | null | undefined): { productId: string | null; updated: string | null } {
-  if (!cursor) return { productId: null, updated: null };
-  const [productId, updated] = String(cursor).split("|");
-  return { productId: productId || null, updated: updated || null };
+function sourceIdentity(record: IcecatIndexRecord): string {
+  return [record.sourceExternalId, record.updated ?? "", record.sourceUrl ?? ""].join("|");
+}
+
+export function encodeIcecatDiscoveryCursor(continuation: DiscoveryContinuation): string {
+  return `ic2.${Buffer.from(JSON.stringify(continuation), "utf8").toString("base64url")}`;
+}
+
+export function decodeIcecatDiscoveryCursor(cursor: string | null | undefined): DiscoveryContinuation | null {
+  if (!cursor) return null;
+  if (!String(cursor).startsWith("ic2.")) throw new Error("Unsupported Open Icecat continuation token; restart discovery to create a v2 token.");
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(String(cursor).slice(4), "base64url").toString("utf8"));
+  } catch {
+    throw new Error("Invalid Open Icecat v2 continuation token; restart discovery.");
+  }
+  const value = decoded as Partial<DiscoveryContinuation> & { snapshot?: Partial<DiscoveryContinuation["snapshot"]> };
+  const snapshot = value.snapshot;
+  const integerFields = [value.parsedPosition, value.scheduledPosition, value.completedPosition, value.emittedPosition, value.acknowledgedPosition];
+  const snapshotShape = snapshot && [snapshot.etag, snapshot.lastModified, snapshot.contentLength].every((entry) => entry === null || typeof entry === "string");
+  const hasSnapshotEvidence = Boolean(snapshot && (snapshot.etag || snapshot.lastModified));
+  if (
+    value.version !== 2 ||
+    value.provider !== "open-icecat" ||
+    typeof value.sourceUrl !== "string" ||
+    typeof value.mode !== "string" ||
+    typeof value.filterIdentity !== "string" ||
+    typeof value.parserVersion !== "string" ||
+    typeof value.sourceIdentity !== "string" ||
+    !snapshotShape ||
+    !hasSnapshotEvidence ||
+    integerFields.some((entry) => typeof entry !== "number" || !Number.isInteger(entry) || entry < 0)
+  ) {
+    throw new Error("Invalid Open Icecat v2 continuation token; restart discovery.");
+  }
+  return value as DiscoveryContinuation;
 }
 
 async function* streamIcecatIndex(url: string, headers: Headers, source: Readable): AsyncGenerator<Buffer> {
@@ -673,16 +743,23 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     };
 
     const controller = new AbortController();
+    if (options.signal?.aborted) controller.abort(options.signal.reason);
+    const callerAbort = () => {
+      controller.abort(options.signal?.reason);
+      void cleanup?.();
+    };
+    options.signal?.addEventListener("abort", callerAbort, { once: true });
     const requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? 30000);
     const inactivityTimeoutMs = Math.max(1, options.inactivityTimeoutMs ?? 120000);
     const requestTimeout = setTimeout(() => controller.abort(), requestTimeoutMs);
-    const resumeCursor = decodeDiscoveryCursor(options.cursor ?? (typeof checkpoint.cursor === "string" ? checkpoint.cursor : null));
-    const resumeEnabled = Boolean(resumeCursor.productId || resumeCursor.updated);
+    const resumeCursor = decodeIcecatDiscoveryCursor(options.cursor ?? (typeof checkpoint.cursor === "string" ? checkpoint.cursor : null));
+    const resumeEnabled = Boolean(resumeCursor);
     let cleanup: (() => Promise<void>) | undefined;
 
     try {
       let response: Response;
       try {
+        throwIfAborted(options.signal);
         response = await this.config.fetcher(url, { headers, signal: controller.signal });
       } catch (error) {
         if (controller.signal.aborted && !options.signal?.aborted) {
@@ -705,7 +782,8 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       const currentMeta = {
         sourceUrl: url,
         mode,
-        checkpointVersion: "icecat-index-v1",
+        checkpointVersion: ICECAT_CHECKPOINT_VERSION,
+        parserVersion: ICECAT_PARSER_VERSION,
         etag: response.headers.get("etag"),
         lastModified: response.headers.get("last-modified"),
         contentLength: response.headers.get("content-length"),
@@ -717,6 +795,17 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       if (checkpointVersion && checkpointVersion !== currentMeta.checkpointVersion) throw new Error("Icecat discovery checkpoint version is incompatible with the current index format.");
       if (checkpoint.etag && currentMeta.etag && checkpoint.etag !== currentMeta.etag) throw new Error("Icecat discovery checkpoint ETag does not match the current source snapshot.");
       if (checkpoint.lastModified && currentMeta.lastModified && checkpoint.lastModified !== currentMeta.lastModified) throw new Error("Icecat discovery checkpoint Last-Modified does not match the current source snapshot.");
+      if (resumeCursor) {
+        if (!currentMeta.etag && !currentMeta.lastModified) {
+          throw new Error("Open Icecat continuation lacks source snapshot evidence; restart discovery.");
+        }
+        if (resumeCursor.provider !== "open-icecat" || resumeCursor.sourceUrl !== url || resumeCursor.mode !== mode || resumeCursor.parserVersion !== currentMeta.parserVersion || resumeCursor.filterIdentity !== discoveryFilterIdentity(options)) {
+          throw new Error("Open Icecat continuation is incompatible with the requested source, mode, parser, or filters; restart discovery.");
+        }
+        if (resumeCursor.snapshot.etag !== currentMeta.etag || resumeCursor.snapshot.lastModified !== currentMeta.lastModified || resumeCursor.snapshot.contentLength !== currentMeta.contentLength) {
+          throw new Error("Open Icecat continuation snapshot does not match the current source; restart discovery.");
+        }
+      }
 
       const bodyStream = Readable.fromWeb(response.body as any);
       const decompressedStream = streamIcecatIndex(url, response.headers, bodyStream);
@@ -739,6 +828,13 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let parsedFileRecords = 0;
       let lastSourceIdentity: string | null = null;
       let lastUpdatedValue: string | null = null;
+      let encounterPosition = 0;
+      let emittedPosition = resumeCursor?.acknowledgedPosition ?? 0;
+      let acknowledgedPosition = resumeCursor?.acknowledgedPosition ?? 0;
+      let nextPageSequence = 1;
+      let nextAcknowledgedPageSequence = 1;
+      const acknowledgedPageSequences = new Set<number>();
+      const pageStates = new Map<number, { page: ProviderDiscoveryPage<IcecatIndexRecord>; continuation: DiscoveryContinuation | null; errors: ProviderFetchError[] }>();
       let limitReached = false;
       let resumeSatisfied = !resumeEnabled;
       const maxEnrichmentAttempts = limit > 0 ? Math.min(100000, Math.max(pageSize, limit * 10)) : 100000;
@@ -748,17 +844,35 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         const currentPage = page.slice();
         const currentErrors = pageErrors.slice();
         const lastRecord = currentPage[currentPage.length - 1];
-        const nextCursor = lastRecord ? encodeDiscoveryCursor(lastRecord) : null;
+        if (lastRecord?.encounterPosition) emittedPosition = lastRecord.encounterPosition;
+        const pageSequence = nextPageSequence++;
+        const continuation = lastRecord ? {
+          version: 2 as const,
+          provider: "open-icecat",
+          sourceUrl: url,
+          mode,
+          snapshot: { etag: currentMeta.etag, lastModified: currentMeta.lastModified, contentLength: currentMeta.contentLength },
+          filterIdentity: discoveryFilterIdentity(options),
+          parserVersion: currentMeta.parserVersion,
+          parsedPosition: encounterPosition,
+          scheduledPosition: emittedPosition,
+          completedPosition: emittedPosition,
+          emittedPosition,
+          acknowledgedPosition,
+          sourceIdentity: sourceIdentity(lastRecord),
+        } satisfies DiscoveryContinuation : null;
+        const emittedCursor = continuation ? encodeIcecatDiscoveryCursor(continuation) : null;
         page = [];
         pageErrors = [];
         emittedCount += currentPage.length;
         const nextPage: ProviderDiscoveryPage<IcecatIndexRecord> = {
           records: currentPage,
-          nextCursor,
+          nextCursor: null,
           done: limit > 0 && emittedCount >= limit,
           errors: currentErrors,
           checkpoint: {
             checkpointVersion: currentMeta.checkpointVersion,
+            parserVersion: currentMeta.parserVersion,
             sourceUrl: url,
             mode,
             etag: currentMeta.etag,
@@ -769,8 +883,32 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             lastProcessedUpdated: lastUpdatedValue,
             processedCount,
             enrichmentAttempts,
-            cursor: nextCursor,
+            cursor: null,
+            emittedCursor,
+            continuation,
+            acknowledgedContinuation: null,
           },
+        };
+        const pageState = { page: nextPage, continuation, errors: currentErrors };
+        pageStates.set(pageSequence, pageState);
+        nextPage.acknowledge = () => {
+          if (!continuation || currentErrors.length || !currentMeta.etag && !currentMeta.lastModified) return;
+          acknowledgedPageSequences.add(pageSequence);
+          while (acknowledgedPageSequences.has(nextAcknowledgedPageSequence)) {
+            const acknowledgedState = pageStates.get(nextAcknowledgedPageSequence);
+            if (!acknowledgedState?.continuation || acknowledgedState.errors.length) break;
+            acknowledgedPageSequences.delete(nextAcknowledgedPageSequence);
+            acknowledgedPosition = acknowledgedState.continuation.emittedPosition;
+            const acknowledged = { ...acknowledgedState.continuation, acknowledgedPosition, completedPosition: acknowledgedPosition } satisfies DiscoveryContinuation;
+            acknowledgedState.page.nextCursor = encodeIcecatDiscoveryCursor(acknowledged);
+            acknowledgedState.page.checkpoint = {
+              ...acknowledgedState.page.checkpoint,
+              cursor: acknowledgedState.page.nextCursor,
+              acknowledgedContinuation: acknowledged,
+              acknowledgedCursor: acknowledgedState.page.nextCursor,
+            };
+            nextAcknowledgedPageSequence += 1;
+          }
         };
         readyPages.push(nextPage);
         if (nextPage.done) limitReached = true;
@@ -785,6 +923,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       };
 
       parser.on("opentag", (node) => {
+        throwIfAborted(options.signal);
         if (limitReached) return;
         const attributes = { ...(node.attributes as Record<string, unknown> as Record<string, string>) };
         if (node.name === "files.index") filesIndexSeen = true;
@@ -810,6 +949,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       });
 
       parser.on("closetag", (node) => {
+        throwIfAborted(options.signal);
         if (limitReached) return;
         if (node.name === "M_Prod_ID" && currentTextElement) {
           const value = currentTextElement.value.trim();
@@ -825,6 +965,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         }
         if (node.name !== "file" || !currentFile) return;
 
+        encounterPosition += 1;
         processedCount += 1;
         options.diagnostics?.onRecordSeen?.();
         const productId = first(currentFile.Product_ID, currentFile.ProductId);
@@ -864,6 +1005,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           dateAdded: normalizeIcecatTimestamp(first(currentFile.Date_Added)),
           imageUrl: first(currentFile.HighPic),
           countryMarkets: currentCountryMarkets.slice(),
+          encounterPosition,
           raw: {
             provider: "open-icecat",
             providerProductId: productId,
@@ -884,20 +1026,20 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         };
         parsedFileRecords += 1;
 
-        if (resumeEnabled) {
-          const cursorProductId = resumeCursor.productId ?? "";
-          const cursorUpdated = resumeCursor.updated ?? "";
-          const recordProductId = String(record.sourceExternalId ?? "");
-          const recordUpdated = record.updated ?? "";
-          const recordIsAfterCursor =
-            recordProductId === cursorProductId
-              ? Boolean(cursorUpdated && recordUpdated && recordUpdated > cursorUpdated)
-              : Number(recordProductId) > Number(cursorProductId) || String(recordProductId) > String(cursorProductId);
-          if (!recordIsAfterCursor) {
+        if (resumeEnabled && !resumeSatisfied) {
+          if (encounterPosition < resumeCursor!.acknowledgedPosition) {
             currentFile = null;
             return;
           }
-          resumeSatisfied = true;
+          if (encounterPosition === resumeCursor!.acknowledgedPosition) {
+            if (sourceIdentity(record) !== resumeCursor!.sourceIdentity) {
+              throw new Error("Open Icecat continuation source identity does not match the saved encounter position; restart discovery.");
+            }
+            resumeSatisfied = true;
+            currentFile = null;
+            return;
+          }
+          throw new Error("Open Icecat continuation encounter position was not found; restart discovery.");
         }
 
         if (!matchesDiscoveryFilter(record, { ...options, brand: undefined })) {
@@ -915,11 +1057,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
 
       const enrichCandidates = async () => {
         while (candidateRecords.length && !limitReached && enrichmentAttempts < maxEnrichmentAttempts) {
+          throwIfAborted(options.signal);
           const indexRecord = candidateRecords.shift()!;
           enrichmentAttempts += 1;
           options.diagnostics?.onEnrichmentAttempt?.();
           try {
-            const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000);
+            const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000, options.signal);
             const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
             if (detail.sourceExternalId !== indexRecord.sourceExternalId) {
               throw new Error(`Icecat enrichment identity mismatch: index Product_ID ${indexRecord.sourceExternalId} does not match product ID ${detail.sourceExternalId}`);
@@ -946,11 +1089,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             };
             if (!matchesDiscoveryFilter(enrichedRecord, options)) continue;
             options.diagnostics?.onRecordQualified?.();
-            lastSourceIdentity = enrichedRecord.sourceExternalId;
+            lastSourceIdentity = sourceIdentity(enrichedRecord);
             lastUpdatedValue = enrichedRecord.updated ?? lastUpdatedValue;
             page.push(enrichedRecord);
             if (page.length >= pageSize || (limit > 0 && emittedCount + page.length >= limit)) flushPage();
           } catch (error) {
+            if (options.signal?.aborted) throw options.signal.reason ?? error;
             const message = error instanceof Error ? error.message : String(error);
             const isDataError = /identity mismatch|MPN mismatch|conflicting Supplier names|missing ID\/Product_ID/.test(message);
             pageErrors.push({
@@ -1027,9 +1171,11 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           return;
         }
       }
+      if (resumeEnabled && !resumeSatisfied) throw new Error("Open Icecat continuation encounter position was not found; restart discovery.");
     } finally {
       await cleanup?.();
       clearTimeout(requestTimeout);
+      options.signal?.removeEventListener("abort", callerAbort);
     }
   }
 
