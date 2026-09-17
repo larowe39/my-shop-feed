@@ -200,10 +200,13 @@ continuation metadata for reporting and tests. Emission alone does not advance
 the recovery frontier. The in-memory dry-run boundary is not a durable
 crash-recovery guarantee.
 
-Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
+Discovery detail enrichment accepts `--concurrency`, bounded to 1 through 5;
+the default is 2 and concurrency 1 is the deterministic serial reference.
+Runtime diagnostics report active-request and admission/reorder high-water marks
+plus bounded latency totals. Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
 reason and whether an acknowledged continuation was produced. Concurrency is
-intentionally serial: the provider admits and enriches one candidate at a
-time.
+bounded: the provider admits at most the configured worker count and a small
+reorder window, while committing outcomes in encounter order.
 
 The synthetic streaming tests verify bounded read-ahead, early cancellation,
 first-page delivery before source completion, malformed-record reporting, and

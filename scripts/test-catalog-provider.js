@@ -133,7 +133,7 @@ async function main() {
     fetcher: makeIcecatDiscoveryFetcher(indexFixture),
   });
   const dailyDiscoveryPages = [];
-  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-09-16T06:02:02Z" })) {
+  for await (const page of openIcecatDiscovery.discoverProducts({ mode: "daily", limit: 2, pageSize: 1, updatedSince: "2026-09-16T06:02:02Z", concurrency: 2 })) {
     dailyDiscoveryPages.push(page);
   }
   assert.strictEqual(dailyDiscoveryPages.length, 2);
@@ -429,7 +429,7 @@ async function testUsableRecordLimitAfterEnrichmentFailure(OpenIcecatProvider) {
   });
   const records = [];
   const errors = [];
-  for await (const page of provider.discoverProducts({ limit: 10, pageSize: 25 })) {
+  for await (const page of provider.discoverProducts({ limit: 10, pageSize: 25, concurrency: 1 })) {
     records.push(...page.records);
     errors.push(...page.errors);
   }
@@ -742,7 +742,7 @@ async function testV2ContinuationContract(OpenIcecatProvider, decodeIcecatDiscov
     },
   });
   const detailPending = (async () => {
-    for await (const page of detailAbortProvider.discoverProducts({ signal: detailAbortController.signal, limit: 2 })) void page;
+    for await (const page of detailAbortProvider.discoverProducts({ signal: detailAbortController.signal, limit: 2, concurrency: 1 })) void page;
   })();
   while (detailRequests === 0) await new Promise((resolve) => setImmediate(resolve));
   detailAbortController.abort(new Error("detail-cancelled"));
