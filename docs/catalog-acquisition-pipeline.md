@@ -201,9 +201,14 @@ the recovery frontier. The in-memory dry-run boundary is not a durable
 crash-recovery guarantee.
 
 Discovery detail enrichment accepts `--concurrency`, bounded to 1 through 5;
-the default is 2 and concurrency 1 is the deterministic serial reference.
+the default is 1 and concurrency 1 is the deterministic serial reference;
+explicit higher values are available for offline validation and controlled rollout.
 Runtime diagnostics report active-request and admission/reorder high-water marks
-plus bounded latency totals. Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
+plus bounded latency totals. The worker admission window is `2 * concurrency`
+(or 1 in serial mode); synchronous SAX parsing has a separately bounded pending
+budget equal to the parser feed bound (128 by default, configurable up to 8192).
+The explicit total work bound is `worker admission window + parser pending bound`.
+Discovery CLI resumes with `--cursor <ic2-token>` and reports the termination
 reason and whether an acknowledged continuation was produced. Concurrency is
 bounded: the provider admits at most the configured worker count and a small
 reorder window, while committing outcomes in encounter order.

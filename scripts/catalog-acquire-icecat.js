@@ -17,7 +17,7 @@ function args() {
     limit: Number(getFlagValue(raw, "--limit") || 10),
     pages: Number(getFlagValue(raw, "--pages") || 1),
     pageSize: Number(getFlagValue(raw, "--page-size") || 25),
-    concurrency: Number(getFlagValue(raw, "--concurrency") || 2),
+    concurrency: Number(getFlagValue(raw, "--concurrency") || 1),
     brand: getFlagValue(raw, "--brand") || null,
     category: getFlagValue(raw, "--category") || null,
     country: getFlagValue(raw, "--country") || null,

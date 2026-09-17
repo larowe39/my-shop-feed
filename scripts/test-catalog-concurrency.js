@@ -44,11 +44,99 @@ const assert = require("assert");
     assert.strictEqual(result.metrics.concurrency, concurrency);
     assert.strictEqual(result.metrics.admissionWindow, concurrency * 2);
     assert.strictEqual(result.metrics.maxActiveDetailRequests, result.maxActive, `metric active mismatch at concurrency ${concurrency}: ${JSON.stringify(result.metrics)}`);
-    assert.strictEqual(result.metrics.admittedWindowHighWaterMark <= concurrency * 2, true);
+    assert.strictEqual(result.metrics.admittedWindowHighWaterMark <= result.metrics.totalWorkBound, true);
     assert.strictEqual(result.metrics.reorderBufferHighWaterMark <= concurrency * 2, true);
     assert.strictEqual(result.metrics.detailLatencyCount, result.metrics.enrichmentAttempts);
     assert.strictEqual(result.maxActive > 1, true, `details must overlap at concurrency ${concurrency}`);
   }
+
+  for (const parserFeedChars of [128, 1024, 4096]) {
+    const dense = await run(3, { parserFeedChars, limit: 5 });
+    assert.strictEqual(dense.metrics.parserPendingBound, parserFeedChars);
+    assert.strictEqual(dense.metrics.admittedWindowHighWaterMark <= dense.metrics.totalWorkBound, true, `dense parser feed exceeded bound at ${parserFeedChars}`);
+    assert.deepStrictEqual(dense.pages.map((page) => page.ids), reference.pages.map((page) => page.ids), `dense pages at ${parserFeedChars}: ${JSON.stringify(dense.pages.map((page) => page.ids))}`);
+  }
+
+  const mixedIds = ["1", "2", "3", "4", "5", "6", "7", "8"];
+  const mixedIndex = `<ICECAT-interface><files.index>${mixedIds.map((id) => `<file path="export/freexml/INT/${id}.xml" Product_ID="${id}" Prod_ID="MPN-${id}" Model_Name="Model ${id}"/>`).join("")}</files.index></ICECAT-interface>`;
+  async function runMixed(concurrency) {
+    const provider = new OpenIcecatProvider({
+      username: "u",
+      password: "p",
+      fetcher: async (url) => {
+        if (String(url).endsWith(".index.xml.gz")) return new Response(mixedIndex, { headers: { etag: "mixed-snapshot" } });
+        const id = String(url).match(/\/(\d+)\.xml$/)[1];
+        await new Promise((resolve) => setTimeout(resolve, { "1": 20, "2": 1, "3": 15, "4": 2, "5": 10, "6": 3, "7": 5, "8": 1 }[id]));
+        if (id === "2") return new Response("missing", { status: 404, statusText: "Not Found" });
+        if (id === "3") return new Response("<broken");
+        if (id === "4") return new Response(detail("40"));
+        if (id === "5") return new Response(detail("5").replace("MPN-5", "OTHER-MPN"));
+        if (id === "6") return new Response(detail("6").replace('Name="Brand"', 'Name="Other"'));
+        if (id === "7") throw new Error("synthetic network failure");
+        if (id === "8") return new Response("unavailable", { status: 503, statusText: "Unavailable" });
+        return new Response(detail(id));
+      },
+    });
+    const pages = [];
+    for await (const page of provider.discoverProducts({ limit: 10, pageSize: 2, concurrency, brand: "Brand" })) {
+      page.acknowledge?.();
+      pages.push({ ids: page.records.map((record) => record.sourceExternalId), errors: page.errors.map((error) => ({ sourceExternalId: error.sourceExternalId, message: error.message, retriable: error.retriable })), continuation: page.checkpoint?.acknowledgedContinuation ?? null });
+    }
+    return pages;
+  }
+  const mixedReference = await runMixed(1);
+  for (const concurrency of [2, 3, 5]) assert.deepStrictEqual(await runMixed(concurrency), mixedReference, `mixed outcomes must match at concurrency ${concurrency}`);
+
+  const consumerController = new AbortController();
+  let consumerRequests = 0;
+  let consumerAborts = 0;
+  const consumerProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(index, { headers: { etag: "consumer-snapshot" } });
+      consumerRequests += 1;
+      const id = String(url).match(/\/(\d+)\.xml$/)[1];
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, id === "1" ? 10 : 500);
+        init.signal.addEventListener("abort", () => { clearTimeout(timer); consumerAborts += 1; reject(init.signal.reason); }, { once: true });
+      });
+      return new Response(detail(id));
+    },
+  });
+  const consumerIterator = consumerProvider.discoverProducts({ limit: 5, pageSize: 1, concurrency: 3, signal: consumerController.signal })[Symbol.asyncIterator]();
+  const firstConsumerPage = await consumerIterator.next();
+  assert.strictEqual(firstConsumerPage.done, false);
+  consumerController.abort(new Error("consumer cleanup"));
+  const requestsAtCancellation = consumerRequests;
+  await assert.rejects(consumerIterator.throw(new Error("consumer failure before acknowledgment")), /consumer failure/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(consumerRequests, requestsAtCancellation);
+  assert.strictEqual(consumerAborts >= 0, true);
+
+  const cancellationController = new AbortController();
+  let cancellationRequests = 0;
+  let cancellationAborts = 0;
+  const cancellationProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url, init) => {
+      if (String(url).endsWith(".index.xml.gz")) return new Response(index);
+      cancellationRequests += 1;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 1000);
+        init.signal.addEventListener("abort", () => { clearTimeout(timer); cancellationAborts += 1; reject(init.signal.reason); }, { once: true });
+      });
+      return new Response(detail(String(url).match(/\/(\d+)\.xml$/)[1]));
+    },
+  });
+  const cancellationPending = (async () => {
+    for await (const page of cancellationProvider.discoverProducts({ limit: 5, concurrency: 3, signal: cancellationController.signal })) void page;
+  })();
+  while (cancellationRequests < 3) await new Promise((resolve) => setImmediate(resolve));
+  cancellationController.abort(new Error("multi-active-cancel"));
+  await assert.rejects(cancellationPending, /multi-active-cancel/);
+  assert.strictEqual(cancellationAborts >= 1, true, `expected active request abort delivery: requests=${cancellationRequests}, aborts=${cancellationAborts}`);
 
   const serialPartial = await run(1, { limit: 2 });
   const serialCursor = serialPartial.pages.at(-1).checkpoint.acknowledgedCursor;

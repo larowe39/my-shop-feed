@@ -28,6 +28,7 @@ export type ProviderDiscoveryOptions = {
   limit?: number;
   pageSize?: number;
   concurrency?: number;
+  parserFeedChars?: number;
   requestTimeoutMs?: number;
   inactivityTimeoutMs?: number;
   cursor?: string | null;
@@ -50,6 +51,8 @@ export type ProviderDiscoveryOptions = {
 export type IcecatDiscoveryMetrics = {
   concurrency: number;
   admissionWindow: number;
+  parserPendingBound: number;
+  totalWorkBound: number;
   enrichmentAttempts: number;
   activeDetailRequests: number;
   maxActiveDetailRequests: number;
@@ -572,7 +575,7 @@ function buildIndexUrl(baseUrl: string, mode: string): string {
 
 const ICECAT_CHECKPOINT_VERSION = "icecat-index-v2";
 const ICECAT_PARSER_VERSION = "icecat-index-parser-v2";
-const DEFAULT_ICECAT_ENRICHMENT_CONCURRENCY = 2;
+const DEFAULT_ICECAT_ENRICHMENT_CONCURRENCY = 1;
 const MAX_ICECAT_ENRICHMENT_CONCURRENCY = 5;
 
 function discoveryFilterIdentity(options: ProviderDiscoveryOptions): string {
@@ -758,6 +761,9 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
     const limit = Math.max(0, Math.min(options.limit ?? 100, 100000));
     const concurrency = Math.max(1, Math.min(Math.floor(options.concurrency ?? DEFAULT_ICECAT_ENRICHMENT_CONCURRENCY), MAX_ICECAT_ENRICHMENT_CONCURRENCY));
     const admissionWindow = concurrency === 1 ? 1 : concurrency * 2;
+    const parserFeedChars = Math.max(1, Math.min(Math.floor(options.parserFeedChars ?? 128), 8192));
+    const parserPendingBound = parserFeedChars;
+    const totalWorkBound = admissionWindow + parserPendingBound;
     const checkpoint = options.checkpoint ?? {};
     const url = buildIndexUrl(this.config.indexBaseUrl, mode);
     const headers = {
@@ -875,6 +881,8 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       reportMetrics = (terminationReason: DiscoveryTerminationReason | null) => options.diagnostics?.onMetrics?.({
         concurrency,
         admissionWindow,
+        parserPendingBound,
+        totalWorkBound,
         enrichmentAttempts,
         activeDetailRequests: activeEnrichments.size,
         maxActiveDetailRequests,
@@ -1174,6 +1182,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
             const pendingPositions = [...candidateRecords.map((record) => record.encounterPosition!), ...completedEnrichments.keys(), ...activeEnrichments.keys()]
               .filter((position) => position > nextCommitPosition!);
             nextCommitPosition = pendingPositions.length ? Math.min(...pendingPositions) : null;
+            if (readyPages.length) break;
             continue;
           }
           if (!activeEnrichments.size) break;
@@ -1188,13 +1197,14 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       };
 
       const feedParser = async function* (textChunk: string): AsyncGenerator<ProviderDiscoveryPage<IcecatIndexRecord>> {
-        const maxParserFeedChars = 128;
+        const maxParserFeedChars = parserFeedChars;
         for (let offset = 0; offset < textChunk.length && !limitReached; offset += maxParserFeedChars) {
           parser.write(textChunk.slice(offset, offset + maxParserFeedChars));
           await enrichCandidates();
           while (readyPages.length) {
             yield readyPages.shift()!;
           }
+          if (!limitReached) await enrichCandidates();
         }
       };
 
