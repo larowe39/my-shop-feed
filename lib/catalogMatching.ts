@@ -74,6 +74,57 @@ export type ResolvedCatalogMatch = {
   variantName: string | null;
 };
 
+export type CatalogMatcherMetrics = {
+  canonicalEntriesExamined: number;
+  scorerInvocations: number;
+  specificityWitnessChecks: number;
+  candidateRetrievalMs: number;
+  scoringMs: number;
+  finalizationMs: number;
+};
+
+type PreparedVariant = {
+  variant: CatalogVariantCandidate;
+  normalizedName: string;
+  compactName: string;
+  normalizedAliases: string[];
+  compactAliases: string[];
+  normalizedValue: string;
+  compactValue: string;
+};
+
+type PreparedCandidate = {
+  candidate: CatalogMatchCandidate;
+  productName: string;
+  modelNumber: string;
+  brandName: string;
+  categoryName: string;
+  aliases: string[];
+  compactProductName: string;
+  compactModelNumber: string;
+  compactAliases: string[];
+  productTokens: Set<string>;
+  modelTokens: Set<string>;
+  aliasTokens: Array<Set<string>>;
+  variants: PreparedVariant[];
+};
+
+type PreparedMatchInput = {
+  title: string;
+  brand: string;
+  category: string;
+  titleWithoutBrand: string;
+  compactTitle: string;
+  compactTitleWithoutBrand: string;
+  titleTokens: Set<string>;
+};
+
+export type CatalogMatcherIndex = {
+  candidates: PreparedCandidate[];
+  productsIndexed: number;
+  aliasesIndexed: number;
+};
+
 export const CATALOG_CONFIDENCE_THRESHOLDS = {
   high: 0.9,
   possible: 0.7,
@@ -101,7 +152,14 @@ function tokenOverlap(left: string, right: string): number {
   return shared / Math.max(leftTokens.size, rightTokens.size);
 }
 
-function compact(value: string): string {
+function tokenOverlapPrepared(leftTokens: Set<string>, rightTokens: Set<string>): number {
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+  let shared = 0;
+  for (const token of leftTokens) if (rightTokens.has(token)) shared += 1;
+  return shared / Math.max(leftTokens.size, rightTokens.size);
+}
+
+function compact(value: string | null | undefined): string {
   return normalizeCatalogText(value).replace(/\s+/g, "");
 }
 
@@ -276,6 +334,241 @@ function scoreCandidate(input: CatalogMatchInput, candidate: CatalogMatchCandida
             ? "Product substring match"
             : "Weak catalog similarity",
   };
+}
+
+function prepareCandidate(candidate: CatalogMatchCandidate): PreparedCandidate {
+  const productName = normalizeCatalogText(candidate.product.name);
+  const modelNumber = normalizeCatalogText(candidate.product.model_number);
+  const brandName = normalizeCatalogText(candidate.brandName);
+  const categoryName = normalizeCatalogText(candidate.categoryName);
+  const aliases = (candidate.aliases ?? []).map(normalizeCatalogText).filter(Boolean);
+  const variants = (candidate.variants ?? []).map((variant) => ({
+    variant,
+    normalizedName: normalizeCatalogText(variant.variant.name),
+    normalizedAliases: (variant.aliases ?? []).map(normalizeCatalogText).filter(Boolean),
+    normalizedValue: normalizeCatalogText(
+      [variant.variant.color, variant.variant.size].filter(Boolean).join(" ")
+    ),
+    compactName: compact(variant.variant.name),
+    compactAliases: (variant.aliases ?? []).map(compact).filter(Boolean),
+    compactValue: compact([variant.variant.color, variant.variant.size].filter(Boolean).join(" ")),
+  }));
+  return {
+    candidate,
+    productName,
+    modelNumber,
+    brandName,
+    categoryName,
+    aliases,
+    compactProductName: compact(candidate.product.name),
+    compactModelNumber: compact(candidate.product.model_number),
+    compactAliases: (candidate.aliases ?? []).map(compact).filter(Boolean),
+    productTokens: new Set(tokens(productName)),
+    modelTokens: new Set(tokens(modelNumber)),
+    aliasTokens: aliases.map((alias) => new Set(tokens(alias))),
+    variants,
+  };
+}
+
+function prepareMatchInput(input: CatalogMatchInput): PreparedMatchInput {
+  const title = normalizeCatalogText(input.title);
+  const brand = normalizeCatalogText(input.brand);
+  const category = normalizeCatalogText(input.category);
+  const titleWithoutBrand = brand && title.startsWith(`${brand} `)
+    ? title.slice(brand.length + 1)
+    : title;
+  return {
+    title,
+    brand,
+    category,
+    titleWithoutBrand,
+    compactTitle: compact(title),
+    compactTitleWithoutBrand: compact(titleWithoutBrand),
+    titleTokens: new Set(tokens(title)),
+  };
+}
+
+function catalogTextMatchesPrepared(
+  left: string,
+  leftCompact: string,
+  right: string,
+  rightCompact: string
+): boolean {
+  return left === right || leftCompact === rightCompact;
+}
+
+export function createCatalogMatcherIndex(candidates: CatalogMatchCandidate[]): CatalogMatcherIndex {
+  const prepared = candidates.map(prepareCandidate);
+  return {
+    candidates: prepared,
+    productsIndexed: prepared.length,
+    aliasesIndexed: prepared.reduce((total, candidate) => total + candidate.aliases.length, 0),
+  };
+}
+
+function scorePreparedCandidate(
+  input: CatalogMatchInput,
+  prepared: PreparedCandidate,
+  metrics?: CatalogMatcherMetrics,
+  preparedInput: PreparedMatchInput = prepareMatchInput(input)
+): CatalogMatch {
+  metrics && (metrics.scorerInvocations += 1);
+  const { title, brand, category, titleWithoutBrand, compactTitle, compactTitleWithoutBrand, titleTokens } = preparedInput;
+  const brandMatches = Boolean(brand && prepared.brandName && brand === prepared.brandName);
+  const brandConflicts = Boolean(brand && prepared.brandName && brand !== prepared.brandName);
+  const categoryMatches = Boolean(category && prepared.categoryName && category === prepared.categoryName);
+  const titleForms = brandMatches ? [title, titleWithoutBrand] : [title, title];
+  const compactTitleForms = brandMatches
+    ? [compactTitle, compactTitleWithoutBrand]
+    : [compactTitle, compactTitle];
+  const exactProductMatch = titleForms.some(
+    (titleForm, index) => catalogTextMatchesPrepared(titleForm, compactTitleForms[index], prepared.productName, prepared.compactProductName) ||
+      (prepared.modelNumber && catalogTextMatchesPrepared(titleForm, compactTitleForms[index], prepared.modelNumber, prepared.compactModelNumber))
+  );
+  const exactAliasMatch = titleForms.some((titleForm, index) => prepared.aliases.some((alias, aliasIndex) =>
+    catalogTextMatchesPrepared(titleForm, compactTitleForms[index], alias, prepared.compactAliases[aliasIndex])
+  ));
+  const containedProductIdentity = containsWholePhrase(title, prepared.productName) && hasDistinctiveIdentity(prepared.productName);
+  const containedAlias = prepared.aliases.find(
+    (alias) => containsWholePhrase(title, alias) && hasDistinctiveIdentity(alias)
+  );
+  const modelIdentifierMatches = containsModelIdentifier(title, prepared.modelNumber);
+  const hasConflictingSpecificity = hasSpecificityExtension(title, prepared.productName) ||
+    prepared.aliases.some((alias) => hasSpecificityExtension(title, alias));
+  const exactVariantMatch = prepared.variants.some((variant) => {
+    const exactNames = [
+      `${prepared.brandName} ${prepared.productName} ${variant.normalizedName}`,
+      `${prepared.productName} ${variant.normalizedName}`,
+      ...variant.normalizedAliases,
+    ].filter(Boolean);
+    if (exactNames.some((name) => catalogTextMatchesPrepared(title, compactTitle, name, compact(name)))) return true;
+    return Boolean(variant.normalizedValue && catalogTextMatchesPrepared(
+      title,
+      compactTitle,
+      `${prepared.productName} ${variant.normalizedValue}`,
+      compact(`${prepared.productName} ${variant.normalizedValue}`)
+    ));
+  });
+
+  if (brandConflicts) return { productId: prepared.candidate.product.id, confidence: 0.2, reason: "Conflicting explicit brand" };
+  if (hasConflictingSpecificity) return { productId: prepared.candidate.product.id, confidence: 0.3, reason: "Listing contains a more specific product identity" };
+  if (brandMatches && exactVariantMatch) return { productId: prepared.candidate.product.id, confidence: 0.98, reason: "Exact brand + product variant" };
+  if (brandMatches && exactProductMatch) {
+    return {
+      productId: prepared.candidate.product.id,
+      confidence: 0.98,
+      reason: prepared.modelNumber && titleForms.some((titleForm, index) => catalogTextMatchesPrepared(titleForm, compactTitleForms[index], prepared.modelNumber, prepared.compactModelNumber))
+        ? "Exact brand + model number"
+        : "Exact brand + product name",
+    };
+  }
+  if (exactAliasMatch) return {
+    productId: prepared.candidate.product.id,
+    confidence: brandMatches ? 0.95 : 0.86,
+    reason: brandMatches ? "Exact brand + alias" : "Exact alias",
+  };
+  if (exactProductMatch) return {
+    productId: prepared.candidate.product.id,
+    confidence: categoryMatches ? 0.93 : 0.9,
+    reason: prepared.modelNumber && titleForms.some((titleForm, index) => catalogTextMatchesPrepared(titleForm, compactTitleForms[index], prepared.modelNumber, prepared.compactModelNumber))
+      ? "Exact model number"
+      : "Exact product name",
+  };
+  if (brandMatches && modelIdentifierMatches) return { productId: prepared.candidate.product.id, confidence: 0.97, reason: "Exact brand + distinctive model identifier" };
+  if (brandMatches && containedAlias) return { productId: prepared.candidate.product.id, confidence: 0.96, reason: "Exact normalized alias + brand" };
+  if (brandMatches && containedProductIdentity) return { productId: prepared.candidate.product.id, confidence: 0.95, reason: "Complete canonical identity contained in listing" };
+
+  const comparableNames = [
+    { value: prepared.productName, tokens: prepared.productTokens },
+    { value: prepared.modelNumber, tokens: prepared.modelTokens },
+    ...prepared.aliases.map((value, index) => ({ value, tokens: prepared.aliasTokens[index] })),
+  ].filter((entry) => Boolean(entry.value));
+  const bestOverlap = Math.max(0, ...comparableNames.map((entry) => tokenOverlapPrepared(titleTokens, entry.tokens)));
+  const startsWithMatch = comparableNames.some((entry) => entry.value.startsWith(title) || title.startsWith(entry.value));
+  const substringMatch = comparableNames.some((entry) => entry.value.includes(title) || title.includes(entry.value));
+  const confidence = brandMatches && bestOverlap >= 0.5
+    ? 0.78
+    : startsWithMatch
+      ? 0.74
+      : bestOverlap >= 0.5
+        ? 0.7
+        : substringMatch
+          ? 0.62
+          : Math.min(0.59, bestOverlap * 0.59);
+  return {
+    productId: prepared.candidate.product.id,
+    confidence: Number(confidence.toFixed(2)),
+    reason: brandMatches && bestOverlap >= 0.5
+      ? "Brand + product token overlap"
+      : startsWithMatch
+        ? "Starts-with product match"
+        : bestOverlap >= 0.5
+          ? "Product token overlap"
+          : substringMatch
+            ? "Product substring match"
+            : "Weak catalog similarity",
+  };
+}
+
+export function findCatalogMatchesWithIndex(
+  input: CatalogMatchInput,
+  index: CatalogMatcherIndex,
+  metrics?: CatalogMatcherMetrics,
+  safeBrandPool = false
+): CatalogMatch[] {
+  const retrievalStartedAt = performance.now();
+  const title = normalizeCatalogText(input.title);
+  const preparedInput = prepareMatchInput(input);
+  const candidates = index.candidates.map((prepared) => ({
+    prepared,
+    requiresScoring: !(safeBrandPool && preparedInput.brand && prepared.brandName && prepared.brandName !== preparedInput.brand),
+  }));
+  if (metrics) {
+    metrics.canonicalEntriesExamined += candidates.length;
+    metrics.candidateRetrievalMs += performance.now() - retrievalStartedAt;
+  }
+
+  const scoringStartedAt = performance.now();
+  const scored = candidates.map(({ prepared, requiresScoring }) => {
+    if (!requiresScoring) {
+      return {
+        candidate: prepared,
+        match: {
+          productId: prepared.candidate.product.id,
+          confidence: 0.2,
+          reason: "Conflicting explicit brand",
+        },
+      };
+    }
+    return { candidate: prepared, match: scorePreparedCandidate(input, prepared, metrics, preparedInput) };
+  });
+  if (metrics) metrics.scoringMs += performance.now() - scoringStartedAt;
+
+  const finalizationStartedAt = performance.now();
+  const containedSpecificityWitnesses = scored.filter(({ candidate }) => {
+    metrics && (metrics.specificityWitnessChecks += 1);
+    return containsWholePhrase(title, candidate.productName);
+  });
+  const finalized = scored
+    .map(({ candidate, match }) => {
+      metrics && (metrics.specificityWitnessChecks += 1);
+      const candidateIdentityIsContained = containsWholePhrase(title, candidate.productName);
+      const hasMoreSpecificIdentity = match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.high && candidateIdentityIsContained &&
+        containedSpecificityWitnesses.some(({ candidate: other }) => {
+        metrics && (metrics.specificityWitnessChecks += 1);
+        const remainingTokens = tokens(other.productName).slice(tokens(candidate.productName).length);
+        return other.candidate.product.id !== candidate.candidate.product.id &&
+          other.productName.startsWith(`${candidate.productName} `) &&
+          (remainingTokens.length > 1 || SPECIFICITY_SUFFIXES.has(remainingTokens[0]));
+      });
+      if (match.confidence >= CATALOG_CONFIDENCE_THRESHOLDS.high && hasMoreSpecificIdentity) {
+        return { ...match, confidence: 0.89, reason: "More specific canonical identity is contained in listing" };
+      }
+      return match;
+    })
+    .sort((left, right) => right.confidence - left.confidence || left.productId.localeCompare(right.productId));
+  if (metrics) metrics.finalizationMs += performance.now() - finalizationStartedAt;
+  return finalized;
 }
 
 export function findCatalogMatches(

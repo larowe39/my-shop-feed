@@ -36,8 +36,25 @@ async function main() {
     formatApprovalPreview,
     reviewCandidatesSequentially,
     buildCatalogRunReport,
+    buildCatalogRunReportFromResult,
     rankTaxonomyGaps,
   } = acquisition;
+
+  const matcherMetricKeys = [
+    "matcherIndexBuildMs",
+    "matcherIndexBuildCount",
+    "matcherProductsIndexed",
+    "matcherAliasesIndexed",
+    "matcherRecordsClassified",
+    "matcherCanonicalEntriesExamined",
+    "matcherScorerInvocations",
+    "matcherSpecificityWitnessChecks",
+    "matcherCandidateRetrievalMs",
+    "matcherScoringMs",
+    "matcherFinalizationMs",
+    "matcherExecutionMs",
+    "matcherTotalIncludingIndexBuildMs",
+  ];
 
   const stagingStoreModule = await import("../lib/stagingStore.ts");
   const { LocalStagingStore, SupabaseStagingStore, resolveStagingStore, StagingBackendError } = stagingStoreModule;
@@ -48,6 +65,12 @@ async function main() {
   const localStore = new LocalStagingStore(ledgerPath);
   localStore.reset();
   fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+
+  const zeroRecordRun = await acquireFromRecords([], [{ brand: "Acme", productName: "Widget" }]);
+  assert.strictEqual(zeroRecordRun.matcherMetrics.indexBuildCount, 1);
+  assert.strictEqual(zeroRecordRun.matcherMetrics.recordsClassified, 0);
+  assert.strictEqual(zeroRecordRun.matcherMetrics.matcherExecutionMs, 0);
+  assert.strictEqual(zeroRecordRun.matcherMetrics.totalIncludingIndexBuildMs, zeroRecordRun.matcherMetrics.indexBuildMs);
 
   const migrationPath = path.join(__dirname, "..", "supabase", "migrations", "20260915_add_catalog_acquisition_staging.sql");
   const migrationSql = fs.readFileSync(migrationPath, "utf8");
@@ -734,6 +757,16 @@ async function main() {
 
   const aReport = buildCatalogRunReport(runA.runId, await reportStore.listImportRuns(), await reportStore.listStagedCandidates());
   const bReport = buildCatalogRunReport(runB.runId, await reportStore.listImportRuns(), await reportStore.listStagedCandidates());
+  const inMemoryAReport = buildCatalogRunReportFromResult(runA);
+  for (const key of matcherMetricKeys) {
+    assert.strictEqual(aReport.metrics[key], inMemoryAReport.metrics[key], `direct persisted matcher metric ${key} must round-trip`);
+  }
+  const historicalReport = buildCatalogRunReport(
+    runA.runId,
+    (await reportStore.listImportRuns()).map((run) => run.id === runA.runId ? { ...run, summary: {} } : run),
+    await reportStore.listStagedCandidates()
+  );
+  for (const key of matcherMetricKeys) assert.strictEqual(historicalReport.metrics[key], null, `historical matcher metric ${key} must be unavailable`);
   assert.strictEqual(aReport.metrics.processed, 4);
   assert.strictEqual(aReport.metrics.valid, 3, "requested/fetched/enriched semantics: valid count must reflect only valid records");
   assert.strictEqual(aReport.metrics.invalid, 1);
@@ -809,10 +842,18 @@ async function main() {
     const multiPageStore = new LocalStagingStore(multiPageLedgerPaths[total === 100 ? 0 : 1]);
     multiPageStore.reset();
     const provider = makeDiscoveryProvider(total);
-    const discoveryRun = await acquireDiscoveredProducts(provider, { limit: total, pageSize: 25 }, [], provider.getSourceMetadata(), { apply: true, adapter: "open-icecat" }, multiPageStore);
+    const discoveryRun = await acquireDiscoveredProducts(
+      provider,
+      { limit: total, pageSize: 25 },
+      [{ brand: "Canonical", productName: "Reference X", modelNumber: "REF-X" }],
+      provider.getSourceMetadata(),
+      { apply: true, adapter: "open-icecat" },
+      multiPageStore
+    );
     const runs = await multiPageStore.listImportRuns();
     const persisted = await multiPageStore.listStagedCandidates();
     const report = buildCatalogRunReport(discoveryRun.runId, runs, persisted);
+    const inMemoryReport = buildCatalogRunReportFromResult(discoveryRun, { requestedLimit: total });
     assert.strictEqual(runs.length, 1, `${total} records must create exactly one logical import run`);
     assert.strictEqual(discoveryRun.pages, Math.ceil(total / 25));
     assert.strictEqual(discoveryRun.downstreamPhaseMetrics.normalizationValidationCalls, total, "page phase metrics must aggregate across the whole discovery run");
@@ -838,6 +879,11 @@ async function main() {
     assert.strictEqual(report.metrics.providerErrors, 0);
     assert.strictEqual(report.metrics.indexCandidatesExamined, total);
     assert.strictEqual(report.metrics.enrichmentAttempts, total);
+    for (const key of matcherMetricKeys) {
+      assert.strictEqual(report.metrics[key], inMemoryReport.metrics[key], `multi-page persisted matcher metric ${key} must round-trip`);
+    }
+    assert.strictEqual(report.metrics.matcherIndexBuildCount, 1, "multi-page acquisition must build one nonempty matcher index");
+    assert.strictEqual(report.metrics.matcherProductsIndexed, 1);
     assert.strictEqual(report.metrics.gtinCoverage, Number((Math.floor(total * 0.79) / total).toFixed(4)));
     assert.strictEqual(rankTaxonomyGaps(discoveryRun.runId, persisted, []).reduce((sum, row) => sum + row.candidateCount, 0), total);
   }
