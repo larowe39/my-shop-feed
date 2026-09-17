@@ -85,6 +85,7 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   terminationReason: DiscoveryTerminationReason;
   providerMetrics?: IcecatDiscoveryMetrics;
   downstreamAcquisitionMs?: number;
+  taxonomyMetrics?: TaxonomyResolutionMetrics;
 };
 
 type ExistingImportRun = {
@@ -102,6 +103,58 @@ type AcquisitionOptions = {
 };
 
 export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
+
+export type TaxonomyResolutionMetrics = {
+  resolverCalls: number;
+  cacheHits: number;
+  cacheMisses: number;
+  uniqueExternalTaxonomyIds: number;
+  resolutionMs: number;
+  averageResolutionMs: number;
+};
+
+export type RunScopedTaxonomyResolver = TaxonomyMappingResolver & {
+  getMetrics: () => TaxonomyResolutionMetrics;
+};
+
+export function createRunScopedTaxonomyResolver(baseResolver?: TaxonomyMappingResolver): RunScopedTaxonomyResolver | undefined {
+  if (!baseResolver) return undefined;
+  const cache = new Map<string, TaxonomyMappingRecord | null>();
+  let resolverCalls = 0;
+  let cacheHits = 0;
+  let cacheMisses = 0;
+  let resolutionMs = 0;
+
+  const resolver: RunScopedTaxonomyResolver = Object.assign(async (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => {
+    if (!identity || !identity.provider || !identity.externalId) return null;
+    const key = `${String(identity.provider).trim().toLowerCase()}::${String(identity.externalId).trim()}`;
+    if (cache.has(key)) {
+      cacheHits += 1;
+      return cache.get(key) ?? null;
+    }
+    cacheMisses += 1;
+    const startedAt = Date.now();
+    try {
+      const resolved = await baseResolver(identity);
+      cache.set(key, resolved ?? null);
+      return resolved ?? null;
+    } finally {
+      resolverCalls += 1;
+      resolutionMs += Date.now() - startedAt;
+    }
+  }, {
+    getMetrics: () => ({
+      resolverCalls,
+      cacheHits,
+      cacheMisses,
+      uniqueExternalTaxonomyIds: cache.size,
+      resolutionMs,
+      averageResolutionMs: resolverCalls > 0 ? resolutionMs / resolverCalls : 0,
+    }),
+  });
+
+  return resolver;
+}
 
 function rate(numerator: number, denominator: number): number {
   return denominator > 0 ? Number((numerator / denominator).toFixed(4)) : 0;
@@ -494,6 +547,9 @@ export async function acquireFromRecords(
     throw new Error("acquireFromRecords: a StagingStore is required when apply=true. Resolve one via resolveStagingStore().");
   }
 
+  const resolvedTaxonomyResolver = createRunScopedTaxonomyResolver(options.taxonomyResolver);
+  const effectiveTaxonomyResolver = resolvedTaxonomyResolver ?? options.taxonomyResolver;
+
   const summary: AcquisitionSummary = {
     processed: records.length,
     valid: 0,
@@ -514,8 +570,8 @@ export async function acquireFromRecords(
   for (let index = 0; index < records.length; index += 1) {
     const rawRecord = records[index] ?? {};
     let resolvedRecord = rawRecord;
-    if (rawRecord.externalTaxonomy && options.taxonomyResolver) {
-      const mapping = await options.taxonomyResolver(rawRecord.externalTaxonomy);
+    if (rawRecord.externalTaxonomy && effectiveTaxonomyResolver) {
+      const mapping = await effectiveTaxonomyResolver(rawRecord.externalTaxonomy);
       const trustedMapping = mappingIsTrusted(mapping) ? mapping : null;
       if (trustedMapping) {
         resolvedRecord = {
@@ -669,7 +725,7 @@ export async function acquireFromRecords(
     persistenceMessages.push(`${store.kind}:catalog_sources`, `${store.kind}:catalog_import_runs`, `${store.kind}:catalog_staged_products`);
   }
 
-  return {
+  const result: AcquisitionRunResult = {
     executionMode: apply ? "apply" : "dry-run",
     source,
     sourceId: source?.id,
@@ -679,6 +735,14 @@ export async function acquireFromRecords(
     summary,
     persistence: persistenceMessages,
   };
+  attachTaxonomyMetrics(result, effectiveTaxonomyResolver);
+  return result;
+}
+
+function attachTaxonomyMetrics(run: AcquisitionRunResult | DiscoveryAcquisitionResult, resolver?: RunScopedTaxonomyResolver | TaxonomyMappingResolver): void {
+  if (typeof (resolver as RunScopedTaxonomyResolver | undefined)?.getMetrics === "function") {
+    (run as DiscoveryAcquisitionResult).taxonomyMetrics = (resolver as RunScopedTaxonomyResolver).getMetrics();
+  }
 }
 
 export async function acquireDiscoveredProducts<TRaw>(
@@ -719,6 +783,8 @@ export async function acquireDiscoveredProducts<TRaw>(
   let existingRun: ExistingImportRun | undefined;
   let providerMetrics: IcecatDiscoveryMetrics | undefined;
   let downstreamAcquisitionMs = 0;
+  const runScopedTaxonomyResolver = createRunScopedTaxonomyResolver(options.taxonomyResolver);
+  const taxonomyResolverForPage = runScopedTaxonomyResolver ?? options.taxonomyResolver;
   const providerDiscoveryOptions: ProviderDiscoveryOptions = {
     ...discoveryOptions,
     diagnostics: {
@@ -788,6 +854,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     const downstreamStartedAt = Date.now();
     const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
       ...options,
+      taxonomyResolver: taxonomyResolverForPage,
       existingRun,
       deferRunFinalization: Boolean(existingRun),
     }, store);
@@ -840,7 +907,7 @@ export async function acquireDiscoveredProducts<TRaw>(
     aggregate.staged = staged.length;
   }
 
-  return {
+  const result: DiscoveryAcquisitionResult = {
     executionMode: apply ? "apply" : "dry-run",
     source: existingRun?.source,
     sourceId: existingRun?.source.id,
@@ -861,6 +928,8 @@ export async function acquireDiscoveredProducts<TRaw>(
     providerMetrics,
     downstreamAcquisitionMs,
   };
+  attachTaxonomyMetrics(result, taxonomyResolverForPage);
+  return result;
 }
 
 export type CatalogRunReportMetrics = {

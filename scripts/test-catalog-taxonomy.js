@@ -263,6 +263,75 @@ async function main() {
 
   const secondRun = await acquireFromRecords([unresolved], [], { name: "taxonomy-test", type: "external-provider" }, { apply: true, adapter: "test", taxonomyResolver: (identity) => store.resolveTrustedMapping(identity) }, stagingStore);
   assert.strictEqual(secondRun.staged.length, 1, "verified mapping reuse remains deterministic and idempotent at candidate identity");
+
+  const repeatedIds = ["151", "846", "971", "702", "905"];
+  let repeatedResolverCalls = 0;
+  const repeatedResolver = async (identity) => {
+    repeatedResolverCalls += 1;
+    if (!repeatedIds.includes(identity.externalId)) return null;
+    return {
+      id: `mapping-${identity.externalId}`,
+      provider: identity.provider,
+      externalTaxonomyId: identity.externalId,
+      externalName: `Taxonomy ${identity.externalId}`,
+      externalPath: null,
+      externalParentId: null,
+      externalParentPath: null,
+      canonicalCategoryId: "cat-electronics",
+      canonicalCategoryName: "Electronics",
+      canonicalSubcategoryId: identity.externalId === "151" ? "sub-laptops" : null,
+      canonicalSubcategoryName: identity.externalId === "151" ? "Laptops" : null,
+      status: "verified",
+      method: "manual",
+      confidence: 1,
+      evidence: {},
+      reviewedBy: "test",
+      reviewedAt: "2026-09-16T00:00:00.000Z",
+      createdAt: "2026-09-16T00:00:00.000Z",
+      updatedAt: "2026-09-16T00:00:00.000Z",
+    };
+  };
+  const repeatedBatch = Array.from({ length: 100 }, (_, index) => ({
+    sourceExternalId: `repeated-${index}`,
+    brand: "Repeated",
+    productName: `Repeated Product ${index}`,
+    externalTaxonomy: { provider: "open-icecat", externalId: repeatedIds[index % repeatedIds.length], name: `Category ${repeatedIds[index % repeatedIds.length]}` },
+    raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: repeatedIds[index % repeatedIds.length], name: `Category ${repeatedIds[index % repeatedIds.length]}` } },
+  }));
+  await acquireFromRecords(repeatedBatch, [], { name: "taxonomy-batch", type: "external-provider" }, { taxonomyResolver: repeatedResolver });
+  assert.ok(repeatedResolverCalls <= repeatedIds.length, `repeated taxonomy IDs must reuse a run-scoped cache instead of resolving once per product; saw ${repeatedResolverCalls} calls for ${repeatedIds.length} unique ids`);
+
+  const pageResolverCalls = [];
+  const pageResolver = async (identity) => {
+    pageResolverCalls.push(`${identity.provider}:${identity.externalId}`);
+    if (identity.externalId === "151") {
+      return { id: "mapping-151", provider: identity.provider, externalTaxonomyId: "151", externalName: "Laptops", externalPath: null, externalParentId: null, externalParentPath: null, canonicalCategoryId: "cat-electronics", canonicalCategoryName: "Electronics", canonicalSubcategoryId: "sub-laptops", canonicalSubcategoryName: "Laptops", status: "verified", method: "manual", confidence: 1, evidence: {}, reviewedBy: "test", reviewedAt: "2026-09-16T00:00:00.000Z", createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" };
+    }
+    if (identity.externalId === "846") {
+      return { id: "mapping-846", provider: identity.provider, externalTaxonomyId: "846", externalName: "Printers", externalPath: null, externalParentId: null, externalParentPath: null, canonicalCategoryId: "cat-electronics", canonicalCategoryName: "Electronics", canonicalSubcategoryId: "sub-printers", canonicalSubcategoryName: "Printers", status: "verified", method: "manual", confidence: 1, evidence: {}, reviewedBy: "test", reviewedAt: "2026-09-16T00:00:00.000Z", createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" };
+    }
+    return null;
+  };
+  const pageProvider = {
+    capabilities: { lookup: false, discovery: true },
+    getSourceMetadata: () => ({ name: "page-cache-source", type: "external-provider", baseUrl: "https://example.test", metadata: {} }),
+    normalizeProduct: (record) => record,
+    async *discoverProducts() {
+      yield { records: [
+        { sourceExternalId: "page-1-a", brand: "Brand A", productName: "Product A", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" } } },
+        { sourceExternalId: "page-1-b", brand: "Brand B", productName: "Product B", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" } } },
+        { sourceExternalId: "page-1-c", brand: "Brand C", productName: "Product C", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" } } },
+      ], errors: [], nextCursor: "page-2", done: false, checkpoint: { processedCount: 3, enrichmentAttempts: 3 } };
+      yield { records: [
+        { sourceExternalId: "page-2-a", brand: "Brand D", productName: "Product D", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "151", name: "Laptops" } } },
+        { sourceExternalId: "page-2-b", brand: "Brand E", productName: "Product E", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Printers" } } },
+        { sourceExternalId: "page-2-c", brand: "Brand F", productName: "Product F", externalTaxonomy: { provider: "open-icecat", externalId: "971", name: "Large Format Media" }, raw: { provider: "open-icecat", externalTaxonomy: { provider: "open-icecat", externalId: "971", name: "Large Format Media" } } },
+      ], errors: [], nextCursor: null, done: true, checkpoint: { processedCount: 6, enrichmentAttempts: 6 } };
+    },
+  };
+  const multiPageRun = await acquisition.acquireDiscoveredProducts(pageProvider, { limit: 6, pageSize: 3 }, [], { name: "page-cache-source", type: "external-provider" }, { taxonomyResolver: pageResolver });
+  assert.ok(pageResolverCalls.length <= 3, `repeated taxonomy IDs across discovery pages must share the same run-scoped cache; saw ${pageResolverCalls.length} calls across 3 unique identifiers`);
+  assert.strictEqual(multiPageRun.staged.length, 6, "multi-page catalog discovery must continue to stage each valid record even with cached taxonomy resolution");
   fs.rmSync(ledgerPath, { force: true });
   fs.rmSync(taxonomyCachePath, { force: true });
   fs.rmSync(path.join(__dirname, "..", ".catalog-staging", "taxonomy-acquisition.test.json"), { force: true });
