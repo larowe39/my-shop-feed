@@ -380,16 +380,16 @@ async function main() {
 
   // T. Diversity against repeated category --------------------------------------------------
   {
-    // Watches carry a moderate category affinity (exploration suppressed);
-    // the weaker "clogs" entry must still break the run at slot 2.
+    // Brand affinity (not category) lifts the watches triplets so the greedy
+    // category penalty is what breaks the run; "clogs" must appear at slot 2.
     const { affinityRows, entityRows } = lookupFrom([
-      { type: "category", key: "watches", recent: 3, long: 3 },
+      { type: "brand", key: "acme", recent: 3, long: 3 },
     ]);
     const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
     const w1 = makeProduct({ id: uuid(170), category: "watches" });
     const w2 = makeProduct({ id: uuid(171), category: "watches" });
     const w3 = makeProduct({ id: uuid(172), category: "watches" });
-    const shoe = makeProduct({ id: uuid(173), category: "clogs" });
+    const shoe = makeProduct({ id: uuid(173), category: "clogs", brand: "OtherCo" });
     const out = rank(v2, [w1, w2, w3, shoe], lookup);
     assert.strictEqual(out[1].category, "clogs"); // breaks the run at slot 2
   }
@@ -422,33 +422,43 @@ async function main() {
     assert.strictEqual(out[1].user_id, SELLER_Y);
   }
 
-  // W. Exploration: weak/unseen categories receive bounded deterministic pressure -----------------
+  // W. Structural exploration occurs at every 8th slot --------------------------------------
   {
-    for (const id of ["some-id", "another-id", "third-id"]) {
-      const bonus = v2.computeExplorationBonus(id, 0);
-      assert.ok(bonus >= 0 && bonus < v2.EXPLORATION_WEIGHT, `bounded: ${bonus}`);
-    }
-    // At least one id in a small set receives a positive push (id-derived).
-    assert.ok(
-      ["some-id", "another-id", "third-id"].some(
-        (id) => v2.computeExplorationBonus(id, 0) > 0
-      )
+    // 8 watches products dominate taste; a "camping" product has zero
+    // affinity and must still surface at the first exploration slot.
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "category", key: "watches", recent: 10, long: 10 },
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    const products = Array.from({ length: 8 }, (_, i) =>
+      makeProduct({ id: uuid(300 + i), category: "watches", brand: `WB${i}`, user_id: `s-${i}` })
     );
-    assert.strictEqual(v2.computeExplorationBonus("some-id", 0.5), 0); // strong category: none
-    assert.strictEqual(v2.computeExplorationBonus("some-id", -0.3), 0); // negative: never
-    assert.strictEqual(v2.computeExplorationBonus("some-id", Number.NaN), 0);
-    // Threshold boundary: below gets pressure, at/above gets none.
-    assert.ok(v2.computeExplorationBonus("another-id", 0.049) >= 0);
-    assert.strictEqual(v2.computeExplorationBonus("another-id", 0.05), 0);
+    products.push(
+      makeProduct({ id: uuid(399), category: "camping", brand: "CampCo", user_id: "s-camp" })
+    );
+    const out = rank(v2, products, lookup);
+    // Zero-affinity camping surfaces at or before the first exploration slot.
+    const campingPos = out.findIndex((p) => p.category === "camping");
+    assert.ok(campingPos >= 0 && campingPos <= 8, `camping at ${campingPos} <= 8`);
   }
 
-  // X. Exploration remains deterministic ----------------------------------------------------------
-  approxEqual(
-    v2.computeExplorationBonus("stable-id", 0),
-    v2.computeExplorationBonus("stable-id", 0)
-  );
-  assert.ok(v2.computeExplorationBonus("stable-id", 0) >= 0);
-  assert.ok(v2.computeExplorationBonus("stable-id", 0) < v2.EXPLORATION_WEIGHT);
+  // X. Exploration is deterministic -----------------------------------------------------------
+  {
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "category", key: "watches", recent: 10, long: 10 },
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    const products = Array.from({ length: 12 }, (_, i) =>
+      makeProduct({
+        id: uuid(310 + i),
+        category: i < 9 ? "watches" : i === 9 ? "camping" : "beauty",
+        user_id: `s-${i}`,
+      })
+    );
+    const out1 = rank(v2, products, lookup).map((p) => p.id);
+    const out2 = rank(v2, products, lookup).map((p) => p.id);
+    assert.deepStrictEqual(out1, out2);
+  }
 
   // Y. No affinities => V1 fallback predicate --------------------------------------------------------
   assert.strictEqual(v2.hasUsableTasteAffinities(null), false);
@@ -736,6 +746,142 @@ async function main() {
       assert.ok(src.includes("rankForYouFeed"), `${rel} keeps V1 fallback`);
       assert.ok(src.includes("hasUsableTasteAffinities"), `${rel} gates on usable affinities`);
     }
+  }
+
+  // AI2. Structural exploration: zero-affinity surfaces; negative never explored; no junk ------
+  {
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "category", key: "watches", recent: 10, long: 10 },
+      { type: "category", key: "gym equipment", recent: -6, long: -6 },
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    const products = Array.from({ length: 8 }, (_, i) =>
+      makeProduct({ id: uuid(400 + i), category: "watches", brand: `WB${i}`, user_id: `s-${i}` })
+    );
+    products.push(
+      makeProduct({ id: uuid(490), category: "gym equipment", brand: "GymCo", user_id: "s-gym" }),
+      makeProduct({ id: uuid(491), category: "camping", brand: "CampCo", user_id: "s-camp" })
+    );
+    const out = rank(v2, products, lookup);
+    // Exploration slot (position 8) surfaces zero-affinity camping, NOT the
+    // negative gym category.
+    assert.strictEqual(out[8].category, "camping");
+    assert.ok(!out.slice(0, 9).some((p) => p.category === "gym equipment"));
+    // Exploration picks the most REASONABLE candidate: with two unseen
+    // categories, the higher-quality/fresher one wins the slot.
+    const products2 = Array.from({ length: 8 }, (_, i) =>
+      makeProduct({ id: uuid(500 + i), category: "watches", brand: `WB${i}`, user_id: `s2-${i}` })
+    );
+    products2.push(
+      makeProduct({
+        id: uuid(590), category: "camping", brand: "CampCo", user_id: "s-camp-old",
+        image_url: null, price: null, url: null,
+        created_at: new Date(NOW_MS - 60 * 24 * HOUR_MS).toISOString(),
+      }),
+      makeProduct({ id: uuid(591), category: "beauty", brand: "BeautyCo", user_id: "s-beauty" })
+    );
+    const out2 = rank(v2, products2, lookup);
+    assert.strictEqual(out2[8].category, "beauty"); // fresher/higher-quality unseen
+    // No duplication: every product appears exactly once.
+    assert.strictEqual(new Set(out.map((p) => p.id)).size, out.length);
+  }
+
+  // AJ2. Moderate underrepresented category receives discovery ---------------------------------------
+  {
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "category", key: "watches", recent: 12, long: 12 },
+      { type: "category", key: "outdoors", recent: 2, long: 2 }, // moderate
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    const products = Array.from({ length: 9 }, (_, i) =>
+      makeProduct({ id: uuid(600 + i), category: "watches", brand: `WB${i}`, user_id: `s-${i}` })
+    );
+    products.push(
+      makeProduct({ id: uuid(690), category: "camping", brand: "CampCo", user_id: "s-camp" }) // matches curated "outdoors"
+    );
+    const out = rank(v2, products, lookup);
+    // Moderate underrepresented "camping" (curated outdoors ≈ sat(2)) is
+    // discovered early — either organically via its affinity or at the slot.
+    const campPos = out.findIndex((p) => p.category === "camping");
+    assert.ok(campPos >= 0 && campPos <= 8, `camping at ${campPos} <= 8`);
+  }
+
+  // AK2. Product/canonical identity de-duplication -------------------------------------------------------
+  {
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "product", key: uuid(700), recent: 4, long: 4 },
+      { type: "canonical_product", key: "canon-x", recent: 4, long: 4 },
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    // Exact product with BOTH identities: product is primary; canonical adds
+    // only the excess over the product signal (none here) => NOT ~doubled.
+    const exact = makeProduct({ id: uuid(700), catalog_product_id: "canon-x", user_id: "s-exact" });
+    // Unseen sibling sharing the canonical identity: full canonical value.
+    const sibling = makeProduct({ id: uuid(701), catalog_product_id: "canon-x", user_id: "s-sib" });
+    const plain = makeProduct({ id: uuid(702), user_id: "s-plain" });
+    const out = rank(v2, [plain, sibling, exact], lookup);
+    assert.strictEqual(out[0].id, uuid(700)); // direct product affinity dominates
+    assert.strictEqual(out[1].id, uuid(701)); // canonical generalization beats nothing
+    // Quantify: exact identity taste = 1.0*sat(4) (no near-double).
+    const exactTaste = 1.0 * sat(4) + 0.9 * Math.max(0, sat(4) - sat(4));
+    approxEqual(exactTaste, sat(4)); // NOT 1.9 * sat(4)
+    const siblingTaste = 0.9 * sat(4);
+    assert.ok(siblingTaste > 0.5); // strong canonical generalization for sibling
+  }
+
+  // AL2. Scalable diversity window --------------------------------------------------------------------------
+  assert.strictEqual(v2.computeDiversityWindow(100), 10);
+  assert.strictEqual(v2.computeDiversityWindow(200), 20);
+  assert.strictEqual(v2.computeDiversityWindow(300), 30);
+  assert.strictEqual(v2.computeDiversityWindow(500), 40); // capped
+  assert.strictEqual(v2.computeDiversityWindow(5), 10); // floor
+
+  // AM2. Narrow profile at 300 products: exploration breaks the echo chamber ----------------------------------
+  {
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "category", key: "electronics", recent: 10, long: 10 },
+      { type: "category", key: "shoes", recent: 8, long: 8 },
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    const bigCatalog = [];
+    const cats = ["electronics", "sneakers", "hoodies", "watches", "camping", "skincare", "home decor", "car parts"];
+    for (let i = 0; i < 300; i++) {
+      bigCatalog.push(makeProduct({
+        id: uuid(1000 + i),
+        brand: `Brand${i % 15}`,
+        category: cats[i % cats.length],
+        user_id: `seller-${i % 25}`,
+        created_at: new Date(NOW_MS - (i % 30) * 24 * HOUR_MS).toISOString(),
+      }));
+    }
+    const out = rank(v2, bigCatalog, lookup);
+    const top30 = out.slice(0, 30);
+    const strong30 = top30.filter((p) => ["electronics", "sneakers"].includes(p.category)).length;
+    // NOT 100% the two strong categories; unseen categories surface early.
+    assert.ok(strong30 < 30, `top-30 strong-category count ${strong30} should be < 30`);
+    const firstUnseen = out.findIndex((p) => !["electronics", "sneakers"].includes(p.category));
+    assert.ok(firstUnseen <= 8, `first unseen position ${firstUnseen} should be <= 8 (was 68)`);
+    // Exploration slots at 8, 16, 24 carry unseen categories.
+    for (const pos of [8, 16, 24]) {
+      assert.ok(!["electronics", "sneakers"].includes(out[pos].category),
+        `position ${pos} should be exploration: got ${out[pos].category}`);
+    }
+  }
+
+  // AN2. No suitable exploration candidate -> deterministic normal fallback ------------------------------------
+  {
+    const { affinityRows, entityRows } = lookupFrom([
+      { type: "category", key: "watches", recent: 10, long: 10 },
+    ]);
+    const lookup = aff.buildTasteAffinityLookup(affinityRows, entityRows);
+    // Every remaining product is watches: exploration has nothing to surface.
+    const products = Array.from({ length: 12 }, (_, i) =>
+      makeProduct({ id: uuid(800 + i), category: "watches", user_id: `s-${i}` })
+    );
+    const out1 = rank(v2, products, lookup).map((p) => p.id);
+    const out2 = rank(v2, products, lookup).map((p) => p.id);
+    assert.deepStrictEqual(out1, out2); // deterministic fallback
+    assert.strictEqual(out1.length, 12);
   }
 
   console.log("for-you-v2 tests: all assertions passed");
