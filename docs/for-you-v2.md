@@ -66,8 +66,10 @@ score = 1.0                                  base
       + 0.08 if liked or saved
       − 0.15 if product.user_id === currentUserId
       + hash("product.id") × 0.08            deterministic tie jitter
-      + exploration (≤ 0.20, see below)
 ```
+
+Exploration is NOT an additive bonus in the score; it is a structural
+interleaving pass (see "Diversity + exploration").
 
 ### Temporal blend
 
@@ -105,10 +107,25 @@ Each dimension contributes `saturate(blend) × weight`, individually bounded:
 | dimension | key source | weight (cap) |
 |---|---|---|
 | product | `product.id` | 1.0 |
-| canonical_product | `product.catalog_product_id` (if present) | 0.9 |
+| canonical_product | `product.catalog_product_id` (if present) | 0.9 (excess only — see below) |
 | brand | `product.brand` | 0.6 |
 | category | combined raw+curated (below) | 0.7 |
 | seller | `product.user_id` | 0.4 |
+
+**Product/canonical identity de-duplication (repair):** an exact product that
+has BOTH direct product affinity and canonical affinity must not nearly
+double the same preference evidence. The direct product identity is primary;
+the canonical dimension contributes only its **excess** over the product
+signal:
+
+```
+identityTaste = 1.0 × productSat + 0.9 × max(0, canonicalSat − productSat)
+```
+
+So the exact engaged product (productSat = canonicalSat) is NOT double
+counted, while an **unseen sibling** sharing the canonical identity
+(productSat = 0) still receives the full `0.9 × canonicalSat`
+generalization.
 
 Total taste contribution is bounded by the sum of weights (**≤ 3.6**) even
 when every dimension matches. Exact/canonical identity are the strongest
@@ -166,19 +183,41 @@ same preference. Likes/saves remain as direct engagement context (+0.08).
 
 ## Diversity + exploration
 
-The deterministic greedy anti-clustering pass is preserved unchanged:
+**Normal greedy diversity** runs within a catalog-scaled candidate window:
 
-- window: top 10 remaining candidates per slot;
-- same category as previous item: −0.50; as item 2 back: −0.22;
-- same seller **or** brand as previous: −0.60; as 2 back: −0.25.
+```
+window = max(10, min(40, ceil(productCount × 0.10)))
+```
 
-Exploration is a modest **deterministic** pressure, not a partition:
-whenever a candidate's combined category signal is weak or absent
-(`0 ≤ combined < 0.05`), it receives `hash("explore:" + product.id) × 0.20`
-— a stable per-product bonus in `[0, 0.20)` that lets unseen or
-weaker-affinity categories periodically enter the candidate window.
-Negatively-affinity categories receive none. No `Math.random()`, no render
-reshuffles, no unstable ordering.
+(100 → 10, 200 → 20, 300 → 30, 400+ → 40). Within the window, the same
+anti-clustering penalties as V1 apply: same category as previous −0.50 / 2
+back −0.22; same seller **or** brand as previous −0.60 / 2 back −0.25.
+
+**Structural exploration slots** replace the old additive hash bonus (which
+was functionally inert: a bounded additive bonus can never overcome a ~0.6
+taste gap, and the prefixed djb2 hash clustered on structured keys). Every
+8th output position (0-based positions 8, 16, 24, …) is an exploration
+opportunity. At an exploration slot:
+
+1. eligible = remaining candidates whose combined category signal is NOT
+   negative (negative category affinity disqualifies deliberate exploration);
+2. recent window = the last 7 output cards; primary candidates = eligible
+   whose category is ABSENT from that window (unseen, weak, and
+   moderate-but-underrepresented categories all qualify);
+3. among them pick the highest `exploreScore` — a taste-independent base
+   (quality + freshness + follow/engagement + own-item penalty) — with total
+   score as the deterministic tiebreak, so the strongest Taste categories do
+   NOT automatically win the slot and junk is never picked merely for an
+   unseen category;
+4. if no candidate qualifies, fall back to the normal greedy pick.
+
+Exploration is deterministic (identical inputs + identical `nowMs` →
+identical output), never duplicates a product, never uses `Math.random()`,
+and never reshuffles on render.
+
+Complexity: scoring is O(N × C) where C is the small curated-category count;
+interleaving is O(N × window) with window ≤ 40, plus a bounded O(N) scan per
+exploration slot — linear/bounded for current PENCHANT catalog sizes.
 
 ## Recency
 
@@ -220,8 +259,10 @@ All in `lib/forYouV2.ts`: `TASTE_BLEND_RECENT/LONG_TERM` (0.65/0.35),
 (1.0/0.9/0.6/0.7/0.4), `CATEGORY_SECONDARY_FACTOR` (0.25),
 `FOLLOWED_SELLER_BONUS` (0.30), `ENGAGEMENT_BONUS` (0.08),
 `OWN_ITEM_PENALTY` (−0.15), `TIE_JITTER_WEIGHT` (0.08),
-`EXPLORATION_WEIGHT` (0.20), `EXPLORATION_CATEGORY_THRESHOLD` (0.05),
-diversity penalties/window.
+`EXPLORATION_INTERVAL` (8), `EXPLORATION_RECENT_WINDOW` (7),
+`DIVERSITY_WINDOW_MIN/RATIO/MAX` (10 / 0.10 / 40),
+`CATEGORY_SECONDARY_FACTOR` (0.25), diversity penalties,
+`CANONICAL_EXCESS_FACTOR` (1.0).
 
 ## What PR #36 deliberately does NOT implement
 
@@ -232,6 +273,8 @@ diversity penalties/window.
 - Any migration (the existing RLS/schema are sufficient).
 - Explainability UI (entity evidence counts are loaded but not displayed).
 - Changes to PR #33 catalog apply work, moderation, or event tracking.
+- Additive per-product exploration bonuses (rejected: a bounded additive
+  bonus can never overcome a strong taste gap; exploration is structural).
 
 ## Tests
 
