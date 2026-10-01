@@ -87,7 +87,8 @@ class FakeTasteGraphStore {
     this.products = products;
     this.entities = new Map(); // type:key -> { id, entity_type, entity_key, ... }
     this.affinities = new Map(); // userId:tasteEntityId -> row
-    this.writeCounts = { entities: 0, affinities: 0, deletes: 0 };
+    this.writeCounts = { entities: 0, replacements: 0 };
+    this.failNextReplacement = false; // test-only failure injection
   }
 
   async fetchUserEvents(userId) {
@@ -114,32 +115,43 @@ class FakeTasteGraphStore {
     });
   }
 
-  async fetchUserAffinityEntityIds(userId) {
-    const prefix = `${userId}:`;
-    return [...this.affinities.keys()]
-      .filter((key) => key.startsWith(prefix))
-      .map((key) => this.affinities.get(key).taste_entity_id);
-  }
-
-  async upsertUserAffinities(rows) {
-    this.writeCounts.affinities += rows.length;
+  // Mirrors the atomic public.replace_user_taste_affinity_snapshot RPC
+  // contract in the test model: validate, compute the successor state on a
+  // COPY, and commit only when nothing fails — an injected failure leaves the
+  // previous snapshot fully intact. This models the transaction semantics
+  // offline; it is not a real PostgreSQL rollback test.
+  async replaceUserAffinitySnapshot(userId, rows) {
+    this.writeCounts.replacements += 1;
+    const keep = new Set();
     for (const row of rows) {
-      this.affinities.set(`${row.user_id}:${row.taste_entity_id}`, { ...row });
+      if (row.user_id !== userId) {
+        throw new Error("row user_id does not match replacement user");
+      }
+      if (!row.taste_entity_id) {
+        throw new Error("snapshot row missing taste_entity_id");
+      }
+      if (keep.has(row.taste_entity_id)) {
+        throw new Error("duplicate taste_entity_id in snapshot rows");
+      }
+      keep.add(row.taste_entity_id);
     }
-  }
-
-  async deleteUserAffinitiesNotIn(userId, keepTasteEntityIds) {
-    const keep = new Set(keepTasteEntityIds);
-    const prefix = `${userId}:`;
+    if (this.failNextReplacement) {
+      this.failNextReplacement = false;
+      throw new Error("simulated replacement failure");
+    }
+    const next = new Map(this.affinities);
     let deleted = 0;
-    for (const [key, row] of [...this.affinities.entries()]) {
-      if (key.startsWith(prefix) && !keep.has(row.taste_entity_id)) {
-        this.affinities.delete(key);
+    for (const [key, row] of [...next.entries()]) {
+      if (row.user_id === userId && !keep.has(row.taste_entity_id)) {
+        next.delete(key);
         deleted += 1;
       }
     }
-    this.writeCounts.deletes += deleted;
-    return deleted;
+    for (const row of rows) {
+      next.set(`${row.user_id}:${row.taste_entity_id}`, { ...row });
+    }
+    this.affinities = next;
+    return { upserted: rows.length, deleted };
   }
 
   affinityRowsFor(userId) {
@@ -619,6 +631,20 @@ async function main() {
     assert.match(userEventsMigration, /for insert\s+to authenticated\s+with check \(auth\.uid\(\) = user_id\)/);
     assert.doesNotMatch(userEventsMigration, /for update/);
     assert.doesNotMatch(userEventsMigration, /for delete/);
+
+    // Atomic replacement RPC intent: one transactional function, invoker
+    // security, emptied search_path, schema-qualified tables, EXECUTE locked
+    // down to the service role only.
+    assert.match(migration, /create or replace function public\.replace_user_taste_affinity_snapshot\(\s*p_user_id uuid,\s*p_rows jsonb\s*\)/);
+    assert.match(migration, /security invoker/);
+    assert.doesNotMatch(migration, /security definer/i);
+    assert.match(migration, /set search_path = ''/);
+    assert.match(migration, /on conflict \(user_id, taste_entity_id\) do update/);
+    assert.match(migration, /delete from public\.user_taste_affinities as a\s+where a\.user_id = p_user_id/);
+    assert.match(migration, /revoke execute on function public\.replace_user_taste_affinity_snapshot\(uuid, jsonb\) from public/);
+    assert.match(migration, /revoke execute on function public\.replace_user_taste_affinity_snapshot\(uuid, jsonb\) from anon/);
+    assert.match(migration, /revoke execute on function public\.replace_user_taste_affinity_snapshot\(uuid, jsonb\) from authenticated/);
+    assert.match(migration, /grant execute on function public\.replace_user_taste_affinity_snapshot\(uuid, jsonb\) to service_role/);
   }
 
   // 38. dry-run performs zero writes ---------------------------------------------------------
@@ -629,7 +655,7 @@ async function main() {
     });
     const result = await rebuildUserTasteGraph(store, USER_A, { asOf: AS_OF });
     assert.strictEqual(result.dryRun, true);
-    assert.deepStrictEqual(store.writeCounts, { entities: 0, affinities: 0, deletes: 0 });
+    assert.deepStrictEqual(store.writeCounts, { entities: 0, replacements: 0 });
     assert.strictEqual(result.entitiesUpserted, 0);
     assert.strictEqual(result.affinitiesUpserted, 0);
     assert.ok(result.snapshot.affinities.length > 0, "dry-run still computes the snapshot");
@@ -708,6 +734,114 @@ async function main() {
     const table = formatSnapshotTable(s);
     assert.ok(table.length > 2);
     assert.ok(table.some((line) => line.includes("product")));
+  }
+
+  // 42. atomic replacement / fail-closed regression tests --------------------------------------
+  {
+    // (a) Incomplete persisted entity result fails closed BEFORE any
+    // affinity replacement is attempted.
+    class DroppingEntitiesStore extends FakeTasteGraphStore {
+      async upsertTasteEntities(rows) {
+        const persisted = await super.upsertTasteEntities(rows);
+        return persisted.filter((e) => e.entity_type !== "product");
+      }
+    }
+    const dropping = new DroppingEntitiesStore({
+      events: [evt("product_like", { product_id: P1 })],
+      products: PRODUCTS,
+    });
+    await assert.rejects(
+      rebuildUserTasteGraph(dropping, USER_A, { asOf: AS_OF, apply: true }),
+      /missing persisted taste entity/
+    );
+    assert.strictEqual(
+      dropping.writeCounts.replacements,
+      0,
+      "no affinity replacement after incomplete entity resolution"
+    );
+
+    // (b) Duplicate/unexpected identity mappings also fail closed.
+    class DuplicatingEntitiesStore extends FakeTasteGraphStore {
+      async upsertTasteEntities(rows) {
+        const persisted = await super.upsertTasteEntities(rows);
+        return persisted.length > 0
+          ? [...persisted, { ...persisted[0] }]
+          : persisted;
+      }
+    }
+    const duplicating = new DuplicatingEntitiesStore({
+      events: [evt("product_like", { product_id: P1 })],
+      products: PRODUCTS,
+    });
+    await assert.rejects(
+      rebuildUserTasteGraph(duplicating, USER_A, { asOf: AS_OF, apply: true }),
+      /duplicate persisted taste entity/
+    );
+    assert.strictEqual(duplicating.writeCounts.replacements, 0);
+
+    // (c) Replacement swaps the old snapshot for the new snapshot.
+    const swapping = new FakeTasteGraphStore({
+      events: [evt("product_like", { product_id: P1 })],
+      products: PRODUCTS,
+    });
+    await rebuildUserTasteGraph(swapping, USER_A, { asOf: AS_OF, apply: true });
+    assert.ok(
+      swapping
+        .affinityRowsFor(USER_A)
+        .some((row) => row.taste_entity_id === `entity-product:${P1}`)
+    );
+    swapping.events = [evt("product_like", { product_id: P2 })];
+    await rebuildUserTasteGraph(swapping, USER_A, { asOf: AS_OF, apply: true });
+    const swappedKeys = swapping
+      .affinityRowsFor(USER_A)
+      .map((row) => row.taste_entity_id);
+    assert.ok(swappedKeys.includes(`entity-product:${P2}`));
+    assert.ok(
+      !swappedKeys.includes(`entity-product:${P1}`),
+      "stale snapshot rows replaced"
+    );
+
+    // (d) Empty new snapshot removes all affinities for that user, and a
+    // replacement for user A never touches user B.
+    const emptying = new FakeTasteGraphStore({
+      events: [
+        evt("product_like", { product_id: P1, user_id: USER_A }),
+        evt("product_like", { product_id: P2, user_id: USER_B }),
+      ],
+      products: PRODUCTS,
+    });
+    await rebuildUserTasteGraph(emptying, USER_A, { asOf: AS_OF, apply: true });
+    await rebuildUserTasteGraph(emptying, USER_B, { asOf: AS_OF, apply: true });
+    emptying.events = emptying.events.filter((e) => e.user_id !== USER_A);
+    const emptied = await rebuildUserTasteGraph(emptying, USER_A, {
+      asOf: AS_OF,
+      apply: true,
+    });
+    assert.strictEqual(emptying.affinityRowsFor(USER_A).length, 0);
+    assert.ok(emptied.affinitiesDeleted > 0);
+    assert.ok(
+      emptying.affinityRowsFor(USER_B).length > 0,
+      "user B affinities untouched by user A replacement"
+    );
+
+    // (e) Simulated replacement failure preserves the old snapshot.
+    const failing = new FakeTasteGraphStore({
+      events: [evt("product_like", { product_id: P1 })],
+      products: PRODUCTS,
+    });
+    await rebuildUserTasteGraph(failing, USER_A, { asOf: AS_OF, apply: true });
+    const beforeFailure = JSON.stringify(failing.affinityRowsFor(USER_A));
+    failing.events = [evt("product_save", { product_id: P1 })];
+    failing.failNextReplacement = true;
+    await assert.rejects(
+      rebuildUserTasteGraph(failing, USER_A, { asOf: AS_OF, apply: true }),
+      /simulated replacement failure/
+    );
+    assert.strictEqual(
+      JSON.stringify(failing.affinityRowsFor(USER_A)),
+      beforeFailure,
+      "old snapshot preserved when the replacement fails"
+    );
   }
 
   console.log("taste-graph tests: all assertions passed");

@@ -9,10 +9,14 @@
  *   user_events -> resolve product context -> build snapshot
  *     -> upsert taste_entities -> replace user_taste_affinities
  *
- * Persistence is snapshot REPLACEMENT, not incremental addition: new
- * snapshot rows are upserted by (user_id, taste_entity_id) and rows for
- * entities absent from the new snapshot are deleted, so re-running --apply
- * with the same history and --as-of converges instead of inflating scores.
+ * Persistence is snapshot REPLACEMENT, not incremental addition, and it is
+ * ATOMIC: a single PostgreSQL function call
+ * (public.replace_user_taste_affinity_snapshot, added by the PR #34
+ * migration) upserts the new snapshot rows by (user_id, taste_entity_id) and
+ * deletes the user's stale rows inside one transaction. Any failure rolls
+ * the whole replacement back, so a user's derived state can never be left in
+ * a mixed old/new state, and re-running --apply with the same history and
+ * --as-of converges instead of inflating scores.
  *
  * DRY-RUN IS THE DEFAULT: no database writes happen unless --apply is
  * passed explicitly.
@@ -139,35 +143,31 @@ const store = {
     return data ?? [];
   },
 
-  async fetchUserAffinityEntityIds(userId) {
-    const { data, error } = await supabase
-      .from("user_taste_affinities")
-      .select("taste_entity_id")
-      .eq("user_id", userId);
+  // Atomic snapshot replacement: ONE PostgreSQL function call upserts the
+  // new rows and deletes this user's stale rows transactionally (see the PR
+  // #34 migration). If the RPC raises, nothing is committed and the user's
+  // previous snapshot is preserved. The RPC's EXECUTE grant is service_role
+  // only; anon/authenticated clients cannot call it.
+  async replaceUserAffinitySnapshot(userId, rows) {
+    const { data, error } = await supabase.rpc(
+      "replace_user_taste_affinity_snapshot",
+      {
+        p_user_id: userId,
+        p_rows: rows.map((row) => ({
+          taste_entity_id: row.taste_entity_id,
+          long_term_score: row.long_term_score,
+          recent_score: row.recent_score,
+          positive_signal_count: row.positive_signal_count,
+          negative_signal_count: row.negative_signal_count,
+          last_interaction_at: row.last_interaction_at,
+        })),
+      }
+    );
     if (error) throw error;
-    return (data ?? []).map((row) => row.taste_entity_id);
-  },
-
-  async upsertUserAffinities(rows) {
-    if (rows.length === 0) return;
-    const { error } = await supabase
-      .from("user_taste_affinities")
-      .upsert(rows, { onConflict: "user_id,taste_entity_id" });
-    if (error) throw error;
-  },
-
-  async deleteUserAffinitiesNotIn(userId, keepTasteEntityIds) {
-    const existing = await store.fetchUserAffinityEntityIds(userId);
-    const keep = new Set(keepTasteEntityIds);
-    const stale = existing.filter((id) => !keep.has(id));
-    if (stale.length === 0) return 0;
-    const { error } = await supabase
-      .from("user_taste_affinities")
-      .delete()
-      .eq("user_id", userId)
-      .in("taste_entity_id", stale);
-    if (error) throw error;
-    return stale.length;
+    return {
+      upserted: typeof data?.upserted === "number" ? data.upserted : rows.length,
+      deleted: typeof data?.deleted === "number" ? data.deleted : 0,
+    };
   },
 };
 

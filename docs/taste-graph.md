@@ -24,7 +24,7 @@ future Feed V2 / Search / onboarding / PENCHANT AI
 | Rebuild orchestration | `lib/tasteGraphRebuild.ts` | Store-agnostic rebuild pipeline (fetch events → resolve product context → snapshot → persist). Duck-typed `TasteGraphStore` keeps it testable offline. |
 | Rebuild CLI | `scripts/taste-graph-rebuild.js` | Service-role script. Dry-run by default; `--apply` writes. |
 | Inspect CLI | `scripts/taste-graph-inspect.js` | Read-only debug printing of a computed snapshot; supports `--user` and offline `--fixture` modes. |
-| Migration | `supabase/migrations/20261001_add_taste_graph_foundation.sql` | New tables + RLS. Applied manually via the Supabase SQL editor like all migrations in this repo. |
+| Migration | `supabase/migrations/20261001_add_taste_graph_foundation.sql` | New tables, RLS, and the atomic replacement RPC. Applied manually via the Supabase SQL editor like all migrations in this repo. |
 | Tests | `scripts/test-taste-graph.js` | `npm run taste:test` — fully offline, deterministic. |
 
 `lib/analytics.ts` remains the **only** client-side writer to
@@ -196,11 +196,21 @@ The rebuild:
 1. reads the user's full `user_events` history (service role; paged)
 2. resolves product context from `public.products` for referenced ids
 3. builds the deterministic snapshot with `lib/tasteGraph.ts`
-4. **apply only:** upserts `taste_entities` by `(entity_type, entity_key)`,
-   upserts `user_taste_affinities` by `(user_id, taste_entity_id)` with full
-   snapshot values, and deletes the user's affinity rows for entities absent
-   from the new snapshot (true replacement)
-5. prints a summary: events processed, taste events, skipped non-taste
+4. **apply only:** upserts `taste_entities` by `(entity_type, entity_key)` —
+   shared, non-user lookup rows that are harmless if left unused after a
+   failed rebuild — then **fails closed**: if any snapshot entity did not
+   resolve to exactly one persisted taste_entity id (missing, duplicate, or
+   id-less mapping), the rebuild throws here, before any affinity write
+5. **apply only, atomically:** calls the
+   `public.replace_user_taste_affinity_snapshot(p_user_id, p_rows)` RPC, which
+   in ONE PostgreSQL function call upserts the new affinity rows by
+   `(user_id, taste_entity_id)` and deletes the user's stale rows. If
+   anything fails inside the function, PostgreSQL rolls back the entire
+   replacement, so the user's previous snapshot is preserved — derived state
+   can never be left in a mixed old/new state. An empty snapshot correctly
+   deletes all of that user's affinities; other users' rows are structurally
+   out of scope (`where user_id = p_user_id`)
+6. prints a summary: events processed, taste events, skipped non-taste
    events, malformed events, orphan reversals, unresolved products, entities /
    affinities produced, rows written/deleted
 
@@ -211,8 +221,8 @@ because `user_events` RLS is insert-only for clients.
 ### Idempotency
 
 Same user + same history + same as-of ⇒ same snapshot. Applying the same
-snapshot twice converges: upsert-replace plus stale-row deletion means
-nothing is ever "incremented again". Covered by tests.
+snapshot twice converges: the atomic upsert-replace plus stale-row deletion
+means nothing is ever "incremented again". Covered by tests.
 
 ### Event ordering
 
@@ -251,8 +261,17 @@ runs fully offline for deterministic testing.
 | table | authenticated client | service role |
 | --- | --- | --- |
 | `taste_entities` | `SELECT` only (non-sensitive lookup rows) | full (rebuild writes) |
-| `user_taste_affinities` | `SELECT` own rows only (`auth.uid() = user_id`) | full (rebuild writes) |
+| `user_taste_affinities` | `SELECT` own rows only (`auth.uid() = user_id`) | full (rebuild writes via RPC) |
 | `user_events` | unchanged: insert own only | unchanged |
+
+The `public.replace_user_taste_affinity_snapshot(uuid, jsonb)` function is
+`SECURITY INVOKER` with `set search_path = ''` and fully schema-qualified
+tables. EXECUTE is revoked from `PUBLIC` (Postgres grants it by default),
+`anon`, and `authenticated`, and granted only to `service_role` — the
+intended sole caller. `SECURITY INVOKER` is deliberate defense in depth:
+even if EXECUTE were mistakenly granted to a client role, RLS would still
+block the writes because no client write policies exist on
+`user_taste_affinities`.
 
 No client can insert/update/delete affinity scores or mutate entities; no user
 can read another user's taste profile. The service-role key never ships in a

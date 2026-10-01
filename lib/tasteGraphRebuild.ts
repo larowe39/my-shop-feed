@@ -6,12 +6,16 @@
 //   1. read the user's public.user_events history (source of truth)
 //   2. resolve trustworthy product context from public.products
 //   3. build the deterministic affinity snapshot (lib/tasteGraph.ts)
-//   4. upsert public.taste_entities
-//   5. replace the user's public.user_taste_affinities with the snapshot
-//      (upsert new rows, delete rows for entities no longer present)
+//   4. upsert public.taste_entities (shared, non-user lookup rows — harmless
+//      if left unused after a failed rebuild)
+//   5. ATOMICALLY replace the user's public.user_taste_affinities via the
+//      public.replace_user_taste_affinity_snapshot RPC: one PostgreSQL call
+//      upserts the new rows and deletes stale rows; any failure rolls the
+//      whole replacement back, preserving the previous snapshot.
 //
-// Persistence uses snapshot-replacement semantics: applying the same
-// snapshot twice converges instead of inflating scores or counts.
+// Between steps 4 and 5 the rebuild FAILS CLOSED: if any snapshot entity did
+// not resolve to exactly one persisted taste_entity id, an error is thrown
+// before any affinity write is attempted.
 //
 // This module stays dependency-free: all database access goes through the
 // duck-typed TasteGraphStore below, so the real service-role client lives in
@@ -47,10 +51,13 @@ export type TasteGraphStore = {
       metadata: Record<string, unknown>;
     }>
   ): Promise<Array<{ id: string; entity_type: string; entity_key: string }>>;
-  // Existing affinity rows for the user (taste_entity_id list is enough).
-  fetchUserAffinityEntityIds(userId: string): Promise<string[]>;
-  // Upsert by (user_id, taste_entity_id) with full snapshot values.
-  upsertUserAffinities(
+  // Atomically replace the user's affinity snapshot with `rows` in ONE
+  // transactional operation (the public.replace_user_taste_affinity_snapshot
+  // RPC): upsert the supplied rows by (user_id, taste_entity_id) and delete
+  // the user's rows absent from them. Must never touch another user's rows.
+  // On failure it must throw and leave the user's previous snapshot intact.
+  replaceUserAffinitySnapshot(
+    userId: string,
     rows: Array<{
       user_id: string;
       taste_entity_id: string;
@@ -60,13 +67,7 @@ export type TasteGraphStore = {
       negative_signal_count: number;
       last_interaction_at: string | null;
     }>
-  ): Promise<void>;
-  // Delete the user's affinity rows for entities absent from the new
-  // snapshot so a rebuild is a true replacement.
-  deleteUserAffinitiesNotIn(
-    userId: string,
-    keepTasteEntityIds: string[]
-  ): Promise<number>;
+  ): Promise<{ upserted: number; deleted: number }>;
 };
 
 export type RebuildOptions = {
@@ -124,22 +125,49 @@ export function formatSnapshotTable(snapshot: TasteSnapshot): string[] {
   return lines;
 }
 
+// Map every snapshot affinity to its persisted taste_entity id, FAILING
+// CLOSED: if any snapshot entity lacks exactly one persisted id, or any
+// duplicate/unexpected identity mapping shows up in the persisted result,
+// this throws BEFORE the caller attempts the atomic affinity replacement —
+// a partial entity resolution can never delete or overwrite the user's
+// existing snapshot.
 export function buildAffinityRows(
   snapshot: TasteSnapshot,
-  entityIdsByKey: Map<string, string>
+  persistedEntities: Array<{
+    id: string;
+    entity_type: string;
+    entity_key: string;
+  }>
 ): Array<{
   taste_entity_id: string;
   row: Omit<TasteAffinityRow, "entity_type" | "entity_key">;
 }> {
+  const idsByKey = new Map<string, string>();
+  for (const entity of persistedEntities ?? []) {
+    if (!entity || typeof entity.id !== "string" || entity.id.length === 0) {
+      throw new Error(
+        `persisted taste entity ${entity?.entity_type}:${entity?.entity_key} has no id`
+      );
+    }
+    const key = `${entity.entity_type}:${entity.entity_key}`;
+    if (idsByKey.has(key)) {
+      throw new Error(`duplicate persisted taste entity mapping for ${key}`);
+    }
+    idsByKey.set(key, entity.id);
+  }
+
+  const missing: string[] = [];
   const rows: Array<{
     taste_entity_id: string;
     row: Omit<TasteAffinityRow, "entity_type" | "entity_key">;
   }> = [];
   for (const affinity of snapshot.affinities) {
-    const id = entityIdsByKey.get(
-      `${affinity.entity_type}:${affinity.entity_key}`
-    );
-    if (!id) continue;
+    const key = `${affinity.entity_type}:${affinity.entity_key}`;
+    const id = idsByKey.get(key);
+    if (!id) {
+      missing.push(key);
+      continue;
+    }
     rows.push({
       taste_entity_id: id,
       row: {
@@ -150,6 +178,11 @@ export function buildAffinityRows(
         last_interaction_at: affinity.last_interaction_at,
       },
     });
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `missing persisted taste entity ids for ${missing.length} snapshot entities: ${missing.join(", ")}`
+    );
   }
   return rows;
 }
@@ -199,27 +232,26 @@ export async function rebuildUserTasteGraph(
     );
     entitiesUpserted = persistedEntities.length;
 
-    const entityIdsByKey = new Map<string, string>();
-    for (const entity of persistedEntities) {
-      entityIdsByKey.set(`${entity.entity_type}:${entity.entity_key}`, entity.id);
-    }
-
-    const affinityRows = buildAffinityRows(snapshot, entityIdsByKey).map(
+    // Fail closed: throws if ANY snapshot entity lacks exactly one persisted
+    // id, before any affinity write is attempted.
+    const affinityRows = buildAffinityRows(snapshot, persistedEntities).map(
       ({ taste_entity_id, row }) => ({
         user_id: userId,
         taste_entity_id,
         ...row,
       })
     );
-    if (affinityRows.length > 0) {
-      await store.upsertUserAffinities(affinityRows);
-    }
-    affinitiesUpserted = affinityRows.length;
 
-    affinitiesDeleted = await store.deleteUserAffinitiesNotIn(
+    // Atomic replacement: a single transactional store call (the
+    // replace_user_taste_affinity_snapshot RPC) upserts the new rows and
+    // deletes stale ones. On failure it throws and the user's previous
+    // snapshot remains intact.
+    const replaceResult = await store.replaceUserAffinitySnapshot(
       userId,
-      affinityRows.map((row) => row.taste_entity_id)
+      affinityRows
     );
+    affinitiesUpserted = replaceResult.upserted;
+    affinitiesDeleted = replaceResult.deleted;
   }
 
   const summary = [
