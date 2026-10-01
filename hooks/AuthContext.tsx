@@ -1,6 +1,7 @@
 // hooks/AuthContext.tsx
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { ONBOARDING_VERSION } from "../lib/tasteOnboarding";
 import type { Session, User } from "@supabase/supabase-js";
 
 type AuthContextType = {
@@ -53,6 +54,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user?.id) return;
 
     const ensureUserProfile = async () => {
+      // Rollout-safe onboarding eligibility (PR #35): the version marker is
+      // set ONLY when a brand-new profile row is created. Existing profiles
+      // hit the unique constraint (23505) and keep their NULL marker,
+      // which means grandfathered — never forced through onboarding.
       const { error } = await supabase.from("user_profiles").insert({
         user_id: user.id,
         display_name: getDefaultDisplayName(user),
@@ -61,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ? user.user_metadata.avatar_url
             : null,
         bio: null,
+        taste_onboarding_version: ONBOARDING_VERSION,
       });
 
       if (error && error.code !== "23505") {

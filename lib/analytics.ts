@@ -31,7 +31,17 @@ export type EventType =
   | "catalog_match_accepted"
   | "catalog_match_rejected"
   | "catalog_match_none"
-  | "catalog_variant_matched";
+  | "catalog_variant_matched"
+  // Explicit onboarding signals (PR #35). Listed here so the typed event
+  // vocabulary stays complete, but NOTE: these are written ONLY by the
+  // atomic complete_taste_onboarding RPC server-side — a deliberate narrow
+  // exception so onboarding state + events commit in one transaction.
+  // Clients must not trackEvent() these.
+  | "onboarding_category_select"
+  | "onboarding_category_deselect"
+  | "onboarding_product_select"
+  | "onboarding_product_deselect"
+  | "onboarding_complete";
 
 // Where the interaction happened, stored in metadata.source rather than as
 // dedicated columns to keep the schema small.
@@ -42,7 +52,8 @@ export type EventSource =
   | "saved"
   | "seller_profile"
   | "product_detail"
-  | "search";
+  | "search"
+  | "onboarding";
 
 export type TrackEventInput = {
   eventType: EventType;

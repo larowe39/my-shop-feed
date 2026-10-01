@@ -34,7 +34,9 @@ export default function SignInScreen() {
 
       if (mode === "signin") {
         await signInWithEmail(e, password);
-        router.replace("/profile");
+        // The centralized gate (app/_layout.tsx) owns the onboarding
+        // decision: land on the app root and let it route.
+        router.replace("/");
         return;
       }
 
@@ -52,7 +54,7 @@ export default function SignInScreen() {
         return;
       }
 
-      router.replace("/profile");
+      router.replace("/");
     } catch (err: any) {
       Alert.alert("Auth error", err?.message ?? "Something went wrong");
     } finally {
