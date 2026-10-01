@@ -26,6 +26,7 @@ import type {
   StagedCatalogCandidate,
 } from "./catalogStagingTypes.ts";
 import type { CreateImportRunInput, StagingStore } from "./stagingStore.ts";
+import { IncompatibleStagedCandidateError } from "./stagingStore.ts";
 import type { AcquisitionQualityMetrics, AcquisitionSummary, ImportRunRecord, SourceRegistryEntry } from "./catalogStagingTypes.ts";
 import type { CanonicalPromotionStore } from "./catalogPromotion.ts";
 import type { TaxonomyMappingRecord } from "./catalogTaxonomyTypes.ts";
@@ -121,10 +122,43 @@ export type DiscoveryAcquisitionResult = AcquisitionRunResult & {
   indexCandidatesExamined: number | null;
   enrichmentAttempts: number | null;
   continuation: DiscoveryContinuation | null;
+  continuationToken: string | null;
   terminationReason: DiscoveryTerminationReason;
   providerMetrics?: IcecatDiscoveryMetrics;
   downstreamAcquisitionMs?: number;
 };
+
+export type DiscoveryFailureFinalizationState = "failed" | "completed" | "UNKNOWN/AMBIGUOUS" | "not-started";
+
+export class DiscoveryAcquisitionFailure extends Error {
+  readonly runId: string | null;
+  readonly phase: string;
+  readonly durableStagedCount: number | null;
+  readonly finalizationState: DiscoveryFailureFinalizationState;
+  readonly secondaryError: string | null;
+
+  constructor(
+    runId: string | null,
+    phase: string,
+    durableStagedCount: number | null,
+    finalizationState: DiscoveryFailureFinalizationState,
+    originalError: unknown,
+    secondaryError: string | null = null
+  ) {
+    const originalMessage = originalError instanceof Error ? originalError.message : String(originalError);
+    const stagedMessage = durableStagedCount === null ? "UNKNOWN" : String(durableStagedCount);
+    super(
+      `Discovery ${phase} failed${runId ? ` for run ${runId}` : ""}: ${originalMessage}; durable staged count=${stagedMessage}; finalization=${finalizationState}${secondaryError ? `; secondary error: ${secondaryError}` : ""}`,
+      { cause: originalError }
+    );
+    this.name = "DiscoveryAcquisitionFailure";
+    this.runId = runId;
+    this.phase = phase;
+    this.durableStagedCount = durableStagedCount;
+    this.finalizationState = finalizationState;
+    this.secondaryError = secondaryError;
+  }
+}
 
 type ClassifiableMetricRecord = Partial<CatalogCandidateInput> & { classification?: CandidateClassification };
 
@@ -132,6 +166,23 @@ type ExistingImportRun = {
   id: string;
   source: SourceRegistryEntry;
 };
+
+function discoveryRecoveryContext(source: SourceRegistryEntry, options: DiscoveryAcquisitionOptions, discovery: ProviderDiscoveryOptions): Record<string, unknown> {
+  return {
+    provider: "open-icecat",
+    adapter: options.adapter ?? "json",
+    sourceId: source.id ?? null,
+    mode: discovery.mode ?? "initial",
+    limit: discovery.limit ?? null,
+    pageSize: discovery.pageSize ?? 25,
+    concurrency: discovery.concurrency ?? 1,
+    brand: discovery.brand ?? null,
+    category: discovery.category ?? null,
+    country: discovery.country ?? null,
+    onMarket: discovery.onMarket ?? null,
+    updatedSince: discovery.updatedSince ?? null,
+  };
+}
 
 type AcquisitionOptions = {
   apply?: boolean;
@@ -142,6 +193,12 @@ type AcquisitionOptions = {
   deferRunFinalization?: boolean;
   matcherIndex?: CatalogMatcherIndex;
   matcherMetrics?: MatcherAcquisitionMetrics;
+};
+
+type DiscoveryAcquisitionOptions = Omit<AcquisitionOptions, "existingRun" | "deferRunFinalization"> & {
+  resumeRunId?: string;
+  onRunCreated?: (identity: { runId: string; sourceId: string | null }) => void;
+  onAcknowledged?: (cursor: string) => void;
 };
 
 export type TaxonomyMappingResolver = (identity: NonNullable<CatalogCandidateInput["externalTaxonomy"]>) => Promise<TaxonomyMappingRecord | null>;
@@ -890,14 +947,63 @@ export async function acquireFromRecords(
         promoted: 0,
         staged: summary.staged,
         errors: summary.errors,
+        status: "partial",
         summary: { ...summary, ...matcherMetricsSummary(matcherMetrics) },
       };
       runId = (await store.createImportRun(source, runInput)).id;
       phaseCounters.persistenceCalls += 1;
     }
     for (const candidate of candidates) candidate.importRunId = runId;
-    stagedResult = await store.upsertStagedCandidates(candidates);
-    phaseCounters.persistenceCalls += 1;
+    let remainingCandidates = candidates.slice();
+    stagedResult = [];
+    while (remainingCandidates.length) {
+      try {
+        phaseCounters.persistenceCalls += 1;
+        stagedResult.push(...await store.upsertStagedCandidates(remainingCandidates));
+        break;
+      } catch (error) {
+        if (!(error instanceof IncompatibleStagedCandidateError) || !error.invalidDisposition || !error.candidate) {
+          const failure = error instanceof Error ? error : new Error(String(error), { cause: error });
+          Object.assign(failure, {
+            acquisitionPageAccounting: {
+              summary: { ...summary },
+              invalidRecords: [...invalidRecords],
+            },
+          });
+          throw failure;
+        }
+        const rejected = error.candidate;
+        let rejectedIndex = remainingCandidates.indexOf(rejected);
+        if (rejectedIndex < 0 && rejected.sourceExternalId) {
+          rejectedIndex = remainingCandidates.findIndex((candidate) => candidate.sourceExternalId === rejected.sourceExternalId && candidate.fingerprint === rejected.fingerprint);
+          if (rejectedIndex < 0) rejectedIndex = remainingCandidates.findIndex((candidate) => candidate.sourceExternalId === rejected.sourceExternalId);
+        }
+        if (rejectedIndex < 0) throw error;
+        remainingCandidates.splice(rejectedIndex, 1);
+        summary.valid = Math.max(0, summary.valid - 1);
+        summary.invalid += 1;
+        summary.errors += 1;
+        summary.staged = Math.max(0, summary.staged - 1);
+        if (rejected.classification === "NEW") summary.new = Math.max(0, summary.new - 1);
+        else if (rejected.classification === "LIKELY_EXISTING") summary.likelyExisting = Math.max(0, summary.likelyExisting - 1);
+        else if (rejected.classification === "POSSIBLE_EXISTING") summary.possibleExisting = Math.max(0, summary.possibleExisting - 1);
+        else if (rejected.classification === "CONFLICT") summary.conflict = Math.max(0, summary.conflict - 1);
+        invalidRecords.push({
+          candidate: {
+            sourceExternalId: rejected.sourceExternalId,
+            sourceId: rejected.sourceId,
+            brand: rejected.brand,
+            productName: rejected.productName,
+            modelNumber: rejected.modelNumber,
+            category: rejected.category,
+            subcategory: rejected.subcategory,
+            raw: rejected.rawPayload,
+          },
+          errors: [error.message],
+          classification: "INVALID",
+        });
+      }
+    }
     summary.staged = stagedResult.length;
     if (!options.deferRunFinalization) await store.updateImportRun(runId, {
       processed: summary.processed,
@@ -910,6 +1016,7 @@ export async function acquireFromRecords(
       conflictRecords: summary.conflict,
       staged: summary.staged,
       errors: summary.errors,
+      status: "completed",
       summary: { ...summary, ...matcherMetricsSummary(matcherMetrics) },
     });
     if (!options.deferRunFinalization) phaseCounters.persistenceCalls += 1;
@@ -956,7 +1063,7 @@ export async function acquireDiscoveredProducts<TRaw>(
   discoveryOptions: ProviderDiscoveryOptions,
   canonicalCatalog: CanonicalCatalogEntry[] = [],
   sourceInfo: Partial<SourceRegistryEntry> = {},
-  options: Omit<AcquisitionOptions, "existingRun" | "deferRunFinalization"> = {},
+  options: DiscoveryAcquisitionOptions = {},
   store?: StagingStore
 ): Promise<DiscoveryAcquisitionResult> {
   const apply = options.apply ?? false;
@@ -975,6 +1082,17 @@ export async function acquireDiscoveredProducts<TRaw>(
     staged: 0,
     errors: 0,
   };
+  const acknowledgedCounters = {
+    processed: 0,
+    valid: 0,
+    invalid: 0,
+    exactExisting: 0,
+    likelyExisting: 0,
+    possibleExisting: 0,
+    newRecords: 0,
+    conflictRecords: 0,
+    errors: 0,
+  };
   const metricRecords: ClassifiableMetricRecord[] = [];
   const invalidRecords: AcquisitionRunResult["invalidRecords"] = [];
   const staged: StagedCatalogCandidate[] = [];
@@ -987,6 +1105,12 @@ export async function acquireDiscoveredProducts<TRaw>(
   let continuation: DiscoveryContinuation | null = null;
   let terminationReason: DiscoveryTerminationReason = "source-exhausted";
   let existingRun: ExistingImportRun | undefined;
+  let runSummary: Record<string, unknown> = {};
+  let continuationToken: string | null = null;
+  let pendingPageAccounting: Record<string, unknown> | null = null;
+  let priorSuccessfulEnrichments = 0;
+  let failurePhase = "run-setup";
+  let durableStagedCount: number | null = null;
   let providerMetrics: IcecatDiscoveryMetrics | undefined;
   let downstreamAcquisitionMs = 0;
   const aggregatePhaseMetrics: DownstreamPhaseMetrics = {
@@ -1027,7 +1151,20 @@ export async function acquireDiscoveredProducts<TRaw>(
     },
   };
 
+  if (options.resumeRunId && (!apply || !store)) {
+    throw new Error("Same-run recovery requires discovery apply mode and a StagingStore.");
+  }
+
   if (apply && store) {
+    let priorRun: ImportRunRecord | undefined;
+    if (options.resumeRunId) {
+      if ((options.adapter ?? "") !== "open-icecat") throw new Error("Same-run recovery is supported only for the Open Icecat discovery adapter.");
+      priorRun = (await store.listImportRuns()).find((run) => run.id === options.resumeRunId);
+      if (!priorRun) throw new Error(`Same-run recovery refused: import run ${options.resumeRunId} was not found.`);
+      if (priorRun.status !== "partial" && priorRun.status !== "failed") {
+        throw new Error(`Same-run recovery refused: run ${priorRun.id} has status ${priorRun.status}; only partial or failed runs may be recovered.`);
+      }
+    }
     const source = await store.upsertSource({
       id: sourceInfo.id,
       name: sourceInfo.name ?? "fixture-source",
@@ -1038,32 +1175,173 @@ export async function acquireDiscoveredProducts<TRaw>(
       notes: sourceInfo.notes ?? null,
       metadata: sourceInfo.metadata ?? {},
     });
-    const run = await store.createImportRun(source, {
-      adapter: options.adapter ?? "json",
-      sourcePath: options.sourcePath ?? null,
-      dryRun: false,
-      processed: 0,
-      valid: 0,
-      invalid: 0,
-      exactExisting: 0,
-      likelyExisting: 0,
-      possibleExisting: 0,
-      newRecords: 0,
-      conflictRecords: 0,
-      approved: 0,
-      rejected: 0,
-      promoted: 0,
-      staged: 0,
-      errors: 0,
-      status: "partial",
-      summary: { requestedLimit: discoveryOptions.limit ?? null },
-    });
-    existingRun = { id: run.id, source };
+    const recoveryContext = discoveryRecoveryContext(source, options, discoveryOptions);
+    if (priorRun) {
+      if (priorRun.sourceId !== source.id) throw new Error(`Same-run recovery refused: run ${priorRun.id} belongs to a different source.`);
+      if (JSON.stringify(priorRun.summary.recoveryContext) !== JSON.stringify(recoveryContext)) {
+        throw new Error(`Same-run recovery refused: run ${priorRun.id} does not match this provider, source, mode, filters, or apply bounds.`);
+      }
+      continuationToken = typeof priorRun.summary.acknowledgedCursor === "string" ? priorRun.summary.acknowledgedCursor : null;
+      if (discoveryOptions.cursor && discoveryOptions.cursor !== continuationToken) {
+        throw new Error("Same-run recovery refused: supplied cursor does not match the last persisted acknowledged continuation for this run.");
+      }
+      runSummary = { ...priorRun.summary };
+      pendingPageAccounting = priorRun.summary.pendingPage && typeof priorRun.summary.pendingPage === "object"
+        ? { ...(priorRun.summary.pendingPage as Record<string, unknown>) }
+        : null;
+      delete runSummary.failure;
+      delete runSummary.failurePhase;
+      delete runSummary.finalizationState;
+      delete runSummary.durableStagedCount;
+      aggregate.processed = priorRun.processed;
+      aggregate.valid = priorRun.valid;
+      aggregate.invalid = priorRun.invalid;
+      aggregate.exactExisting = priorRun.exactExisting;
+      aggregate.likelyExisting = priorRun.likelyExisting;
+      aggregate.possibleExisting = priorRun.possibleExisting;
+      aggregate.new = priorRun.newRecords;
+      aggregate.conflict = priorRun.conflictRecords;
+      aggregate.staged = priorRun.staged;
+      aggregate.errors = priorRun.errors;
+      Object.assign(acknowledgedCounters, {
+        processed: priorRun.processed,
+        valid: priorRun.valid,
+        invalid: priorRun.invalid,
+        exactExisting: priorRun.exactExisting,
+        likelyExisting: priorRun.likelyExisting,
+        possibleExisting: priorRun.possibleExisting,
+        newRecords: priorRun.newRecords,
+        conflictRecords: priorRun.conflictRecords,
+        errors: priorRun.errors,
+      });
+      fetched = Number(priorRun.summary.sourceRecords ?? 0);
+      pages = Number(priorRun.summary.providerPages ?? 0);
+      priorSuccessfulEnrichments = Number(priorRun.summary.successfulEnrichments ?? 0);
+      indexCandidatesExamined = typeof priorRun.summary.indexCandidatesExamined === "number" ? priorRun.summary.indexCandidatesExamined : null;
+      enrichmentAttempts = typeof priorRun.summary.enrichmentAttempts === "number" ? priorRun.summary.enrichmentAttempts : null;
+      providerErrors.push(...(Array.isArray(priorRun.summary.providerErrorDetails) ? priorRun.summary.providerErrorDetails as ProviderFetchError[] : []));
+      invalidRecords.push(...(Array.isArray(priorRun.summary.invalidRecords) ? priorRun.summary.invalidRecords as Array<{ sourceExternalId?: string | null; errors?: string[] }> : []).map((entry) => ({
+        candidate: { sourceExternalId: entry.sourceExternalId ?? null },
+        errors: Array.isArray(entry.errors) ? entry.errors : ["Previously persisted invalid disposition"],
+        classification: "INVALID" as const,
+      })));
+      existingRun = { id: priorRun.id, source };
+      providerDiscoveryOptions.cursor = continuationToken;
+    } else {
+      if (apply && discoveryOptions.cursor) throw new Error("A cursor cannot start a new apply run; use --resume-run with the existing run ID.");
+      const run = await store.createImportRun(source, {
+        adapter: options.adapter ?? "json",
+        sourcePath: options.sourcePath ?? null,
+        dryRun: false,
+        processed: 0,
+        valid: 0,
+        invalid: 0,
+        exactExisting: 0,
+        likelyExisting: 0,
+        possibleExisting: 0,
+        newRecords: 0,
+        conflictRecords: 0,
+        approved: 0,
+        rejected: 0,
+        promoted: 0,
+        staged: 0,
+        errors: 0,
+        status: "partial",
+        summary: { requestedLimit: discoveryOptions.limit ?? null, recoveryContext, acknowledgedCursor: null },
+      });
+      existingRun = { id: run.id, source };
+      runSummary = { requestedLimit: discoveryOptions.limit ?? null, recoveryContext, acknowledgedCursor: null };
+      options.onRunCreated?.({ runId: run.id, sourceId: source.id ?? null });
+    }
   }
 
+  const recordFailure = async (originalError: unknown, phase: string, finalizationMayHaveCommitted: boolean): Promise<boolean> => {
+    if (!existingRun || !store) {
+      throw new DiscoveryAcquisitionFailure(null, phase, null, "not-started", originalError);
+    }
+    let secondaryError: string | null = null;
+    if (finalizationMayHaveCommitted) {
+      try {
+        const observed = (await store.listImportRuns()).find((run) => run.id === existingRun!.id);
+        if (observed?.status === "completed") {
+          runSummary = observed.summary;
+          return true;
+        }
+        if (!observed || (observed.status !== "partial" && observed.status !== "failed")) {
+          throw new Error(`run status could not be established (observed ${observed?.status ?? "missing"})`);
+        }
+      } catch (reconciliationError) {
+        throw new DiscoveryAcquisitionFailure(
+          existingRun.id,
+          phase,
+          durableStagedCount,
+          "UNKNOWN/AMBIGUOUS",
+          originalError,
+          `finalization reconciliation failed: ${reconciliationError instanceof Error ? reconciliationError.message : String(reconciliationError)}`
+        );
+      }
+    }
+    try {
+      durableStagedCount = await store.countStagedCandidatesByRun(existingRun.id);
+      aggregate.staged = durableStagedCount;
+      if (pendingPageAccounting) pendingPageAccounting = { ...pendingPageAccounting, durableStagedCount };
+    } catch (countError) {
+      durableStagedCount = null;
+      if (pendingPageAccounting) pendingPageAccounting = { ...pendingPageAccounting, durableStagedCount: null };
+      secondaryError = `durable staged count failed: ${countError instanceof Error ? countError.message : String(countError)}`;
+    }
+    try {
+      const failedRun = await store.updateImportRun(existingRun.id, {
+        processed: acknowledgedCounters.processed,
+        valid: acknowledgedCounters.valid,
+        invalid: acknowledgedCounters.invalid,
+        exactExisting: acknowledgedCounters.exactExisting,
+        likelyExisting: acknowledgedCounters.likelyExisting,
+        possibleExisting: acknowledgedCounters.possibleExisting,
+        newRecords: acknowledgedCounters.newRecords,
+        conflictRecords: acknowledgedCounters.conflictRecords,
+        staged: aggregate.staged,
+        errors: acknowledgedCounters.errors + 1,
+        status: "failed",
+        summary: {
+          ...runSummary,
+          requestedLimit: discoveryOptions.limit ?? null,
+          pendingPage: pendingPageAccounting,
+          failure: originalError instanceof Error ? originalError.message : String(originalError),
+          failurePhase: phase,
+          durableStagedCount,
+          finalizationState: "failed",
+        },
+      });
+      if (!failedRun) throw new Error("failure update returned no import run row");
+    } catch (recordingError) {
+      const recordingMessage = recordingError instanceof Error ? recordingError.message : String(recordingError);
+      secondaryError = [secondaryError, `failure recording failed: ${recordingMessage}`].filter(Boolean).join("; ");
+      try {
+        const observed = (await store.listImportRuns()).find((run) => run.id === existingRun!.id);
+        if (observed?.status === "failed") secondaryError += "; read-only reconciliation observes status=failed";
+        else if (observed?.status === "completed") secondaryError += "; read-only reconciliation observes status=completed";
+        else secondaryError += "; read-only reconciliation could not prove final status";
+      } catch (reconcileError) {
+        secondaryError += `; read-only reconciliation failed: ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}`;
+      }
+    }
+    throw new DiscoveryAcquisitionFailure(
+      existingRun.id,
+      phase,
+      durableStagedCount,
+      secondaryError ? "UNKNOWN/AMBIGUOUS" : "failed",
+      originalError,
+      secondaryError
+    );
+  };
+
+  failurePhase = "provider-discovery";
   try {
     await processDiscoveredPages(provider, providerDiscoveryOptions, async (page) => {
-    fetched += page.records.length;
+    failurePhase = "page-normalization";
+    const providerInvalidRecords = page.invalidRecords ?? [];
+    fetched += page.records.length + providerInvalidRecords.length;
     pages += 1;
     providerErrors.push(...page.errors);
     const processedCount = Number(page.checkpoint?.processedCount);
@@ -1072,14 +1350,16 @@ export async function acquireDiscoveredProducts<TRaw>(
     if (Number.isFinite(attemptCount)) enrichmentAttempts = Math.max(enrichmentAttempts ?? 0, attemptCount);
 
     const pageRecords: CatalogCandidateInput[] = [];
+    const pageInvalidStartIndex = invalidRecords.length;
+    invalidRecords.push(...providerInvalidRecords.map((entry) => ({
+      candidate: entry.record as Partial<CatalogCandidateInput>,
+      errors: entry.errors,
+      classification: "INVALID" as const,
+    })));
     for (const record of page.records) {
       try {
         pageRecords.push(provider.normalizeProduct(record));
       } catch (error) {
-        providerErrors.push({
-          message: error instanceof Error ? error.message : String(error),
-          sourceExternalId: (record as { sourceExternalId?: string })?.sourceExternalId,
-        });
         invalidRecords.push({
           candidate: record as Partial<CatalogCandidateInput>,
           errors: [`normalization failed: ${error instanceof Error ? error.message : String(error)}`],
@@ -1087,28 +1367,67 @@ export async function acquireDiscoveredProducts<TRaw>(
         });
       }
     }
+    failurePhase = "candidate-persistence";
     const downstreamStartedAt = performance.now();
-    const pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, sourceInfo, {
-      ...options,
-      taxonomyResolver: taxonomyResolverForPage,
-      existingRun,
-      deferRunFinalization: Boolean(existingRun),
-      matcherIndex,
-      matcherMetrics,
-    }, store);
+    let pageRun: AcquisitionRunResult;
+    try {
+      pageRun = await acquireFromRecords(pageRecords, canonicalCatalog, existingRun?.source ?? sourceInfo, {
+        ...options,
+        taxonomyResolver: taxonomyResolverForPage,
+        existingRun,
+        deferRunFinalization: Boolean(existingRun),
+        matcherIndex,
+        matcherMetrics,
+      }, store);
+    } catch (error) {
+      const accounting = (error as Error & { acquisitionPageAccounting?: { summary: AcquisitionSummary; invalidRecords: AcquisitionRunResult["invalidRecords"] } }).acquisitionPageAccounting;
+      if (accounting) {
+        const pageSummary = accounting.summary;
+        aggregate.processed += pageSummary.processed + page.records.length - pageRecords.length + providerInvalidRecords.length;
+        aggregate.valid += pageSummary.valid;
+        aggregate.invalid += pageSummary.invalid + page.records.length - pageRecords.length + providerInvalidRecords.length;
+        aggregate.exactExisting += pageSummary.exactExisting;
+        aggregate.likelyExisting += pageSummary.likelyExisting;
+        aggregate.possibleExisting += pageSummary.possibleExisting;
+        aggregate.new += pageSummary.new;
+        aggregate.conflict += pageSummary.conflict;
+        aggregate.errors += pageSummary.errors + page.records.length - pageRecords.length + providerInvalidRecords.length;
+        invalidRecords.push(...accounting.invalidRecords);
+        pendingPageAccounting = {
+          pageNumber: pages,
+          sourceRecords: page.records.length + providerInvalidRecords.length,
+          processed: pageSummary.processed + page.records.length - pageRecords.length + providerInvalidRecords.length,
+          valid: pageSummary.valid,
+          invalid: pageSummary.invalid + page.records.length - pageRecords.length + providerInvalidRecords.length,
+          exactExisting: pageSummary.exactExisting,
+          likelyExisting: pageSummary.likelyExisting,
+          possibleExisting: pageSummary.possibleExisting,
+          newRecords: pageSummary.new,
+          conflictRecords: pageSummary.conflict,
+          errors: pageSummary.errors + page.records.length - pageRecords.length + providerInvalidRecords.length,
+          providerErrors: page.errors,
+          invalidRecords: invalidRecords.slice(pageInvalidStartIndex).map((entry) => ({
+            sourceExternalId: entry.candidate.sourceExternalId ?? null,
+            errors: entry.errors,
+          })),
+        };
+      }
+      throw error;
+    }
     downstreamAcquisitionMs += performance.now() - downstreamStartedAt;
     if (pageRun.downstreamPhaseMetrics) {
       for (const key of Object.keys(aggregatePhaseMetrics) as Array<keyof DownstreamPhaseMetrics>) {
         aggregatePhaseMetrics[key] += pageRun.downstreamPhaseMetrics[key];
       }
     }
-    aggregate.processed += page.records.length - pageRun.summary.processed;
-    aggregate.invalid += page.records.length - pageRecords.length;
-    aggregate.errors += page.records.length - pageRecords.length;
+    aggregate.processed += page.records.length - pageRun.summary.processed + providerInvalidRecords.length;
+    aggregate.invalid += page.records.length - pageRecords.length + providerInvalidRecords.length;
+    aggregate.errors += page.records.length - pageRecords.length + providerInvalidRecords.length;
     for (const key of ["processed", "valid", "invalid", "exactExisting", "likelyExisting", "possibleExisting", "new", "conflict", "errors"] as const) {
       aggregate[key] += pageRun.summary[key];
     }
     staged.push(...pageRun.staged);
+    aggregate.staged += pageRun.staged.length;
     metricRecords.push(...pageRun.staged.map((candidate) => ({
       sourceExternalId: candidate.sourceExternalId,
       sourceId: candidate.sourceId,
@@ -1131,34 +1450,138 @@ export async function acquireDiscoveredProducts<TRaw>(
       classification: candidate.classification,
     })));
     metricRecords.push(...pageRun.invalidRecords.map((entry) => ({ ...entry.candidate, classification: entry.classification })));
+    metricRecords.push(...providerInvalidRecords.map((entry) => ({ ...(entry.record as Partial<CatalogCandidateInput>), classification: "INVALID" as const })));
     invalidRecords.push(...pageRun.invalidRecords);
     for (const entry of pageRun.persistence) persistence.add(entry);
+    pendingPageAccounting = {
+      pageNumber: pages,
+      sourceRecords: page.records.length + providerInvalidRecords.length,
+      processed: pageRun.summary.processed + page.records.length - pageRecords.length + providerInvalidRecords.length,
+      valid: pageRun.summary.valid,
+      invalid: pageRun.summary.invalid + page.records.length - pageRecords.length + providerInvalidRecords.length,
+      exactExisting: pageRun.summary.exactExisting,
+      likelyExisting: pageRun.summary.likelyExisting,
+      possibleExisting: pageRun.summary.possibleExisting,
+      newRecords: pageRun.summary.new,
+      conflictRecords: pageRun.summary.conflict,
+      errors: pageRun.summary.errors + page.records.length - pageRecords.length + providerInvalidRecords.length,
+      providerErrors: page.errors,
+      invalidRecords: invalidRecords.slice(pageInvalidStartIndex).map((entry) => ({
+        sourceExternalId: entry.candidate.sourceExternalId ?? null,
+        errors: entry.errors,
+      })),
+    };
+
+    if (existingRun && store) {
+      failurePhase = "page-accounting";
+      aggregate.staged = await store.countStagedCandidatesByRun(existingRun.id);
+      durableStagedCount = aggregate.staged;
+      pendingPageAccounting.durableStagedCount = aggregate.staged;
+      const pageSummary = {
+        ...runSummary,
+        pendingPage: pendingPageAccounting,
+      };
+      const updatedRun = await store.updateImportRun(existingRun.id, {
+        processed: acknowledgedCounters.processed,
+        valid: acknowledgedCounters.valid,
+        invalid: acknowledgedCounters.invalid,
+        exactExisting: acknowledgedCounters.exactExisting,
+        likelyExisting: acknowledgedCounters.likelyExisting,
+        possibleExisting: acknowledgedCounters.possibleExisting,
+        newRecords: acknowledgedCounters.newRecords,
+        conflictRecords: acknowledgedCounters.conflictRecords,
+        staged: aggregate.staged,
+        errors: acknowledgedCounters.errors,
+        status: "partial",
+        summary: pageSummary,
+      });
+      if (!updatedRun) throw new Error("page accounting update returned no import run row");
+      runSummary = pageSummary;
+    }
+    if (apply && page.errors.length) {
+      throw new Error(`Discovery page contained ${page.errors.length} provider error(s); page was not acknowledged.`);
+    }
+    failurePhase = "page-acknowledgment";
     page.acknowledge?.();
     const acknowledged = page.checkpoint?.acknowledgedContinuation;
     if (acknowledged && typeof acknowledged === "object") continuation = acknowledged as DiscoveryContinuation;
-    if (page.done) terminationReason = "limit-reached";
-    });
-  } catch (error) {
+    const acknowledgedCursor = page.checkpoint?.acknowledgedCursor;
+    if (typeof acknowledgedCursor === "string" && acknowledgedCursor) {
+      continuationToken = acknowledgedCursor;
+    } else if (options.adapter === "open-icecat" && page.checkpoint?.checkpointVersion === "icecat-index-v2" && !page.errors.length && page.records.length + providerInvalidRecords.length > 0) {
+      throw new Error("Open Icecat page acknowledgment did not produce a usable continuation token.");
+    }
     if (existingRun && store) {
-      await store.updateImportRun(existingRun.id, {
+      failurePhase = "acknowledged-cursor-persistence";
+      const acknowledgedSummary: Record<string, unknown> = {
+        ...runSummary,
+        requestedLimit: discoveryOptions.limit ?? null,
+        sourceRecords: fetched,
+        providerErrors: providerErrors.length,
+        providerErrorDetails: providerErrors,
+        providerPages: pages,
+        indexCandidatesExamined,
+        enrichmentAttempts,
+        successfulEnrichments: priorSuccessfulEnrichments + metricRecords.length,
+        invalidRecords: invalidRecords.map((entry) => ({
+          sourceExternalId: entry.candidate.sourceExternalId ?? null,
+          errors: entry.errors,
+        })),
+        acknowledgedCursor: continuationToken,
+      };
+      delete acknowledgedSummary.pendingPage;
+      try {
+        const acknowledgedRun = await store.updateImportRun(existingRun.id, {
+          processed: aggregate.processed,
+          valid: aggregate.valid,
+          invalid: aggregate.invalid,
+          exactExisting: aggregate.exactExisting,
+          likelyExisting: aggregate.likelyExisting,
+          possibleExisting: aggregate.possibleExisting,
+          newRecords: aggregate.new,
+          conflictRecords: aggregate.conflict,
+          staged: aggregate.staged,
+          errors: aggregate.errors,
+          status: "partial",
+          summary: acknowledgedSummary,
+        });
+        if (!acknowledgedRun) throw new Error("acknowledged page update returned no import run row");
+        runSummary = acknowledgedSummary;
+      } catch (acknowledgmentError) {
+        try {
+          const observed = (await store.listImportRuns()).find((run) => run.id === existingRun!.id);
+          const updateCommitted = Boolean(observed && !observed.summary.pendingPage &&
+            observed.processed === aggregate.processed && observed.valid === aggregate.valid &&
+            observed.invalid === aggregate.invalid && observed.staged === aggregate.staged &&
+            (typeof observed.summary.acknowledgedCursor === "string" ? observed.summary.acknowledgedCursor : null) === continuationToken);
+          if (!updateCommitted || !observed) throw new Error("read-only reconciliation did not prove the acknowledged page update committed");
+          runSummary = observed.summary;
+        } catch (reconciliationError) {
+          throw new Error(
+            `Acknowledged page persistence is ambiguous for run ${existingRun.id}: ${acknowledgmentError instanceof Error ? acknowledgmentError.message : String(acknowledgmentError)}; reconciliation failed: ${reconciliationError instanceof Error ? reconciliationError.message : String(reconciliationError)}`,
+            { cause: acknowledgmentError }
+          );
+        }
+      }
+      Object.assign(acknowledgedCounters, {
         processed: aggregate.processed,
         valid: aggregate.valid,
         invalid: aggregate.invalid,
-        staged: aggregate.staged,
-        errors: aggregate.errors + 1,
-        status: "failed",
-        summary: {
-          requestedLimit: discoveryOptions.limit ?? null,
-          sourceRecords: fetched,
-          providerErrors: providerErrors.length,
-          invalidRecords: invalidRecords.map((entry) => ({
-            sourceExternalId: entry.candidate.sourceExternalId ?? null,
-            errors: entry.errors,
-          })),
-          failure: error instanceof Error ? error.message : String(error),
-        },
+        exactExisting: aggregate.exactExisting,
+        likelyExisting: aggregate.likelyExisting,
+        possibleExisting: aggregate.possibleExisting,
+        newRecords: aggregate.new,
+        conflictRecords: aggregate.conflict,
+        errors: aggregate.errors,
       });
+      pendingPageAccounting = null;
     }
+    if (typeof acknowledgedCursor === "string" && acknowledgedCursor) options.onAcknowledged?.(continuationToken!);
+    if (page.done) terminationReason = "limit-reached";
+    failurePhase = "provider-discovery";
+    });
+  } catch (error) {
+    await recordFailure(error, failurePhase, false);
     throw error;
   }
 
@@ -1168,30 +1591,37 @@ export async function acquireDiscoveredProducts<TRaw>(
   });
   const elapsedMs = Date.now() - startedAt;
   if (existingRun && store) {
-    aggregate.staged = await store.countStagedCandidatesByRun(existingRun.id);
-    const persistedSummary = {
-      ...aggregate,
-      ...matcherMetricsSummary(matcherMetrics),
-      requestedLimit: discoveryOptions.limit ?? null,
-      sourceRecords: fetched,
-      successfulEnrichments: metricRecords.length,
-      providerErrors: providerErrors.length,
-      elapsedMs,
-      providerPages: pages,
-      indexCandidatesExamined,
-      enrichmentAttempts,
-      usableSuccessfulDetails: providerMetrics?.usableSuccessfulDetails ?? null,
-      failedDetailRequests: providerMetrics?.failedDetailRequests ?? null,
-      filteredSuccessfulDetails: providerMetrics?.filteredSuccessfulDetails ?? null,
-      successfulSpeculativeCompletions: providerMetrics?.successfulSpeculativeCompletions ?? null,
-      cancelledDetailRequests: providerMetrics?.cancelledDetailRequests ?? null,
-      invalidRecords: invalidRecords.map((entry) => ({
-        sourceExternalId: entry.candidate.sourceExternalId ?? null,
-        errors: entry.errors,
-      })),
-    };
     try {
-      await store.updateImportRun(existingRun.id, {
+      failurePhase = "final-staged-count";
+      aggregate.staged = await store.countStagedCandidatesByRun(existingRun.id);
+      durableStagedCount = aggregate.staged;
+      const persistedSummary = {
+        ...runSummary,
+        ...aggregate,
+        ...matcherMetricsSummary(matcherMetrics),
+        requestedLimit: discoveryOptions.limit ?? null,
+        sourceRecords: fetched,
+        successfulEnrichments: priorSuccessfulEnrichments + metricRecords.length,
+        providerErrors: providerErrors.length,
+        providerErrorDetails: providerErrors,
+        elapsedMs,
+        providerPages: pages,
+        indexCandidatesExamined,
+        enrichmentAttempts,
+        usableSuccessfulDetails: providerMetrics?.usableSuccessfulDetails ?? null,
+        failedDetailRequests: providerMetrics?.failedDetailRequests ?? null,
+        invalidDetails: providerMetrics?.invalidDetails ?? null,
+        filteredSuccessfulDetails: providerMetrics?.filteredSuccessfulDetails ?? null,
+        successfulSpeculativeCompletions: providerMetrics?.successfulSpeculativeCompletions ?? null,
+        cancelledDetailRequests: providerMetrics?.cancelledDetailRequests ?? null,
+        invalidRecords: invalidRecords.map((entry) => ({
+          sourceExternalId: entry.candidate.sourceExternalId ?? null,
+          errors: entry.errors,
+        })),
+        durableStagedCount: aggregate.staged,
+      };
+      failurePhase = "run-finalization";
+      const finalizedRun = await store.updateImportRun(existingRun.id, {
         processed: aggregate.processed,
         valid: aggregate.valid,
         invalid: aggregate.invalid,
@@ -1205,17 +1635,12 @@ export async function acquireDiscoveredProducts<TRaw>(
         status: "completed",
         summary: persistedSummary,
       });
+      if (!finalizedRun) throw new Error("completed update returned no import run row");
+      runSummary = persistedSummary;
+      failurePhase = "completed";
     } catch (error) {
-      await store.updateImportRun(existingRun.id, {
-        processed: aggregate.processed,
-        valid: aggregate.valid,
-        invalid: aggregate.invalid,
-        staged: aggregate.staged,
-        errors: aggregate.errors + 1,
-        status: "failed",
-        summary: { ...persistedSummary, failure: error instanceof Error ? error.message : String(error) },
-      });
-      throw error;
+      const reconciledCompleted = await recordFailure(error, failurePhase, failurePhase === "run-finalization");
+      if (!reconciledCompleted) throw error;
     }
   } else {
     aggregate.staged = staged.length;
@@ -1233,12 +1658,13 @@ export async function acquireDiscoveredProducts<TRaw>(
     fetched,
     pages,
     providerErrors,
-    enriched: metricRecords.length,
+    enriched: priorSuccessfulEnrichments + metricRecords.length,
     elapsedMs,
     indexCandidatesExamined,
     enrichmentAttempts,
     continuation,
     terminationReason,
+    continuationToken,
     providerMetrics,
     downstreamAcquisitionMs,
   };
@@ -1269,6 +1695,7 @@ export type CatalogRunReportMetrics = {
   enrichmentAttempts: number | null;
   usableSuccessfulDetails: number | null;
   failedDetailRequests: number | null;
+  invalidDetails: number | null;
   filteredSuccessfulDetails: number | null;
   successfulSpeculativeCompletions: number | null;
   cancelledDetailRequests: number | null;
@@ -1487,6 +1914,7 @@ export function buildCatalogRunReport(runId: string | null | undefined, importRu
     enrichmentAttempts: persistedNumber("enrichmentAttempts"),
     usableSuccessfulDetails: persistedNumber("usableSuccessfulDetails"),
     failedDetailRequests: persistedNumber("failedDetailRequests"),
+    invalidDetails: persistedNumber("invalidDetails"),
     filteredSuccessfulDetails: persistedNumber("filteredSuccessfulDetails"),
     successfulSpeculativeCompletions: persistedNumber("successfulSpeculativeCompletions"),
     cancelledDetailRequests: persistedNumber("cancelledDetailRequests"),
@@ -1582,6 +2010,7 @@ export function buildCatalogRunReportFromResult(
     enrichmentAttempts: typeof discovery.enrichmentAttempts === "number" ? discovery.enrichmentAttempts : null,
     usableSuccessfulDetails: discovery.providerMetrics?.usableSuccessfulDetails ?? null,
     failedDetailRequests: discovery.providerMetrics?.failedDetailRequests ?? null,
+    invalidDetails: discovery.providerMetrics?.invalidDetails ?? null,
     filteredSuccessfulDetails: discovery.providerMetrics?.filteredSuccessfulDetails ?? null,
     successfulSpeculativeCompletions: discovery.providerMetrics?.successfulSpeculativeCompletions ?? null,
     cancelledDetailRequests: discovery.providerMetrics?.cancelledDetailRequests ?? null,
@@ -1697,7 +2126,7 @@ export function rankTaxonomyGaps(
 export function formatCatalogRunReport(report: CatalogRunReport): string {
   const metrics = report.metrics;
   const attemptedEnrichments = metrics.enrichmentAttempts;
-  const hasDetailOutcomes = [metrics.usableSuccessfulDetails, metrics.failedDetailRequests, metrics.filteredSuccessfulDetails, metrics.successfulSpeculativeCompletions, metrics.cancelledDetailRequests]
+  const hasDetailOutcomes = [metrics.usableSuccessfulDetails, metrics.failedDetailRequests, metrics.invalidDetails, metrics.filteredSuccessfulDetails, metrics.successfulSpeculativeCompletions, metrics.cancelledDetailRequests]
     .every((value) => typeof value === "number");
   const lines = [
     "CATALOG ACQUISITION RUN",
@@ -1712,6 +2141,7 @@ export function formatCatalogRunReport(report: CatalogRunReport): string {
     `Attempted enrichments: ${attemptedEnrichments === null ? "unavailable" : attemptedEnrichments}`,
     `Usable successful details: ${hasDetailOutcomes ? metrics.usableSuccessfulDetails : "unavailable"}`,
     `Failed detail requests: ${hasDetailOutcomes ? metrics.failedDetailRequests : "unavailable"}`,
+    `Invalid detail normalizations: ${hasDetailOutcomes ? metrics.invalidDetails : "unavailable"}`,
     `Filtered/nonusable successful details: ${hasDetailOutcomes ? metrics.filteredSuccessfulDetails : "unavailable"}`,
     `Successful speculative completions beyond usable frontier: ${hasDetailOutcomes ? metrics.successfulSpeculativeCompletions : "unavailable"}`,
     `Cancelled detail requests: ${hasDetailOutcomes ? metrics.cancelledDetailRequests : "unavailable"}`,

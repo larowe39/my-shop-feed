@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@supabase/supabase-js";
-import { buildStagedAliasEntries } from "./catalogAlias.ts";
+import { buildStagedAliasEntries, normalizeAliasConflictKey } from "./catalogAlias.ts";
 import {
   SUPABASE_STAGING_ALIAS_BATCH_SIZE,
   SUPABASE_STAGING_READ_PAGE_SIZE,
@@ -82,6 +82,86 @@ export interface StagingStore {
 
 function makeId(prefix: string): string {
   return `${prefix}_${createHash("sha1").update(`${Date.now()}-${Math.random()}-${prefix}`).digest("hex").slice(0, 12)}`;
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [key, stableValue(entry)]));
+  }
+  return value;
+}
+
+function candidatePayload(candidate: StagedCatalogCandidate): string {
+  const { id: _id, aliases: _aliases, status: _status, reviewNotes: _reviewNotes, createdAt: _createdAt, updatedAt: _updatedAt, ...payload } = candidate;
+  return JSON.stringify(stableValue(payload));
+}
+
+export class IncompatibleStagedCandidateError extends Error {
+  readonly candidate?: StagedCatalogCandidate;
+  readonly invalidDisposition: boolean;
+
+  constructor(message: string, candidate?: StagedCatalogCandidate, invalidDisposition = true) {
+    super(message);
+    this.name = "IncompatibleStagedCandidateError";
+    this.candidate = candidate;
+    this.invalidDisposition = invalidDisposition;
+  }
+}
+
+export class ProtectedStagedCandidateError extends IncompatibleStagedCandidateError {
+  constructor(message: string, candidate: StagedCatalogCandidate) {
+    super(message, candidate, false);
+    this.name = "ProtectedStagedCandidateError";
+  }
+}
+
+export function deduplicateStagedCandidates(candidates: StagedCatalogCandidate[]): StagedCatalogCandidate[] {
+  const byFingerprint = new Map<string, StagedCatalogCandidate>();
+  const byExternalId = new Map<string, StagedCatalogCandidate>();
+  for (const candidate of candidates) {
+    const runId = candidate.importRunId ?? "";
+    const fingerprintKey = `${runId}\u0000${candidate.fingerprint}`;
+    const externalIdKey = candidate.sourceExternalId ? `${runId}\u0000${candidate.sourceExternalId}` : null;
+    const duplicate = byFingerprint.get(fingerprintKey);
+    const externalMatch = externalIdKey ? byExternalId.get(externalIdKey) : undefined;
+    const existing = duplicate ?? externalMatch;
+    if (existing) {
+      if (existing.fingerprint !== candidate.fingerprint || candidatePayload(existing) !== candidatePayload(candidate)) {
+        throw new IncompatibleStagedCandidateError(
+          `Incompatible duplicate source identity in run ${runId || "<none>"}: ${candidate.sourceExternalId || candidate.fingerprint}`,
+          candidate
+        );
+      }
+      existing.aliases = [...new Set([...existing.aliases, ...candidate.aliases])]
+        .map((alias) => alias.trim())
+        .filter((alias) => normalizeAliasConflictKey(alias))
+        .sort((left, right) => normalizeAliasConflictKey(left).localeCompare(normalizeAliasConflictKey(right)) || left.localeCompare(right));
+      continue;
+    }
+    const copy = { ...candidate, aliases: [...candidate.aliases] };
+    byFingerprint.set(fingerprintKey, copy);
+    if (externalIdKey) byExternalId.set(externalIdKey, copy);
+  }
+  return [...byFingerprint.values()].sort((left, right) =>
+    `${left.importRunId ?? ""}\u0000${left.fingerprint}`.localeCompare(`${right.importRunId ?? ""}\u0000${right.fingerprint}`)
+  );
+}
+
+const HUMAN_REVIEWED_STATUSES: ReviewStatus[] = ["approved", "rejected", "duplicate", "invalid", "promoted"];
+
+function mergeExistingCandidate(existing: StagedCatalogCandidate, incoming: StagedCatalogCandidate): StagedCatalogCandidate {
+  if (HUMAN_REVIEWED_STATUSES.includes(existing.status) || existing.promotedCatalogProductId || existing.promotedAt || existing.reviewNotes?.trim()) {
+    throw new ProtectedStagedCandidateError(`Same-run retry refused: candidate ${existing.id} has protected human review or promotion state.`, incoming);
+  }
+  return {
+    ...incoming,
+    id: existing.id,
+    status: existing.status === "needs_review" ? "needs_review" : incoming.status,
+    reviewNotes: existing.reviewNotes ?? incoming.reviewNotes ?? null,
+    promotedCatalogProductId: existing.promotedCatalogProductId ?? null,
+    promotedAt: existing.promotedAt ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -222,23 +302,24 @@ export class LocalStagingStore implements StagingStore {
   }
 
   async upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]> {
+    const uniqueCandidates = deduplicateStagedCandidates(candidates);
     const ledger = this.read();
     const results: StagedCatalogCandidate[] = [];
-    for (const candidate of candidates) {
+    for (const candidate of uniqueCandidates) {
+      const sameRunRows = ledger.stagedProducts.filter((row) => (row.importRunId ?? null) === (candidate.importRunId ?? null));
+      const externalCollision = candidate.sourceExternalId && sameRunRows.find((row) => row.sourceExternalId === candidate.sourceExternalId && row.fingerprint !== candidate.fingerprint);
+      if (externalCollision) {
+        throw new IncompatibleStagedCandidateError(`Incompatible duplicate source identity in run ${candidate.importRunId ?? "<none>"}: ${candidate.sourceExternalId}`, candidate);
+      }
       const existingIndex = ledger.stagedProducts.findIndex((row) => {
         const sameRun = (row.importRunId ?? null) === (candidate.importRunId ?? null);
         const sameFingerprint = row.fingerprint === candidate.fingerprint;
-        const sameSourceExternalId = (row.sourceExternalId ?? "") === (candidate.sourceExternalId ?? "");
-        return sameRun && sameFingerprint && sameSourceExternalId;
+        return sameRun && sameFingerprint;
       });
       let stagedProduct: StagedCatalogCandidate;
       if (existingIndex >= 0) {
-        ledger.stagedProducts[existingIndex] = {
-          ...ledger.stagedProducts[existingIndex],
-          ...candidate,
-          id: ledger.stagedProducts[existingIndex].id,
-          updatedAt: new Date().toISOString(),
-        };
+        ledger.stagedProducts[existingIndex] = mergeExistingCandidate(ledger.stagedProducts[existingIndex], candidate);
+        ledger.stagedProducts[existingIndex].updatedAt = new Date().toISOString();
         stagedProduct = ledger.stagedProducts[existingIndex];
       } else {
         ledger.stagedProducts.push(candidate);
@@ -250,7 +331,7 @@ export class LocalStagingStore implements StagingStore {
       // alias would cause false identity matches across every other product
       // from that brand. Product name/model number are distinctive enough to
       // be safe.
-      for (const entry of buildStagedAliasEntries(stagedProduct)) {
+      for (const entry of buildStagedAliasEntries({ ...stagedProduct, brand: stagedProduct.brand })) {
         if (ledger.stagedAliases.some((row) => row.stagedProductId === stagedProduct.id && row.normalizedAlias === entry.normalizedAlias)) continue;
         ledger.stagedAliases.push({ id: makeId("alias"), stagedProductId: stagedProduct.id, alias: entry.alias, normalizedAlias: entry.normalizedAlias, createdAt: new Date().toISOString() });
       }
@@ -533,9 +614,56 @@ export class SupabaseStagingStore implements StagingStore {
 
   async upsertStagedCandidates(candidates: StagedCatalogCandidate[]): Promise<StagedCatalogCandidate[]> {
     const results: StagedCatalogCandidate[] = [];
-    for (const batch of chunk(candidates, SUPABASE_STAGING_WRITE_BATCH_SIZE)) {
+    const uniqueCandidates = deduplicateStagedCandidates(candidates);
+    for (const batch of chunk(uniqueCandidates, SUPABASE_STAGING_WRITE_BATCH_SIZE)) {
       if (!batch.length) continue;
-      const rows = batch.map((candidate) => ({
+      const runId = batch[0].importRunId;
+      const existingByFingerprint = new Map<string, Record<string, unknown>>();
+      const existingByExternalId = new Map<string, Record<string, unknown>>();
+      if (runId) {
+        const fingerprints = [...new Set(batch.map((candidate) => candidate.fingerprint))];
+        const externalIds = [...new Set(batch.map((candidate) => candidate.sourceExternalId).filter((value): value is string => Boolean(value)))];
+        const { data: fingerprintRows, error: fingerprintError } = await this.client
+          .from("catalog_staged_products")
+          .select("id, import_run_id, source_external_id, fingerprint, status, review_notes, promoted_catalog_product_id, promoted_at")
+          .eq("import_run_id", runId)
+          .in("fingerprint", fingerprints);
+        if (fingerprintError) throw new StagingBackendError(`Failed to inspect catalog_staged_products fingerprints: ${fingerprintError.message}`);
+        for (const row of (fingerprintRows ?? []) as Record<string, unknown>[]) existingByFingerprint.set(String(row.fingerprint), row);
+        if (externalIds.length) {
+          const { data: externalRows, error: externalError } = await this.client
+            .from("catalog_staged_products")
+            .select("id, import_run_id, source_external_id, fingerprint, status, review_notes, promoted_catalog_product_id, promoted_at")
+            .eq("import_run_id", runId)
+            .in("source_external_id", externalIds);
+          if (externalError) throw new StagingBackendError(`Failed to inspect catalog_staged_products source identities: ${externalError.message}`);
+          for (const row of (externalRows ?? []) as Record<string, unknown>[]) {
+            existingByExternalId.set(String(row.source_external_id), row);
+          }
+        }
+      }
+      const preparedBatch = batch.map((candidate) => {
+        const externalMatch = candidate.sourceExternalId ? existingByExternalId.get(candidate.sourceExternalId) : undefined;
+        const fingerprintMatch = existingByFingerprint.get(candidate.fingerprint);
+        if (externalMatch && externalMatch.fingerprint !== candidate.fingerprint) {
+          throw new IncompatibleStagedCandidateError(`Incompatible duplicate source identity in run ${runId}: ${candidate.sourceExternalId}`, candidate);
+        }
+        if (fingerprintMatch && (fingerprintMatch.source_external_id ?? null) !== (candidate.sourceExternalId ?? null)) {
+          throw new IncompatibleStagedCandidateError(`Fingerprint identity mismatch in run ${runId}: ${candidate.fingerprint}`, candidate);
+        }
+        const existing = fingerprintMatch ?? externalMatch;
+        if (!existing) return candidate;
+        const preserved = mergeExistingCandidate({
+          ...candidate,
+          id: String(existing.id),
+          status: String(existing.status ?? "pending") as ReviewStatus,
+          reviewNotes: (existing.review_notes as string | null) ?? null,
+          promotedCatalogProductId: (existing.promoted_catalog_product_id as string | null) ?? null,
+          promotedAt: (existing.promoted_at as string | null) ?? null,
+        }, candidate);
+        return { ...candidate, status: preserved.status, reviewNotes: preserved.reviewNotes };
+      });
+      const rows = preparedBatch.map((candidate) => ({
         source_id: candidate.sourceId ?? null,
         import_run_id: candidate.importRunId ?? null,
         source_external_id: candidate.sourceExternalId ?? null,
@@ -565,8 +693,8 @@ export class SupabaseStagingStore implements StagingStore {
       if (error) throw new StagingBackendError(`Failed to upsert catalog_staged_products batch: ${error.message}`);
 
       const idByFingerprint = new Map((data ?? []).map((row: { id: string; fingerprint: string }) => [row.fingerprint, row.id]));
-      const aliasRows: Array<{ staged_product_id: string; alias: string; normalized_alias: string }> = [];
-      for (const candidate of batch) {
+      const aliasRowsByIdentity = new Map<string, { staged_product_id: string; alias: string; normalized_alias: string }>();
+      for (const candidate of preparedBatch) {
         const stagedId = idByFingerprint.get(candidate.fingerprint);
         if (!stagedId) continue;
         candidate.id = stagedId;
@@ -574,10 +702,17 @@ export class SupabaseStagingStore implements StagingStore {
         // Brand alone is deliberately excluded here too -- see the matching
         // comment in LocalStagingStore.upsertStagedCandidates.
         for (const entry of buildStagedAliasEntries(candidate)) {
-          aliasRows.push({ staged_product_id: stagedId, alias: entry.alias, normalized_alias: entry.normalizedAlias });
+          const identity = `${stagedId}\u0000${entry.normalizedAlias}`;
+          const previous = aliasRowsByIdentity.get(identity);
+          if (!previous || entry.alias.localeCompare(previous.alias) < 0) {
+            aliasRowsByIdentity.set(identity, { staged_product_id: stagedId, alias: entry.alias, normalized_alias: entry.normalizedAlias });
+          }
         }
       }
 
+      const aliasRows = [...aliasRowsByIdentity.values()].sort((left, right) =>
+        `${left.staged_product_id}\u0000${left.normalized_alias}`.localeCompare(`${right.staged_product_id}\u0000${right.normalized_alias}`)
+      );
       for (const aliasBatch of chunk(aliasRows, SUPABASE_STAGING_ALIAS_BATCH_SIZE)) {
         if (!aliasBatch.length) continue;
         const { error: aliasError } = await this.client
