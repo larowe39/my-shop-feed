@@ -12,6 +12,11 @@ import { useAuth } from "./AuthContext";
 import { trackEvent } from "../lib/analytics";
 import { supabase } from "../lib/supabase";
 import type { ProductModeration } from "../lib/moderation";
+import {
+  loadTasteAffinities,
+  type TasteAffinityLookup,
+  type TasteAffinityStore,
+} from "../lib/tasteAffinities";
 
 export type Product = {
   id: string;
@@ -47,6 +52,12 @@ type ProductsContextType = {
   likedIds: string[];
   savedIds: string[];
   followingIds: string[];
+  // Resolved Taste Graph affinities for the signed-in user (PR #36). Null
+  // when signed out, not loaded yet, empty, or failed — callers fall back to
+  // V1 ranking. Read-only; affinities are never written from the client.
+  affinityLookup: TasteAffinityLookup | null;
+  // Freshness metadata for the persisted snapshot (latest updated_at), if any.
+  affinitySnapshotAt: string | null;
   isLikePending: (id: string) => boolean;
   isSavePending: (id: string) => boolean;
   isFollowPending: (sellerId: string) => boolean;
@@ -74,6 +85,33 @@ type UserFollowRow = {
 };
 
 const ProductsContext = createContext<ProductsContextType | undefined>(undefined);
+
+// TasteAffinityStore (lib/tasteAffinities.ts) over the real Supabase client.
+// Exactly TWO batched queries per load — never per-affinity entity queries:
+//   1. user_taste_affinities rows for the current user (RLS: own rows only)
+//   2. taste_entities for ALL referenced ids via ONE batched .in() query
+// Read-only: no client write policies exist on either table.
+const tasteAffinityStore: TasteAffinityStore = {
+  async fetchUserAffinities(userId) {
+    const { data, error } = await supabase
+      .from("user_taste_affinities")
+      .select(
+        "taste_entity_id, recent_score, long_term_score, positive_signal_count, negative_signal_count, last_interaction_at, updated_at"
+      )
+      .eq("user_id", userId);
+    if (error) throw error;
+    return data ?? [];
+  },
+  async fetchTasteEntities(ids) {
+    if (ids.length === 0) return [];
+    const { data, error } = await supabase
+      .from("taste_entities")
+      .select("id, entity_type, entity_key, display_name")
+      .in("id", ids);
+    if (error) throw error;
+    return data ?? [];
+  },
+};
 
 const DEMO: Product = {
   id: "demo-1",
@@ -103,6 +141,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [likedIds, setLikedIds] = useState<string[]>([]);
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [affinityLookup, setAffinityLookup] = useState<TasteAffinityLookup | null>(null);
+  const [affinitySnapshotAt, setAffinitySnapshotAt] = useState<string | null>(null);
   const [pendingReactions, setPendingReactions] = useState<PendingReactionSets>(
     makePendingReactionSets
   );
@@ -119,6 +159,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   const reactionLoadRequestIdRef = useRef(0);
   const followLoadRequestIdRef = useRef(0);
+  const affinityLoadRequestIdRef = useRef(0);
 
   // These refs mirror the rendered arrays so async mutations and
   // refreshes can always read the latest intended reaction state.
@@ -280,6 +321,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  // Best-effort Taste Graph load (PR #36). Race-safe across auth changes via
+  // a request id; any failure resolves to null (V1 fallback) and never breaks
+  // the feed. Zero writes.
+  const loadUserTasteAffinities = useCallback(async (userId: string) => {
+    const requestId = ++affinityLoadRequestIdRef.current;
+    const snapshot = await loadTasteAffinities(tasteAffinityStore, userId);
+    if (requestId !== affinityLoadRequestIdRef.current) return;
+    setAffinityLookup(snapshot?.lookup ?? null);
+    setAffinitySnapshotAt(snapshot?.latestUpdatedAt ?? null);
+  }, []);
+
   const loadSellerProfiles = useCallback(async (rows: Product[]) => {
     const userIds = Array.from(
       new Set(
@@ -337,6 +389,13 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           console.log("Error loading product reactions or follows", reactionsError);
           setReactionError("We couldn't load your likes, saves, or follows right now.");
         }
+        // Taste Graph load is isolated: its failure must never surface as a
+        // reaction error or break the feed — V1 fallback covers it.
+        try {
+          await loadUserTasteAffinities(user.id);
+        } catch (affinityError) {
+          console.log("Error loading taste affinities", affinityError);
+        }
       } else {
         likedIdsRef.current = [];
         savedIdsRef.current = [];
@@ -344,6 +403,9 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         setLikedIds([]);
         setSavedIds([]);
         setFollowingIds([]);
+        affinityLoadRequestIdRef.current += 1;
+        setAffinityLookup(null);
+        setAffinitySnapshotAt(null);
         setReactionError(null);
       }
     } catch (refreshError: any) {
@@ -353,7 +415,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [loadProducts, loadSellerProfiles, loadUserReactions, loadUserFollows, user?.id]);
+  }, [loadProducts, loadSellerProfiles, loadUserReactions, loadUserFollows, loadUserTasteAffinities, user?.id]);
 
   const refreshFollows = useCallback(async () => {
     if (user?.id) {
@@ -654,6 +716,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       likedIds,
       savedIds,
       followingIds,
+      affinityLookup,
+      affinitySnapshotAt,
       isLikePending: (id: string) => pendingReactions.like.has(id),
       isSavePending: (id: string) => pendingReactions.save.has(id),
       isFollowPending: (sellerId: string) => pendingFollows.has(sellerId),
@@ -674,6 +738,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       likedIds,
       savedIds,
       followingIds,
+      affinityLookup,
+      affinitySnapshotAt,
       pendingReactions,
       pendingFollows,
       toggleLike,

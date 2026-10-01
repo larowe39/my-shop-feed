@@ -19,6 +19,7 @@ import { trackEvent } from "../../lib/analytics";
 import { loadRecentSearches, removeRecentSearch, saveRecentSearch, clearRecentSearches } from "../../lib/recentSearches";
 import { normalizeSearchQuery, rankSearchProducts, rankSearchSellers } from "../../lib/searchRanking";
 import { rankForYouFeed } from "../../lib/feedRanking";
+import { hasUsableTasteAffinities, rankForYouFeedV2 } from "../../lib/forYouV2";
 import { supabase } from "../../lib/supabase";
 import { ProductGrid } from "../../components/ProductGrid";
 
@@ -29,7 +30,7 @@ function imageUri(value?: string | null) {
 
 export default function SearchScreen() {
   const router = useRouter();
-  const { products, sellerProfiles, followingIds, toggleFollow, isFollowPending, likedIds, savedIds } = useProducts();
+  const { products, sellerProfiles, followingIds, toggleFollow, isFollowPending, likedIds, savedIds, affinityLookup } = useProducts();
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [sellers, setSellers] = useState<SellerProfile[]>([]);
@@ -68,9 +69,23 @@ export default function SearchScreen() {
       [category.id, category.name, ...category.keywords].some((value) => normalizeSearchQuery(value).includes(query))
     );
   }, [query]);
+  // EXPLORE strip: same FOR YOU ranking as the main feed — Taste Graph V2
+  // when a usable affinity snapshot exists for the signed-in user, otherwise
+  // the unchanged V1 fallback. The affinity lookup is shared from
+  // ProductsContext (no per-screen duplicate queries).
   const discoveryProducts = useMemo(
-    () => rankForYouFeed(products, { likedIds, savedIds, followingIds }).slice(0, 6),
-    [products, likedIds, savedIds, followingIds]
+    () =>
+      (hasUsableTasteAffinities(affinityLookup)
+        ? rankForYouFeedV2(products, {
+            affinityLookup: affinityLookup!,
+            likedIds,
+            savedIds,
+            followingIds,
+            nowMs: Date.now(),
+          })
+        : rankForYouFeed(products, { likedIds, savedIds, followingIds })
+      ).slice(0, 6),
+    [products, affinityLookup, likedIds, savedIds, followingIds]
   );
   const suggestedBrands = useMemo(
     () => Array.from(new Set(products.map((product) => product.brand.trim()).filter(Boolean))).slice(0, 6),

@@ -18,6 +18,7 @@ import { ProductFeedCard } from "../../components/ProductFeedCard";
 import { useAuth } from "../../hooks/AuthContext";
 import { type Product, useProducts } from "../../hooks/ProductsContext";
 import { rankForYouFeed } from "../../lib/feedRanking";
+import { hasUsableTasteAffinities, rankForYouFeedV2 } from "../../lib/forYouV2";
 import { createImpressionTracker, trackEvent } from "../../lib/analytics";
 
 type FeedMode = "for_you" | "following";
@@ -31,6 +32,7 @@ export default function FeedScreen() {
     likedIds,
     savedIds,
     followingIds,
+    affinityLookup,
     isLikePending,
     isSavePending,
     toggleLike,
@@ -82,15 +84,29 @@ export default function FeedScreen() {
     [requireAuth, toggleSave]
   );
 
-  // Personalized discovery ranking for "FOR YOU" feed
+  // Personalized discovery ranking for "FOR YOU" feed.
+  // V2 (PR #36): persisted Taste Graph affinities are the primary preference
+  // model when a usable snapshot exists; otherwise the unchanged V1 ranker is
+  // the fallback (guests, cold start, affinity load failure). `now` is
+  // injected at the integration boundary — the V2 ranker itself is pure.
   const forYouProducts = useMemo(() => {
+    if (hasUsableTasteAffinities(affinityLookup)) {
+      return rankForYouFeedV2(products, {
+        affinityLookup: affinityLookup!,
+        likedIds,
+        savedIds,
+        followingIds,
+        currentUserId: user?.id ?? null,
+        nowMs: Date.now(),
+      });
+    }
     return rankForYouFeed(products, {
       likedIds,
       savedIds,
       followingIds,
       currentUserId: user?.id ?? null,
     });
-  }, [products, likedIds, savedIds, followingIds, user?.id]);
+  }, [products, affinityLookup, likedIds, savedIds, followingIds, user?.id]);
 
   // Chronological newest-first feed of followed sellers for "FOLLOWING" feed
   const followingProducts = useMemo(() => {
