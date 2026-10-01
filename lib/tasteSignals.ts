@@ -13,7 +13,11 @@
 
 // Bump when weights, thresholds, multipliers, or decay constants change so
 // snapshots built by different model versions are never mixed silently.
-export const TASTE_SIGNAL_VERSION = 1;
+//
+//   1  PR #34 initial model
+//   2  PR #35 adds explicit onboarding signals (onboarding_* event types).
+//      Additive only: pre-existing event semantics are unchanged.
+export const TASTE_SIGNAL_VERSION = 2;
 
 // Entity dimensions supported by PR #34. Only dimensions that existing
 // trustworthy data can actually identify — no subcategory/style/material/
@@ -48,9 +52,22 @@ export const TASTE_ENTITY_TYPES: readonly TasteEntityType[] = [
 //   seller_follow  4   strong positive to seller
 //   search_result_open 3  strong positive to the actual opened target
 //
+// Explicit onboarding signals (PR #35) — recorded ONLY by the atomic
+// complete_taste_onboarding RPC, never by ordinary UI taps:
+//
+//   onboarding_category_select  4  explicit curated-category preference;
+//                                  contributes to the category entity ONLY
+//                                  (never invents product/brand/seller)
+//   onboarding_product_select   4  explicit product preference; strong cold-
+//                                  start seed, deliberately BELOW save (5)
+//                                  and shop_click (6) so later organic
+//                                  high-intent signals overtake it
+//
 // product_unlike / product_unsave / seller_unfollow are REVERSALS of their
 // corresponding positive signals (weight 0 of their own) — they remove the
 // recorded prior contribution instead of creating standalone dislike.
+// onboarding_*_deselect are the corresponding onboarding reversals.
+// onboarding_complete is lifecycle context only (weight 0, kind "none").
 // ---------------------------------------------------------------------------
 export const TASTE_WEIGHTS = {
   productOpen: 1,
@@ -61,6 +78,8 @@ export const TASTE_WEIGHTS = {
   sellerOpen: 1,
   sellerFollow: 4,
   searchResultOpen: 3,
+  onboardingCategorySelect: 4,
+  onboardingProductSelect: 4,
 } as const;
 
 // A product_dwell event only carries taste when metadata.duration_ms is a
@@ -122,6 +141,10 @@ export type TasteSignalTarget =
   // Resolves via metadata.result_type + metadata.target_id (or the event's
   // product_id / seller_id) to either a product target or a seller target.
   | "search_result"
+  // Resolves to the category entity only (event.category — a curated
+  // discovery category id for onboarding events). Never propagates to
+  // products/brands/sellers.
+  | "category"
   | "none";
 
 export type TasteSignalDefinition = {
@@ -132,6 +155,11 @@ export type TasteSignalDefinition = {
   // For kind === "reversal": the event type whose prior contribution is
   // removed when the reversal is matched to existing state.
   reverses?: string;
+  // For kind === "positive": state-aware toggle. A duplicate of this event
+  // on the same scope without an intervening reversal is a no-op, so
+  // replays and idempotent re-submits never double-count. A matching
+  // reversal event removes exactly the recorded contribution.
+  toggle?: boolean;
   // For product_dwell: positive only when dwell metadata is meaningful.
   requiresMeaningfulDwell?: boolean;
 };
@@ -157,6 +185,7 @@ export const TASTE_SIGNAL_DEFINITIONS: Record<string, TasteSignalDefinition> = {
     kind: "positive",
     target: "product",
     weight: TASTE_WEIGHTS.productLike,
+    toggle: true,
   },
   product_unlike: {
     kind: "reversal",
@@ -168,6 +197,7 @@ export const TASTE_SIGNAL_DEFINITIONS: Record<string, TasteSignalDefinition> = {
     kind: "positive",
     target: "product",
     weight: TASTE_WEIGHTS.productSave,
+    toggle: true,
   },
   product_unsave: {
     kind: "reversal",
@@ -189,6 +219,7 @@ export const TASTE_SIGNAL_DEFINITIONS: Record<string, TasteSignalDefinition> = {
     kind: "positive",
     target: "seller",
     weight: TASTE_WEIGHTS.sellerFollow,
+    toggle: true,
   },
   seller_unfollow: {
     kind: "reversal",
@@ -204,6 +235,42 @@ export const TASTE_SIGNAL_DEFINITIONS: Record<string, TasteSignalDefinition> = {
 
   // Context only for PR #34 — no semantic NLP classification of queries.
   search_query: { kind: "none", target: "none", weight: 0 },
+
+  // ----------------------------------------------------------------------
+  // Explicit onboarding signals (PR #35).
+  //
+  // These are typed EXPLICIT preferences emitted only by the atomic
+  // complete_taste_onboarding RPC — they are never faked equivalents of
+  // product_like / product_save / seller_follow and never fire on ordinary
+  // browsing. Toggle state makes idempotent completion retries safe: a
+  // duplicated select on the same scope is a no-op, and a deselect removes
+  // exactly the recorded select contribution.
+  onboarding_category_select: {
+    kind: "positive",
+    target: "category",
+    weight: TASTE_WEIGHTS.onboardingCategorySelect,
+    toggle: true,
+  },
+  onboarding_category_deselect: {
+    kind: "reversal",
+    target: "category",
+    weight: 0,
+    reverses: "onboarding_category_select",
+  },
+  onboarding_product_select: {
+    kind: "positive",
+    target: "product",
+    weight: TASTE_WEIGHTS.onboardingProductSelect,
+    toggle: true,
+  },
+  onboarding_product_deselect: {
+    kind: "reversal",
+    target: "product",
+    weight: 0,
+    reverses: "onboarding_product_select",
+  },
+  // Lifecycle/context only: completing onboarding is NOT itself taste.
+  onboarding_complete: { kind: "none", target: "none", weight: 0 },
 
   // Moderation / safety plumbing — never taste.
   product_report: { kind: "none", target: "none", weight: 0 },

@@ -432,6 +432,32 @@ export function buildTasteSnapshot(
       }
       targets = resolveSellerTarget(event.seller_id);
       scopeKey = `seller:${event.seller_id}`;
+    } else if (def.target === "category") {
+      // Category-only explicit signal (onboarding_category_select /
+      // onboarding_category_deselect): resolves the event-local category
+      // (a curated discovery category id) to the category entity directly,
+      // at full strength. Never touches product/brand/seller/canonical.
+      const categorySource =
+        event.category ??
+        (typeof event.metadata.category_id === "string"
+          ? event.metadata.category_id
+          : null);
+      const categoryKey = normalizeEntityKey("category", categorySource);
+      if (!categoryKey) {
+        stats.malformedEvents += 1;
+        continue;
+      }
+      targets = [
+        {
+          ref: {
+            entity_type: "category",
+            entity_key: categoryKey,
+            display_name: entityDisplayName(categorySource) ?? null,
+          },
+          multiplier: 1.0,
+        },
+      ];
+      scopeKey = `category:${categoryKey}`;
     } else if (def.target === "search_result") {
       const resultType = event.metadata.result_type;
       const targetId =
@@ -477,12 +503,9 @@ export function buildTasteSnapshot(
         stats.skippedNonTasteEvents += 1;
         continue;
       }
-      const toggleKey =
-        event.event_type === "product_like" ||
-        event.event_type === "product_save" ||
-        event.event_type === "seller_follow"
-          ? `${event.event_type}:${scopeKey ?? ""}`
-          : null;
+      const toggleKey = def.toggle
+        ? `${event.event_type}:${scopeKey ?? ""}`
+        : null;
       if (toggleKey && toggleState.has(toggleKey)) {
         // State-aware toggle: a duplicate like/save/follow without an
         // intervening reversal is a no-op, so replays never double-count.
