@@ -61,9 +61,12 @@ alter table public.user_profiles
 --     profile row, creating a minimal placeholder row if none exists. It
 --     never touches any other user's rows, any other column, events, or
 --     derived taste state, and it cannot fail signup (any error is logged
---     and swallowed). A placeholder display_name is filled in by the
---     client's normal ensure-profile path (AuthContext), whose insert
---     conflicts are already ignored (23505) — unchanged behavior.
+--     and swallowed).
+--   - NOTE: when the trigger creates the placeholder profile, the client's
+--     ensure-profile insert (AuthContext) conflicts on user_id and is
+--     ignored (23505), so the placeholder display_name stays as-is. Default
+--     display-name handling may be improved separately; this migration
+--     intentionally does not redesign profile handling.
 --   - search_path is emptied and every object is schema-qualified.
 --   - EXECUTE is revoked from PUBLIC/anon/authenticated: only the trigger
 --     invokes it; clients can never call it to enroll themselves.
@@ -231,18 +234,19 @@ begin
     raise exception 'complete_taste_onboarding: cannot complete another user''s onboarding';
   end if;
 
-  -- Eligibility: ONLY accounts enrolled with an onboarding version (the
-  -- auth.users enrollment trigger above) may complete onboarding. A
-  -- grandfathered/ineligible user (marker NULL) calling this RPC directly is
+  -- Eligibility: ONLY accounts enrolled with EXACTLY the onboarding version
+  -- this RPC implements may complete it. The version-1 contract must not
+  -- accept a future version-2 marker (a V2 flow gets its own completion
+  -- contract), and a grandfathered/ineligible caller (marker NULL) is
   -- rejected, so onboarding taste can never be manufactured outside the
   -- eligible flow. A future "Tune Your Penchant" flow can enroll explicitly
   -- by setting this marker; nothing else may.
   if not exists (
     select 1 from public.user_profiles pr
     where pr.user_id = p_user_id
-      and pr.taste_onboarding_version is not null
+      and pr.taste_onboarding_version = v_version
   ) then
-    raise exception 'complete_taste_onboarding: account is not eligible for taste onboarding';
+    raise exception 'complete_taste_onboarding: account is not eligible for taste onboarding version %', v_version;
   end if;
 
   -- Shape validation.

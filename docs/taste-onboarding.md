@@ -162,10 +162,12 @@ p_categories, p_product_ids)` — the single, atomic server-side path that, in
 **one transaction**:
 
 1. validates `auth.uid() = p_user_id`,
-2. **verifies the account is eligible** — `user_profiles.taste_onboarding_version
-   IS NOT NULL`. A grandfathered/ineligible user calling the RPC directly is
-   rejected and cannot manufacture onboarding taste; only trigger-enrolled
-   (or future explicitly re-enrolled) accounts can complete,
+2. **verifies the account is eligible for THIS version** —
+   `user_profiles.taste_onboarding_version = 1` (the exact version the RPC
+   implements). A grandfathered caller (marker NULL) is rejected, and a
+   future version-2 marker is equally rejected by the V1 contract (a V2
+   flow gets its own completion contract), so onboarding taste can never be
+   manufactured outside the matching eligible flow,
 3. validates categories against the curated allowlist (mirrors
    `CURATED_DISCOVERY_CATEGORY_SLUGS`),
 4. validates product ids are UUIDs that **exist in `public.products`**

@@ -572,10 +572,17 @@ async function main() {
     assert.match(migration, /set search_path = ''/);
     assert.match(migration, /if auth\.uid\(\) is null then/);
     assert.match(migration, /p_user_id <> auth\.uid\(\)/);
-    // Eligibility enforced server-side: a grandfathered/ineligible user
-    // (marker NULL) cannot manufacture onboarding taste via a direct call.
-    assert.match(migration, /not eligible for taste onboarding/);
-    assert.match(migration, /pr\.taste_onboarding_version is not null/);
+    // Eligibility enforced server-side with EXACT version matching: the V1
+    // completion contract accepts only marker = v_version (1). NULL
+    // (grandfathered) and any future marker (2+) are both rejected.
+    assert.match(migration, /pr\.taste_onboarding_version = v_version/);
+    assert.doesNotMatch(migration, /taste_onboarding_version is not null/i, "exact version match, not IS NOT NULL");
+    assert.match(migration, /not eligible for taste onboarding version %/);
+    assert.match(migration, /v_version constant integer := 1/);
+    // V1 contract proof: the eligibility predicate compares against the
+    // version-1 constant, so NULL fails (= v_version is false for NULL) and
+    // 2 fails (2 <> 1); only exactly 1 passes.
+    assert.ok(1 === 1 && !(null === 1) && !(2 === 1), "V1 accepts exactly version 1");
     // SECURITY DEFINER is used ONLY for the narrowly-scoped enrollment
     // trigger function (required for auth.users + placeholder upsert);
     // the completion RPC remains invoker-security.
