@@ -19,8 +19,9 @@ export interface ProductScoredItem {
 /**
  * Deterministic hash of a string to a pseudo-random float in [0, 1).
  * Ensures stable tie-breaking across renders without arbitrary re-sorting flickers.
+ * Shared with the FOR YOU V2 ranker (lib/forYouV2.ts).
  */
-function hashStringToFloat(str: string): number {
+export function hashStringToFloat(str: string): number {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
@@ -31,14 +32,18 @@ function hashStringToFloat(str: string): number {
 
 /**
  * Computes a recency multiplier (0.0 - 0.25) based on product creation timestamp.
+ * `nowMs` is injectable so pure rankers (FOR YOU V2) stay deterministic; V1
+ * keeps its existing behavior by defaulting to Date.now().
  */
-function computeRecencyScore(createdAt?: string): number {
+export function computeRecencyScore(
+  createdAt?: string,
+  nowMs: number = Date.now()
+): number {
   if (!createdAt) return 0.05;
   try {
     const time = new Date(createdAt).getTime();
     if (isNaN(time)) return 0.05;
-    const now = Date.now();
-    const ageInHours = Math.max(0, (now - time) / (1000 * 60 * 60));
+    const ageInHours = Math.max(0, (nowMs - time) / (1000 * 60 * 60));
     // Gradual decay over 14 days (336 hours)
     const decay = Math.max(0, 1 - ageInHours / 336);
     return decay * 0.25;
@@ -47,10 +52,19 @@ function computeRecencyScore(createdAt?: string): number {
   }
 }
 
+// Minimal structural shape the quality signal needs (satisfied by Product).
+export type QualityScorableProduct = {
+  image_url?: string | null;
+  brand?: string | null;
+  price?: string | null;
+  url?: string | null;
+};
+
 /**
  * Computes a quality multiplier (0.0 - 0.20) based on completeness of product data.
+ * Shared with the FOR YOU V2 ranker (lib/forYouV2.ts).
  */
-function computeQualityScore(product: Product): number {
+export function computeQualityScore(product: QualityScorableProduct): number {
   let score = 0;
   if (product.image_url && product.image_url.trim().length > 0) score += 0.1;
   if (product.brand && product.brand.trim().length > 0) score += 0.04;

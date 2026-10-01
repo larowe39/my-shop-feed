@@ -42,6 +42,7 @@
     "catalog:scale-readiness": "node ./scripts/benchmark-catalog-scale-readiness.js",
     "taste:test": "node ./scripts/test-taste-graph.js",
     "taste:onboarding-test": "node ./scripts/test-taste-onboarding.js",
+    "taste:for-you-test": "node ./scripts/test-for-you-v2.js",
     "taste:rebuild": "node ./scripts/taste-graph-rebuild.js",
     "taste:inspect": "node ./scripts/taste-graph-inspect.js",
     "android": "expo start --android",
