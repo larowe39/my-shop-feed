@@ -153,6 +153,74 @@ async function main() {
   );
 
   // -----------------------------------------------------------------------
+  // Eligibility repair regressions (DB-authoritative enrollment)
+  // -----------------------------------------------------------------------
+
+  // R1. Historical user + existing profile + NULL marker => grandfathered.
+  assert.strictEqual(
+    resolveOnboardingStatus({
+      userId: UUID(1),
+      profile: { taste_onboarding_version: null },
+      state: null,
+    }),
+    "grandfathered"
+  );
+
+  // R2. Historical user + NO profile row => grandfathered, NOT eligible.
+  //     (A missing profile must never fabricate eligibility.)
+  assert.strictEqual(
+    resolveOnboardingStatus({ userId: UUID(1), profile: null, state: null }),
+    "grandfathered"
+  );
+
+  // R3. Delayed/failed profile creation: still missing after retries =>
+  //     grandfathered; while the fetch is unsettled => loading (fail-safe),
+  //     and the gate never routes a loading user anywhere.
+  assert.strictEqual(
+    resolveOnboardingStatus({ userId: UUID(1), profile: null, state: null }),
+    "grandfathered"
+  );
+  assert.strictEqual(
+    resolveOnboardingGate({ authLoading: false, status: "loading", inOnboarding: true }),
+    "loading"
+  );
+
+  // R4. New user created after activation (trigger-enrolled marker) =>
+  //     version 1 required, even before any state row exists.
+  assert.strictEqual(
+    resolveOnboardingStatus({
+      userId: UUID(1),
+      profile: { taste_onboarding_version: 1 },
+      state: null,
+    }),
+    "required"
+  );
+
+  // R5. New-user creation race: profile row not yet visible => loading, and
+  //     the gate holds (veil) instead of either skipping into the app or
+  //     mis-enrolling. When the marker row lands, status resolves required.
+  assert.strictEqual(
+    resolveOnboardingStatus({ userId: UUID(1), profile: undefined, state: null }),
+    "loading"
+  );
+  assert.strictEqual(
+    resolveOnboardingGate({ authLoading: false, status: "loading", inOnboarding: false }),
+    "loading"
+  );
+
+  // R6/R7. Eligibility is a pure function of DB-fetched inputs (the profile
+  // marker), not local/session state: the same inputs always resolve the same
+  // status, regardless of when/where they are evaluated.
+  {
+    const eligible = { userId: UUID(1), profile: { taste_onboarding_version: 1 }, state: null };
+    const historical = { userId: UUID(2), profile: null, state: null };
+    for (let i = 0; i < 3; i += 1) {
+      assert.strictEqual(resolveOnboardingStatus(eligible), "required");
+      assert.strictEqual(resolveOnboardingStatus(historical), "grandfathered");
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Category selection
   // -----------------------------------------------------------------------
 
@@ -480,18 +548,41 @@ async function main() {
     assert.doesNotMatch(migration, /user_taste_onboarding[\s\S]{0,200}to anon/);
 
     // Rollout-safe eligibility marker: nullable, default NULL (existing
-    // profiles are never retroactively marked).
+    // profiles are never retroactively marked). The migration must contain
+    // NO backfill/update of historical profiles.
     assert.match(migration, /alter table public\.user_profiles\s+add column if not exists taste_onboarding_version integer/);
     assert.doesNotMatch(migration, /taste_onboarding_version integer (not null|default [^n])/i);
+    assert.doesNotMatch(migration, /update public\.user_profiles/i, "no retroactive enrollment of existing profiles");
+
+    // Durable enrollment lives on the auth lifecycle: an AFTER INSERT
+    // trigger on auth.users marks ONLY future accounts. The trigger
+    // function is hardened: emptied search_path, schema-qualified, cannot
+    // fail signup, and is not callable by any client role.
+    assert.match(migration, /create or replace function public\.enroll_taste_onboarding_version\(\)/);
+    assert.match(migration, /create trigger trg_enroll_taste_onboarding_version\s+after insert on auth\.users/);
+    assert.match(migration, /when others then/);
+    assert.match(migration, /revoke all on function public\.enroll_taste_onboarding_version\(\) from public/);
+    assert.match(migration, /revoke all on function public\.enroll_taste_onboarding_version\(\) from anon/);
+    assert.match(migration, /revoke all on function public\.enroll_taste_onboarding_version\(\) from authenticated/);
 
     // Atomic completion RPC: invoker security, emptied search_path,
     // schema-qualified tables, strict auth validation, EXECUTE lockdown.
     assert.match(migration, /create or replace function public\.complete_taste_onboarding\(\s*p_user_id uuid,\s*p_categories jsonb,\s*p_product_ids jsonb\s*\)/);
     assert.match(migration, /security invoker/);
-    assert.doesNotMatch(migration, /security definer/i);
     assert.match(migration, /set search_path = ''/);
     assert.match(migration, /if auth\.uid\(\) is null then/);
     assert.match(migration, /p_user_id <> auth\.uid\(\)/);
+    // Eligibility enforced server-side: a grandfathered/ineligible user
+    // (marker NULL) cannot manufacture onboarding taste via a direct call.
+    assert.match(migration, /not eligible for taste onboarding/);
+    assert.match(migration, /pr\.taste_onboarding_version is not null/);
+    // SECURITY DEFINER is used ONLY for the narrowly-scoped enrollment
+    // trigger function (required for auth.users + placeholder upsert);
+    // the completion RPC remains invoker-security.
+    const definerCount = (
+      migration.match(/language plpgsql\s+security definer/gi) || []
+    ).length;
+    assert.strictEqual(definerCount, 1, "only the enrollment trigger is SECURITY DEFINER");
     // Server-side validation: curated allowlist, UUID shape, existence,
     // minimums.
     assert.match(migration, /'accessories', 'automotive', 'beauty', 'electronics', 'fashion',\s*'fitness', 'home', 'outdoors', 'shoes', 'watches'/);

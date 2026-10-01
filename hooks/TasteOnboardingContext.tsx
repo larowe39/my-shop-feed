@@ -7,15 +7,13 @@
 // for the signed-in user and exposes the resolved OnboardingStatus consumed
 // by the centralized gate in app/_layout.tsx.
 //
-// Race safety with profile creation: AuthContext.ensureUserProfile creates a
-// brand-new profile WITH the onboarding version marker, but the insert lands
-// asynchronously after sign-up. If the profile row is not visible yet, this
-// provider retries (bounded) instead of deciding prematurely. If the profile
-// is still missing after retries — which can only happen for a historical
-// account that predates profiles and whose ensure-insert is failing — the
-// user is treated as ELIGIBLE (synthetic marker) rather than grandfathered,
-// so a new account can never be permanently skipped past required onboarding
-// by a creation/navigation race.
+// Eligibility is DB-AUTHORITATIVE: only the auth.users enrollment trigger
+// (migration 20261002) sets the version marker, and only for accounts
+// created after activation. A missing profile row therefore NEVER implies
+// eligibility — a historical account without a profile resolves to
+// "grandfathered", and a fetch that hasn't settled resolves to "loading"
+// (fail-safe), so no race can either enroll a historical user or let a
+// genuinely eligible new user permanently bypass onboarding.
 import React, {
   createContext,
   useCallback,
@@ -124,8 +122,10 @@ export function TasteOnboardingProvider({ children }: { children: React.ReactNod
         profileRow = profileResult.data as { taste_onboarding_version: number | null };
         break;
       }
-      // Profile row missing: AuthContext.ensureUserProfile creates it
-      // asynchronously for brand-new accounts — retry briefly before deciding.
+      // Profile row not visible yet: the trigger-enrolled placeholder for a
+      // new account (or AuthContext's ensure-insert) can land asynchronously
+      // — retry briefly so a genuinely eligible new user is never bypassed
+      // by a creation race.
       if (attempts >= PROFILE_RETRY_LIMIT) break;
       await new Promise((resolve) => {
         retryTimerRef.current = setTimeout(resolve, PROFILE_RETRY_DELAY_MS);
@@ -135,9 +135,14 @@ export function TasteOnboardingProvider({ children }: { children: React.ReactNod
 
     if (seq !== loadSeqRef.current) return;
 
-    // Definitively missing after retries: treat as eligible (never as
-    // grandfathered) so new accounts can never slip past required onboarding.
-    setProfile(profileRow ?? { taste_onboarding_version: ONBOARDING_VERSION });
+    // Definitively missing profile: eligibility comes from the DB marker,
+    // NOT from profile existence. A historical account without a profile
+    // resolves to marker NULL -> grandfathered. A new account's marker was
+    // already written by the auth.users trigger; if its placeholder row is
+    // somehow absent here, the account simply appears grandfathered for this
+    // load and the next load (or the completion RPC's own eligibility check)
+    // resolves it — no path ever FABRICATES eligibility from a missing row.
+    setProfile(profileRow);
     setState(stateRow);
   }, [user]);
 

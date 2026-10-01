@@ -2,13 +2,13 @@
 --
 -- Three pieces:
 --   1. public.user_profiles.taste_onboarding_version — the durable,
---      rollout-safe ELIGIBILITY marker. NULL (the default) means
---      "grandfathered": every profile that exists before this feature
---      ships keeps NULL and is never routed through onboarding. The client
---      sets the current onboarding version (1) only when it CREATES a new
---      profile row, so only accounts created after feature activation are
---      eligible. Applying this migration never retroactively marks existing
---      users: it only adds a nullable column that defaults to NULL.
+--      rollout-safe ELIGIBILITY marker. NULL means "grandfathered": every
+--      account that already exists when this migration is applied keeps NULL
+--      (the migration itself never updates any profile) and is never routed
+--      through onboarding. Eligibility is enrolled by the auth.users INSERT
+--      trigger below, which fires ONLY for accounts created after the
+--      migration is installed — never retroactively. The client never
+--      decides eligibility from profile existence/creation.
 --   2. public.user_taste_onboarding — one row per user holding the
 --      authoritative onboarding state (status + final explicit selections),
 --      so navigation never has to infer completion by scanning user_events.
@@ -27,7 +27,14 @@
 -- RLS and therefore unreadable by an invoker-security function).
 
 -- ---------------------------------------------------------------------------
--- 1. Eligibility marker on profiles (rollout-safe, default NULL).
+-- 1. Eligibility marker on profiles (rollout-safe, default NULL) plus the
+--    durable enrollment mechanism on the auth lifecycle.
+--
+-- INVARIANT: a historical auth.users account — with or without a profile
+-- row, however delayed/failed profile creation may be — is NEVER enrolled.
+-- Only accounts inserted into auth.users AFTER this trigger exists receive
+-- the version marker. Applying this migration does not fire the trigger for
+-- any existing auth.users row.
 -- ---------------------------------------------------------------------------
 alter table public.user_profiles
   add column if not exists taste_onboarding_version integer;
@@ -37,6 +44,62 @@ alter table public.user_profiles
 alter table public.user_profiles
   add constraint user_profiles_taste_onboarding_version_check
   check (taste_onboarding_version is null or taste_onboarding_version >= 1);
+
+-- Enrollment trigger: AFTER INSERT on auth.users marks ONLY newly created
+-- accounts with the current onboarding version (1, mirroring
+-- ONBOARDING_VERSION in lib/tasteOnboarding.ts). Eligibility therefore comes
+-- from the durable account-creation event recorded in Postgres, not from
+-- whether a profile row happens to exist right now.
+--
+-- Security model:
+--   - SECURITY DEFINER is required for exactly two narrow reasons: the
+--     trigger fires on auth.users (the caller inserting the auth user does
+--     not own triggers on the auth schema), and it upserts
+--     public.user_profiles (whose RLS insert policy requires
+--     auth.uid() = user_id, which is NULL during the auth.users INSERT).
+--   - The function does exactly one thing: set the marker on the NEW user's
+--     profile row, creating a minimal placeholder row if none exists. It
+--     never touches any other user's rows, any other column, events, or
+--     derived taste state, and it cannot fail signup (any error is logged
+--     and swallowed). A placeholder display_name is filled in by the
+--     client's normal ensure-profile path (AuthContext), whose insert
+--     conflicts are already ignored (23505) — unchanged behavior.
+--   - search_path is emptied and every object is schema-qualified.
+--   - EXECUTE is revoked from PUBLIC/anon/authenticated: only the trigger
+--     invokes it; clients can never call it to enroll themselves.
+--   - The auth.users trigger is dropped before creation so re-running the
+--     migration never double-enrolls; nothing ever updates existing rows.
+create or replace function public.enroll_taste_onboarding_version()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.user_profiles (user_id, display_name, taste_onboarding_version)
+  values (new.id, 'Seller', 1)
+  on conflict (user_id) do update
+    set taste_onboarding_version = coalesce(
+          public.user_profiles.taste_onboarding_version,
+          excluded.taste_onboarding_version
+        );
+  return new;
+exception
+  when others then
+    -- Enrollment must never break signup.
+    raise warning 'enroll_taste_onboarding_version failed for user %: %', new.id, sqlerrm;
+    return new;
+end;
+$$;
+
+revoke all on function public.enroll_taste_onboarding_version() from public;
+revoke all on function public.enroll_taste_onboarding_version() from anon;
+revoke all on function public.enroll_taste_onboarding_version() from authenticated;
+
+drop trigger if exists trg_enroll_taste_onboarding_version on auth.users;
+create trigger trg_enroll_taste_onboarding_version
+  after insert on auth.users
+  for each row execute function public.enroll_taste_onboarding_version();
 
 -- ---------------------------------------------------------------------------
 -- 2. Authoritative onboarding state.
@@ -166,6 +229,20 @@ begin
   end if;
   if p_user_id is null or p_user_id <> auth.uid() then
     raise exception 'complete_taste_onboarding: cannot complete another user''s onboarding';
+  end if;
+
+  -- Eligibility: ONLY accounts enrolled with an onboarding version (the
+  -- auth.users enrollment trigger above) may complete onboarding. A
+  -- grandfathered/ineligible user (marker NULL) calling this RPC directly is
+  -- rejected, so onboarding taste can never be manufactured outside the
+  -- eligible flow. A future "Tune Your Penchant" flow can enroll explicitly
+  -- by setting this marker; nothing else may.
+  if not exists (
+    select 1 from public.user_profiles pr
+    where pr.user_id = p_user_id
+      and pr.taste_onboarding_version is not null
+  ) then
+    raise exception 'complete_taste_onboarding: account is not eligible for taste onboarding';
   end if;
 
   -- Shape validation.

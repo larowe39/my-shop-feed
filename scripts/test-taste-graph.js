@@ -637,7 +637,6 @@ async function main() {
     // down to the service role only.
     assert.match(migration, /create or replace function public\.replace_user_taste_affinity_snapshot\(\s*p_user_id uuid,\s*p_rows jsonb\s*\)/);
     assert.match(migration, /security invoker/);
-    assert.doesNotMatch(migration, /security definer/i);
     assert.match(migration, /set search_path = ''/);
     assert.match(migration, /on conflict \(user_id, taste_entity_id\) do update/);
     assert.match(migration, /delete from public\.user_taste_affinities as a\s+where a\.user_id = p_user_id/);

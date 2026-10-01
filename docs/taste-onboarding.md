@@ -48,35 +48,51 @@ resumed onboarding keeps its selections.
 ## Eligibility / grandfathering (rollout-safe)
 
 The app already has historical users, so "row missing" can never mean
-"onboarding required". The mechanism:
+"onboarding required". **Eligibility is enrolled by the database/auth
+lifecycle, never by the client:**
 
 - `user_profiles.taste_onboarding_version integer NULL` — added by
-  `supabase/migrations/20261002_add_taste_onboarding.sql`. Applying the
-  migration **never retroactively marks existing users**: the column
-  defaults to NULL.
-- When the client **creates a brand-new profile row**
-  (`AuthContext.ensureUserProfile`), it sets the marker to the current
-  `ONBOARDING_VERSION` (1). Existing profiles hit the unique constraint on
-  insert and keep NULL → **grandfathered, normal app forever**.
-- A brand-new account created after feature activation gets marker `1` →
-  **onboarding required** until its state row is `completed`.
-- `in_progress` state → **resume** onboarding with saved selections.
-- Completion is durable in Postgres — sign-out/sign-in preserves state, and
-  nothing authoritative lives in AsyncStorage.
-- Email-confirmation flow: the profile (and marker) is created on the first
-  session after confirmation, exactly like any new account; the gate then
-  routes to onboarding. No production activation timestamp is inferred
-  anywhere in client code.
-- Race safety: if the profile row isn't visible yet (the ensure-insert lands
-  asynchronously), `TasteOnboardingContext` retries (5 × 500 ms) rather than
-  deciding early; a definitively missing profile is treated as **eligible**,
-  never grandfathered, so profile creation can never permanently skip
-  required onboarding.
+  `supabase/migrations/20261002_add_taste_onboarding.sql`. The migration
+  contains **no backfill**: applying it never retroactively enrolls anyone.
+- An `AFTER INSERT` trigger on `auth.users`
+  (`enroll_taste_onboarding_version()`) sets the marker to `1` on the NEW
+  account's profile row, creating a minimal placeholder profile if none
+  exists. The trigger fires **only for accounts inserted after the migration
+  is installed** — historical `auth.users` rows are never touched.
+- Consequences:
+  - A historical account **with or without** a profile row keeps marker NULL
+    → **grandfathered forever**, regardless of whether profile creation is
+    delayed, fails, or the fetch temporarily returns no row.
+  - A genuinely new account is enrolled at creation → marker `1` →
+    **onboarding required** until its state row is `completed`.
+  - `in_progress` state → **resume** onboarding with saved selections.
+  - Eligibility lives in Postgres — it survives sign-out/sign-in and
+    different devices; nothing authoritative lives in AsyncStorage.
+  - Email-confirmation flow: the auth user (and the trigger enrollment) is
+    created at sign-up; on the first session after confirmation the marker
+    is already there and the gate routes to onboarding.
+- **Race behavior**: a profile fetch that hasn't settled resolves to
+  `loading` (the gate shows its veil). A definitively missing profile
+  resolves to marker NULL → **grandfathered**; the client never fabricates
+  eligibility from a missing row, and the completion RPC re-checks the DB
+  marker server-side, so no race can either enroll a historical user or let
+  a genuinely eligible new user permanently bypass onboarding (the context
+  retries the profile fetch briefly to absorb creation latency).
+- A future **Tune Your Penchant** flow can enroll a grandfathered user
+  explicitly by setting the marker; nothing else may.
 
-Known edge: a historical account that predates `user_profiles` entirely and
-whose profile gets created only now would receive the marker and see
-onboarding once — acceptable, and completing or grandfathering is decided by
-the same deterministic rule.
+### Trigger security
+
+`enroll_taste_onboarding_version()` is `SECURITY DEFINER` for two narrow
+reasons only: the trigger fires on `auth.users` (callers don't own
+triggers on the auth schema) and it upserts `user_profiles` (whose RLS
+insert policy requires `auth.uid() = user_id`, NULL during the auth.users
+INSERT). It sets only the marker on the NEW user's row, uses
+`set search_path = ''` with schema-qualified objects, swallows errors so
+enrollment can never break signup, and has EXECUTE revoked from
+`public`/`anon`/`authenticated` (only the trigger invokes it). It is the
+migration's **only** SECURITY DEFINER function; the completion RPC stays
+SECURITY INVOKER.
 
 ## Centralized navigation gate
 
@@ -146,15 +162,19 @@ p_categories, p_product_ids)` — the single, atomic server-side path that, in
 **one transaction**:
 
 1. validates `auth.uid() = p_user_id`,
-2. validates categories against the curated allowlist (mirrors
+2. **verifies the account is eligible** — `user_profiles.taste_onboarding_version
+   IS NOT NULL`. A grandfathered/ineligible user calling the RPC directly is
+   rejected and cannot manufacture onboarding taste; only trigger-enrolled
+   (or future explicitly re-enrolled) accounts can complete,
+3. validates categories against the curated allowlist (mirrors
    `CURATED_DISCOVERY_CATEGORY_SLUGS`),
-3. validates product ids are UUIDs that **exist in `public.products`**
+4. validates product ids are UUIDs that **exist in `public.products`**
    (demo/fake ids rejected),
-4. enforces ≥ 3 categories / ≥ 5 products,
-5. computes the event delta against the **previously committed** row and
+5. enforces ≥ 3 categories / ≥ 5 products,
+6. computes the event delta against the **previously committed** row and
    inserts only the needed select/deselect events,
-6. inserts `onboarding_complete` exactly once (first completion),
-7. upserts the state row as `completed`.
+7. inserts `onboarding_complete` exactly once (first completion),
+8. upserts the state row as `completed`.
 
 This is an intentional narrow exception to the "`lib/analytics.ts` is the
 only client writer to `user_events`" rule: the RPC inserts events
@@ -246,9 +266,10 @@ acquisition/persistence changes.
 - Category affinity from onboarding keys on curated ids (`fashion`), while
   product-derived category affinity keys on the product's free-text category
   (`hoodies`). PR #36 should join them via the curated keyword mapping.
-- Offline tests validate the RPC's SQL/security contract statically and its
-  delta semantics via the pure mirror; real PostgreSQL transactional/RLS
-  behavior was **not** exercised (migrations are applied manually).
+- Offline tests validate the RPC's and enrollment trigger's SQL/security
+  contract statically and the delta semantics via the pure mirror; real
+  PostgreSQL transactional/RLS/trigger behavior was **not** exercised
+  (migrations are applied manually).
 - A signed-in user's gate check adds a brief loading veil on cold start
   while the profile/state fetch settles (by design: no flash of the app for
   required onboarding users).
