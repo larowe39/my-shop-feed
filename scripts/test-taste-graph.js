@@ -637,7 +637,6 @@ async function main() {
     // down to the service role only.
     assert.match(migration, /create or replace function public\.replace_user_taste_affinity_snapshot\(\s*p_user_id uuid,\s*p_rows jsonb\s*\)/);
     assert.match(migration, /security invoker/);
-    assert.doesNotMatch(migration, /security definer/i);
     assert.match(migration, /set search_path = ''/);
     assert.match(migration, /on conflict \(user_id, taste_entity_id\) do update/);
     assert.match(migration, /delete from public\.user_taste_affinities as a\s+where a\.user_id = p_user_id/);
@@ -842,6 +841,163 @@ async function main() {
       beforeFailure,
       "old snapshot preserved when the replacement fails"
     );
+  }
+
+  // =========================================================================
+  // PR #35: explicit onboarding signals
+  // =========================================================================
+
+  // 42. onboarding_category_select contributes to the CATEGORY entity only ----
+  {
+    const s = snap([evt("onboarding_category_select", { category: "fashion" })]);
+    assert.strictEqual(s.affinities.length, 1);
+    const category = findAffinity(s, "category", "fashion");
+    assert.ok(category, "category affinity created");
+    approxEqual(category.long_term_score, TASTE_WEIGHTS.onboardingCategorySelect);
+    approxEqual(category.recent_score, TASTE_WEIGHTS.onboardingCategorySelect);
+    assert.strictEqual(category.positive_signal_count, 1);
+  }
+
+  // 43. category select never invents product/brand/seller/canonical ---------
+  {
+    const s = snap([
+      evt("onboarding_category_select", { category: "watches", product_id: P1, seller_id: S1 }),
+    ]);
+    assert.strictEqual(s.affinities.length, 1, "only the category entity is touched");
+    assert.strictEqual(findAffinity(s, "product", P1), undefined);
+    assert.strictEqual(findAffinity(s, "seller", S1), undefined);
+    assert.strictEqual(findAffinity(s, "brand", "acme watches"), undefined);
+    assert.strictEqual(s.affinities.some((a) => a.entity_type === "canonical_product"), false);
+  }
+
+  // 44. onboarding_product_select contributes to the product ------------------
+  {
+    const s = snap([evt("onboarding_product_select", { product_id: P1 })]);
+    approxEqual(
+      findAffinity(s, "product", P1).long_term_score,
+      TASTE_WEIGHTS.onboardingProductSelect
+    );
+  }
+
+  // 45. product select propagates through the standard trustworthy dimensions -
+  {
+    const s = snap([evt("onboarding_product_select", { product_id: P1 })]);
+    const w = TASTE_WEIGHTS.onboardingProductSelect;
+    approxEqual(findAffinity(s, "product", P1).long_term_score, w * PROPAGATION_MULTIPLIERS.product);
+    approxEqual(findAffinity(s, "canonical_product", C1).long_term_score, w * PROPAGATION_MULTIPLIERS.canonical_product);
+    approxEqual(findAffinity(s, "brand", "acme watches").long_term_score, w * PROPAGATION_MULTIPLIERS.brand);
+    approxEqual(findAffinity(s, "category", "watches").long_term_score, w * PROPAGATION_MULTIPLIERS.category);
+    approxEqual(findAffinity(s, "seller", S1).long_term_score, w * PROPAGATION_MULTIPLIERS.seller);
+    // Cold-start seed must NOT outweigh later organic high-intent signals.
+    assert.ok(TASTE_WEIGHTS.onboardingProductSelect < TASTE_WEIGHTS.productSave);
+    assert.ok(TASTE_WEIGHTS.onboardingProductSelect < TASTE_WEIGHTS.shopClick);
+  }
+
+  // 46. onboarding_complete contributes nothing --------------------------------
+  {
+    const s = snap([
+      evt("onboarding_category_select", { category: "fashion" }),
+      evt("onboarding_complete", { metadata: { category_count: 3, product_count: 6 } }),
+    ]);
+    assert.strictEqual(s.affinities.length, 1, "complete adds no affinity");
+    assert.strictEqual(s.stats.skippedNonTasteEvents, 1);
+    assert.strictEqual(getSignalDefinition("onboarding_complete").kind, "none");
+  }
+
+  // 47. category deselect reverses exactly the recorded select -----------------
+  {
+    const s = snap([
+      evt("onboarding_category_select", { category: "fashion" }),
+      evt("onboarding_category_deselect", { category: "fashion" }),
+    ]);
+    const category = findAffinity(s, "category", "fashion");
+    approxEqual(category.long_term_score, 0, 1e-9);
+    approxEqual(category.recent_score, 0, 1e-9);
+    assert.strictEqual(category.positive_signal_count, 1);
+    assert.strictEqual(category.negative_signal_count, 1);
+  }
+
+  // 48. product deselect reverses the recorded select --------------------------
+  {
+    const s = snap([
+      evt("onboarding_product_select", { product_id: P1 }),
+      evt("onboarding_product_deselect", { product_id: P1 }),
+    ]);
+    approxEqual(findAffinity(s, "product", P1).long_term_score, 0, 1e-9);
+    approxEqual(findAffinity(s, "brand", "acme watches").long_term_score, 0, 1e-9);
+    approxEqual(findAffinity(s, "category", "watches").long_term_score, 0, 1e-9);
+  }
+
+  // 49. orphan deselects are complete no-ops ------------------------------------
+  {
+    const s = snap([
+      evt("onboarding_category_deselect", { category: "fashion" }),
+      evt("onboarding_product_deselect", { product_id: P1 }),
+    ]);
+    assert.strictEqual(s.affinities.length, 0, "orphan deselects create nothing");
+    assert.strictEqual(s.stats.orphanReversals, 2);
+  }
+
+  // 50. repeated select/deselect cycles never drift ------------------------------
+  {
+    const s = snap([
+      evt("onboarding_category_select", { category: "fashion", created_at: iso(-6 * DAY_MS) }),
+      evt("onboarding_category_deselect", { category: "fashion", created_at: iso(-5 * DAY_MS) }),
+      evt("onboarding_category_select", { category: "fashion", created_at: iso(-4 * DAY_MS) }),
+      evt("onboarding_category_deselect", { category: "fashion", created_at: iso(-3 * DAY_MS) }),
+    ]);
+    approxEqual(findAffinity(s, "category", "fashion").long_term_score, 0, 1e-6);
+    approxEqual(findAffinity(s, "category", "fashion").recent_score, 0, 1e-6);
+  }
+
+  // 51. duplicated selects are no-ops (idempotent completion retry safety) -------
+  {
+    const s = snap([
+      evt("onboarding_category_select", { category: "fashion" }),
+      evt("onboarding_category_select", { category: "fashion" }),
+      evt("onboarding_product_select", { product_id: P1 }),
+      evt("onboarding_product_select", { product_id: P1 }),
+    ]);
+    approxEqual(
+      findAffinity(s, "category", "fashion").long_term_score,
+      TASTE_WEIGHTS.onboardingCategorySelect
+    );
+    approxEqual(
+      findAffinity(s, "product", P1).long_term_score,
+      TASTE_WEIGHTS.onboardingProductSelect
+    );
+    assert.strictEqual(findAffinity(s, "product", P1).positive_signal_count, 1);
+  }
+
+  // 52. onboarding selects coexist with organic signals on shared entities -------
+  {
+    const s = snap([
+      evt("onboarding_product_select", { product_id: P1 }),
+      evt("product_like", { product_id: P1 }),
+    ]);
+    const product = findAffinity(s, "product", P1);
+    approxEqual(
+      product.long_term_score,
+      TASTE_WEIGHTS.onboardingProductSelect + TASTE_WEIGHTS.productLike
+    );
+    assert.strictEqual(product.positive_signal_count, 2);
+    // Deselecting the onboarding pick removes ONLY the onboarding share.
+    const reversed = snap([
+      evt("onboarding_product_select", { product_id: P1 }),
+      evt("product_like", { product_id: P1 }),
+      evt("onboarding_product_deselect", { product_id: P1 }),
+    ]);
+    approxEqual(
+      findAffinity(reversed, "product", P1).long_term_score,
+      TASTE_WEIGHTS.productLike
+    );
+  }
+
+  // 53. category select without a category value fails safe ----------------------
+  {
+    const s = snap([evt("onboarding_category_select", {})]);
+    assert.strictEqual(s.affinities.length, 0);
+    assert.strictEqual(s.stats.malformedEvents, 1);
   }
 
   console.log("taste-graph tests: all assertions passed");

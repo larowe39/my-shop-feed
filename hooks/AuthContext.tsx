@@ -53,6 +53,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user?.id) return;
 
     const ensureUserProfile = async () => {
+      // Ensures a profile ROW exists for display purposes only. Onboarding
+      // eligibility (taste_onboarding_version) is NOT set here: it is
+      // enrolled durably by the auth.users INSERT trigger in migration
+      // 20261002, so a historical account whose profile happens to be
+      // missing/delayed/failed is NEVER mistaken for a new account.
       const { error } = await supabase.from("user_profiles").insert({
         user_id: user.id,
         display_name: getDefaultDisplayName(user),
