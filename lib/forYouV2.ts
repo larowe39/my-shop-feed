@@ -86,21 +86,45 @@ export const DIMENSION_WEIGHTS: Record<TasteEntityType, number> = {
 // result is clamped to [-1, 1] so correlated namespaces never double-count.
 export const CATEGORY_SECONDARY_FACTOR = 0.25;
 
+// Identity de-duplication (repair): an exact product that has BOTH direct
+// product affinity and canonical affinity must not nearly double the same
+// preference evidence. The stronger direct product identity is primary; the
+// canonical dimension contributes only its excess over the product signal,
+// and remains the full-strength GENERALIZATION path for unseen sibling
+// products sharing the canonical identity.
+export const CANONICAL_EXCESS_FACTOR = 1.0;
+
 // Retained V1 signals (unchanged values).
 export const FOLLOWED_SELLER_BONUS = 0.3;
 export const ENGAGEMENT_BONUS = 0.08;
 export const OWN_ITEM_PENALTY = -0.15;
 export const TIE_JITTER_WEIGHT = 0.08;
 
-// Deterministic exploration pressure: products whose combined category signal
-// is weak/absent receive a small stable bonus derived from the product id, so
-// unseen/weak categories periodically enter the candidate window without
-// Math.random(), reshuffles, or render instability. Bounded to [0, 0.2).
-export const EXPLORATION_WEIGHT = 0.2;
-export const EXPLORATION_CATEGORY_THRESHOLD = 0.05;
+// Structural exploration (repair): deterministic exploration SLOTS replace
+// the old additive hash bonus, which was functionally inert (a bounded bonus
+// can never overcome a ~0.6 taste gap, and the prefixed djb2 hash clustered
+// on structured keys). Every EXPLORATION_INTERVAL-th output position is an
+// exploration opportunity that deliberately surfaces a product whose
+// category is absent from the recent EXPLORATION_RECENT_WINDOW cards.
+export const EXPLORATION_INTERVAL = 8;
+export const EXPLORATION_RECENT_WINDOW = 7;
+
+// Normal greedy diversity window scales with catalog size (bounded).
+export const DIVERSITY_WINDOW_MIN = 10;
+export const DIVERSITY_WINDOW_MAX = 40;
+export const DIVERSITY_WINDOW_RATIO = 0.1;
+
+// Bounded, catalog-size-aware candidate window for normal greedy diversity:
+//   100 products -> 10, 200 -> 20, 300 -> 30, 400+ -> capped at 40.
+export function computeDiversityWindow(productCount: number): number {
+  const n = Number.isFinite(productCount) ? Math.max(0, Math.floor(productCount)) : 0;
+  return Math.max(
+    DIVERSITY_WINDOW_MIN,
+    Math.min(DIVERSITY_WINDOW_MAX, Math.ceil(n * DIVERSITY_WINDOW_RATIO))
+  );
+}
 
 // Diversity interleaving penalties (identical to V1's greedy pass).
-export const DIVERSITY_WINDOW_SIZE = 10;
 export const CATEGORY_PREV1_PENALTY = 0.5;
 export const CATEGORY_PREV2_PENALTY = 0.22;
 export const SELLER_BRAND_PREV1_PENALTY = 0.6;
@@ -225,28 +249,16 @@ export function combineCategorySignals(
   return Math.max(-1, Math.min(1, combined));
 }
 
-// Deterministic exploration bonus in [0, EXPLORATION_WEIGHT): applied only
-// when the product's combined category signal is weak or absent (never for
-// negatively-affinity categories), derived from a salted id hash so it is
-// stable across renders and identical for identical inputs. Exported for
-// offline tests.
-export function computeExplorationBonus(
-  productId: string,
-  combinedCategorySignal: number
-): number {
-  if (
-    !Number.isFinite(combinedCategorySignal) ||
-    combinedCategorySignal < 0 ||
-    combinedCategorySignal >= EXPLORATION_CATEGORY_THRESHOLD
-  ) {
-    return 0;
-  }
-  return EXPLORATION_WEIGHT * hashStringToFloat(`explore:${productId}`);
-}
-
+// Scored candidate carried through interleaving. `exploreScore` is the
+// taste-independent base (quality + freshness + follow/engagement + own-item
+// penalty) used to pick the most REASONABLE product among exploration
+// candidates; `categorySat` gates eligibility (negative category affinity
+// disqualifies deliberate exploration).
 type ScoredCandidate = {
   product: ForYouProduct;
   score: number;
+  exploreScore: number;
+  categorySat: number;
   category: string;
   sellerId: string;
   brand: string;
@@ -287,9 +299,15 @@ export function rankForYouFeedV2<T extends ForYouProduct>(
     );
 
     const productSat = lookupSaturated(affinityLookup, "product", product.id) ?? 0;
-    const canonicalSat = product.catalog_product_id
+    const canonicalRaw = product.catalog_product_id
       ? lookupSaturated(affinityLookup, "canonical_product", product.catalog_product_id) ?? 0
       : 0;
+    // Identity de-duplication: the direct product identity is primary; the
+    // canonical dimension only adds its EXCESS over the product signal, so
+    // the exact engaged product is not double-counted, while an unseen
+    // sibling sharing the canonical identity (productSat = 0) still receives
+    // the full canonical generalization.
+    const canonicalExcess = Math.max(0, canonicalRaw - productSat);
     const brandSat = lookupSaturated(affinityLookup, "brand", product.brand) ?? 0;
     const categorySat = combineCategorySignals(
       collectCategorySignals(product, affinityLookup)
@@ -303,7 +321,7 @@ export function rankForYouFeedV2<T extends ForYouProduct>(
 
     const tasteBonus =
       DIMENSION_WEIGHTS.product * productSat +
-      DIMENSION_WEIGHTS.canonical_product * canonicalSat +
+      DIMENSION_WEIGHTS.canonical_product * CANONICAL_EXCESS_FACTOR * canonicalExcess +
       DIMENSION_WEIGHTS.brand * brandSat +
       DIMENSION_WEIGHTS.category * categorySat +
       DIMENSION_WEIGHTS.seller * sellerSat;
@@ -323,8 +341,6 @@ export function rankForYouFeedV2<T extends ForYouProduct>(
 
     const tieJitter = hashStringToFloat(String(product.id)) * TIE_JITTER_WEIGHT;
 
-    const explorationBonus = computeExplorationBonus(String(product.id), categorySat);
-
     const totalScore =
       FOR_YOU_V2_BASE_SCORE +
       qualityBonus +
@@ -333,12 +349,22 @@ export function rankForYouFeedV2<T extends ForYouProduct>(
       sellerFollowBonus +
       engagementBonus +
       ownItemPenalty +
-      tieJitter +
-      explorationBonus;
+      tieJitter;
+
+    // Taste-independent base for exploration-candidate selection.
+    const exploreScore =
+      FOR_YOU_V2_BASE_SCORE +
+      qualityBonus +
+      recencyBonus +
+      sellerFollowBonus +
+      engagementBonus +
+      ownItemPenalty;
 
     return {
       product,
       score: totalScore,
+      exploreScore,
+      categorySat,
       category: (product.category ?? "").toLowerCase().trim(),
       sellerId: (product.user_id ?? "").trim(),
       brand: (product.brand ?? "").toLowerCase().trim(),
@@ -347,17 +373,31 @@ export function rankForYouFeedV2<T extends ForYouProduct>(
 
   scoredCandidates.sort((a, b) => b.score - a.score);
 
-  // 2. Diversity-aware interleaving: the same deterministic greedy
-  //    anti-clustering pass as V1 (top-window selection, prev-1/prev-2
-  //    category and seller/brand penalties).
+  // 2. Interleaving: deterministic greedy diversity within a catalog-scaled
+  //    window, plus STRUCTURAL EXPLORATION SLOTS every EXPLORATION_INTERVAL
+  //    positions.
+  //
+  //    Exploration slot algorithm (deterministic):
+  //      a. eligible = remaining candidates whose combined category signal is
+  //         NOT negative;
+  //      b. recent window = the last EXPLORATION_RECENT_WINDOW output cards;
+  //         primary candidates = eligible whose category is ABSENT from that
+  //         window (unseen / weak / moderate-but-underrepresented all qualify);
+  //      c. among them pick the highest exploreScore (taste-independent base:
+  //         quality + freshness + follow/engagement + own-item penalty), with
+  //         total score as the deterministic tiebreak — the strongest Taste
+  //         categories therefore do NOT automatically win the slot, and junk
+  //         is never picked merely for an unseen category;
+  //      d. if no candidate qualifies, fall back to the normal greedy pick.
+  const diversityWindow = computeDiversityWindow(products.length);
   const remaining = [...scoredCandidates];
   const ranked: ScoredCandidate[] = [];
 
-  while (remaining.length > 0) {
+  const pickGreedy = (): void => {
     let bestIndex = 0;
     let bestAdjustedScore = -Infinity;
 
-    const searchWindowSize = Math.min(DIVERSITY_WINDOW_SIZE, remaining.length);
+    const searchWindowSize = Math.min(diversityWindow, remaining.length);
 
     const prev1 = ranked[ranked.length - 1];
     const prev2 = ranked[ranked.length - 2];
@@ -393,6 +433,50 @@ export function rankForYouFeedV2<T extends ForYouProduct>(
 
     const [selected] = remaining.splice(bestIndex, 1);
     ranked.push(selected);
+  };
+
+  const pickExploration = (): boolean => {
+    const recentWindow = ranked.slice(-EXPLORATION_RECENT_WINDOW);
+    const recentCategories = new Set(
+      recentWindow.map((c) => c.category).filter((c) => c.length > 0)
+    );
+
+    let bestIndex = -1;
+    let bestExploreScore = -Infinity;
+    let bestTotal = -Infinity;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+      if (candidate.categorySat < 0) continue; // negative taste: never explore
+      if (
+        candidate.category.length > 0 &&
+        recentCategories.has(candidate.category)
+      ) {
+        continue; // category already present in the recent window
+      }
+      if (
+        candidate.exploreScore > bestExploreScore ||
+        (candidate.exploreScore === bestExploreScore && candidate.score > bestTotal)
+      ) {
+        bestExploreScore = candidate.exploreScore;
+        bestTotal = candidate.score;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex < 0) return false; // no suitable candidate -> normal pick
+    const [selected] = remaining.splice(bestIndex, 1);
+    ranked.push(selected);
+    return true;
+  };
+
+  while (remaining.length > 0) {
+    const position = ranked.length;
+    const isExplorationSlot =
+      position > 0 && position % EXPLORATION_INTERVAL === 0;
+    if (!isExplorationSlot || !pickExploration()) {
+      pickGreedy();
+    }
   }
 
   return ranked.map((candidate) => candidate.product as T);
