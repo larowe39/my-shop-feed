@@ -2,10 +2,13 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { gzipSync } = require("zlib");
 
 async function main() {
-  const ledgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-taxonomy-mappings.test.json");
+  const testLedgerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "catalog-taxonomy-test-"));
+  const testLedgerPath = (name) => path.join(testLedgerDirectory, name);
+  const ledgerPath = testLedgerPath("catalog-taxonomy-mappings.test.json");
   process.env.CATALOG_TAXONOMY_LEDGER_PATH = ledgerPath;
   const taxonomy = await import("../lib/catalogTaxonomyTypes.ts");
   const mappings = await import("../lib/catalogTaxonomyMappings.ts");
@@ -50,7 +53,7 @@ async function main() {
   const coveragePlanner = require("./catalog-taxonomy-coverage.js");
   assert.strictEqual(typeof coveragePlanner.computeCoverage, "function", "coverage planner must exist");
 
-  const coverageLedgerPath = path.join(__dirname, "..", ".catalog-staging", "taxonomy-coverage.test.json");
+  const coverageLedgerPath = testLedgerPath("taxonomy-coverage.test.json");
   const coverageStore = new LocalStagingStore(coverageLedgerPath);
   coverageStore.reset();
   const coverageRun = await coverageStore.createImportRun({ id: "source-coverage-test", name: "coverage-source", type: "open-icecat", baseUrl: null, trustClassification: "staged", active: true, notes: null, metadata: {} }, {
@@ -148,7 +151,7 @@ async function main() {
   assert.strictEqual(authoritativeById.get("9999").name, null, "missing English provider name must remain unavailable");
   assert.match(authoritativeById.get("9999").path, /> 9999$/, "an unnamed category path must retain only its authoritative ID");
 
-  const taxonomyCachePath = path.join(__dirname, "..", ".catalog-staging", "open-icecat-taxonomy.test.json");
+  const taxonomyCachePath = testLedgerPath("open-icecat-taxonomy.test.json");
   saveOpenIcecatTaxonomyCache(authoritativeCategories, { cachePath: taxonomyCachePath, fetchedAt: "2026-09-16T00:00:00.000Z" });
   assert.strictEqual(loadOpenIcecatTaxonomyCache(taxonomyCachePath).get("971").name, "Large Format Media");
   let capturedTaxonomyRequest = null;
@@ -253,7 +256,7 @@ async function main() {
 
   const unresolved = { sourceExternalId: "product-1", brand: "Sony", productName: "Headphone", raw: { provider: "open-icecat", externalCategory: { id: "846", name: "Headphones" } }, externalTaxonomy: { provider: "open-icecat", externalId: "846", name: "Headphones" } };
   assert.strictEqual(assessCandidateReadiness(unresolved, "NEW").promotionReady, false);
-  const acquisitionLedgerPath = path.join(__dirname, "..", ".catalog-staging", "taxonomy-acquisition.test.json");
+  const acquisitionLedgerPath = testLedgerPath("taxonomy-acquisition.test.json");
   const stagingStore = new LocalStagingStore(acquisitionLedgerPath);
   stagingStore.reset();
   const mappedRun = await acquireFromRecords([unresolved], [], { name: "taxonomy-test", type: "external-provider" }, { apply: true, adapter: "test", taxonomyResolver: (identity) => store.resolveTrustedMapping(identity) }, stagingStore);
@@ -363,7 +366,7 @@ async function main() {
   assert.strictEqual(acquisition.rankTaxonomyGaps("gap-run", [gapCandidate], [{ provider: "open-icecat", externalTaxonomyId: "gap-1", externalName: "Verified", status: "verified", canonicalCategoryId: "cat-electronics" }]).length, 0, "trusted verified mappings for the same provider and external ID suppress resolved gaps");
   fs.rmSync(ledgerPath, { force: true });
   fs.rmSync(taxonomyCachePath, { force: true });
-  fs.rmSync(path.join(__dirname, "..", ".catalog-staging", "taxonomy-acquisition.test.json"), { force: true });
+  fs.rmSync(testLedgerDirectory, { recursive: true, force: true });
   console.log("Catalog taxonomy tests passed.");
 }
 

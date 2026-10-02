@@ -4,7 +4,7 @@ require("dotenv").config({ path: ".env.local", override: true });
 
 const fs = require("fs");
 const path = require("path");
-const { getFlagValue } = require("./lib/cliArgs");
+const { getFlagValue, parseBoundedApplyLimit } = require("./lib/cliArgs");
 
 function args() {
   const raw = process.argv.slice(2);
@@ -24,14 +24,37 @@ function args() {
     onMarket: getFlagValue(raw, "--on-market") || null,
     updatedSince: getFlagValue(raw, "--updated-since") || null,
     cursor: getFlagValue(raw, "--cursor") || null,
+    resumeRunId: getFlagValue(raw, "--resume-run"),
+    resumeRunWasExplicit: raw.some((arg) => arg === "--resume-run" || arg.startsWith("--resume-run=")),
     productCodes: raw.flatMap((arg, index) => arg === "--product-code" && raw[index + 1] ? [raw[index + 1]] : []).concat(
       raw.filter((arg) => arg.startsWith("--product-code=")).map((arg) => arg.slice("--product-code=".length))
     ),
+    limitWasExplicit: raw.some((arg) => arg === "--limit" || arg.startsWith("--limit=")),
   };
+}
+
+function sameRunRecoveryCommand(options, runId) {
+  const args = ["--discover", "--mode", options.mode, "--limit", String(options.limit), "--page-size", String(options.pageSize), "--concurrency", String(options.concurrency)];
+  for (const [flag, value] of [["--brand", options.brand], ["--category", options.category], ["--country", options.country], ["--on-market", options.onMarket], ["--updated-since", options.updatedSince]]) {
+    if (value !== null) args.push(flag, String(value));
+  }
+  args.push("--resume-run", runId, "--apply");
+  return `npm run catalog:acquire:icecat -- ${args.map((arg) => JSON.stringify(arg)).join(" ")}`;
 }
 
 async function main() {
   const options = args();
+  if (options.resumeRunWasExplicit && !options.resumeRunId) {
+    throw new Error("Refusing recovery: --resume-run requires an explicit import run ID.");
+  }
+  if (options.apply) {
+    options.limit = parseBoundedApplyLimit(process.argv.slice(2));
+    if (!options.discover) throw new Error("Refusing apply: only --discover Open Icecat acquisition is supported; file and lookup apply modes are disabled.");
+    if (options.cursor && !options.resumeRunId) throw new Error("Refusing apply: --cursor requires --resume-run with the existing import run ID.");
+  }
+  if (options.resumeRunId && (!options.apply || !options.discover)) {
+    throw new Error("Refusing recovery: --resume-run requires --discover --apply.");
+  }
   const { OpenIcecatProvider, parseIcecatProductsXml, assertProviderSupports } = await import("../lib/catalogProviders.ts");
   const { loadOpenIcecatTaxonomyCache } = await import("../lib/catalogProviderTaxonomy.ts");
   const {
@@ -97,6 +120,14 @@ async function main() {
       adapter: "open-icecat",
       sourcePath: options.source,
       taxonomyResolver: resolveTrustedMapping,
+      resumeRunId: options.resumeRunId || undefined,
+      onRunCreated: ({ runId, sourceId }) => {
+        console.log(`IMPORT RUN ID: ${runId}`);
+        console.log(`SOURCE ID: ${sourceId || "unknown"}`);
+        console.log("RUN STATUS: partial");
+        console.log(`SAME-RUN RECOVERY COMMAND: ${sameRunRecoveryCommand(options, runId)}`);
+      },
+      onAcknowledged: (cursor) => console.log(`PERSISTED ACKNOWLEDGED CONTINUATION TOKEN: ${cursor}`),
     }, store);
     fetched = discoveryRun.fetched;
     pages = discoveryRun.pages;
@@ -174,6 +205,7 @@ async function main() {
   }
   console.log(`ELAPSED MS: ${options.discover ? run.elapsedMs : Date.now() - startedAt}`);
   console.log(`IMPORT RUN ID: ${run.runId || "none (dry-run)"}`);
+  console.log(`RUN STATUS: ${options.apply ? "completed" : "not-created (dry-run)"}`);
   console.log(`TERMINATION REASON: ${run.terminationReason || "source-exhausted"}`);
   if (run.providerMetrics) {
     console.log(`CONCURRENCY: ${run.providerMetrics.concurrency}`);
@@ -181,6 +213,7 @@ async function main() {
     console.log(`ADMISSION WINDOW HIGH-WATER: ${run.providerMetrics.admittedWindowHighWaterMark}`);
     console.log(`REORDER BUFFER HIGH-WATER: ${run.providerMetrics.reorderBufferHighWaterMark}`);
     console.log(`DETAIL REQUEST COUNT: ${run.providerMetrics.detailLatencyCount}`);
+    console.log(`INVALID DETAIL NORMALIZATIONS: ${run.providerMetrics.invalidDetails}`);
     console.log(`DETAIL REQUEST TOTAL MS: ${run.providerMetrics.detailLatencyTotalMs}`);
     console.log(`DETAIL REQUEST AVERAGE MS: ${run.providerMetrics.averageDetailLatencyMs.toFixed(2)}`);
     console.log(`INDEX HEADERS MS: ${run.providerMetrics.indexHeadersMs}`);
@@ -192,7 +225,8 @@ async function main() {
     console.log(`DOWNSTREAM ACQUISITION MS: ${run.downstreamAcquisitionMs ?? "n/a"}`);
     console.log(`SPECULATIVE CANCELLATIONS: ${run.providerMetrics.speculativeCancellationCount}`);
   }
-  console.log(`ACKNOWLEDGED CONTINUATION: ${run.continuation ? "available" : "none"}`);
+  console.log(`PERSISTED ACKNOWLEDGED CONTINUATION TOKEN: ${run.continuationToken || "none"}`);
+  console.log("ACKNOWLEDGMENT MODEL: provider frontier is in-memory; the continuation token is persisted in the run summary after acknowledgment.");
   for (const error of providerErrors) console.log(`ERROR: ${error.message}`);
   console.log(printAcquisitionSummary(run));
   console.log(options.apply ? "APPLY -- staging data written; no approval or promotion performed." : "DRY RUN -- ZERO Supabase staging/canonical writes");
