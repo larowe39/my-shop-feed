@@ -37,7 +37,7 @@ try {
     "20261001_add_taste_graph_foundation.sql",
     "20261002_add_taste_onboarding.sql",
     "20261005_add_taste_graph_freshness_foundation.sql",
-    "20261006_repair_taste_onboarding_event_authority.sql",
+    "20261005_repair_taste_onboarding_event_authority.sql",
   ]) sql(`../supabase/migrations/${migration}`);
   sql("fixtures/taste-freshness-db-assertions.sql");
   console.log("Disposable PostgreSQL onboarding RLS and freshness RPC integration tests passed.");

@@ -34,18 +34,31 @@ export function createTasteWorkerStore(client: SupabaseClient): TasteWorkerStore
     },
     async fetchUserEvents(userId, control) {
       const rows: TasteEventRow[] = [];
-      for (let from = 0; ; from += PAGE_SIZE) {
+      let cursor: Pick<TasteEventRow, "created_at" | "id"> | null = null;
+      for (;;) {
         await control.checkpoint();
-        const { data, error } = await client.from("user_events")
+        let query = client.from("user_events")
           .select("id, user_id, session_id, event_type, product_id, seller_id, category, metadata, created_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: true }).order("id", { ascending: true })
-          .range(from, from + PAGE_SIZE - 1).abortSignal(control.requestSignal());
+          .limit(PAGE_SIZE);
+        if (cursor) {
+          // Preserve PostgreSQL timestamp precision; do not round through Date.
+          const createdAt = JSON.stringify(cursor.created_at);
+          const id = JSON.stringify(cursor.id);
+          query = query.or(`created_at.gt.${createdAt},and(created_at.eq.${createdAt},id.gt.${id})`);
+        }
+        const { data, error } = await query.abortSignal(control.requestSignal());
         if (error) throw new Error(`fetch user_events: ${error.message}`);
         if (!Array.isArray(data)) throw new Error("Event query returned invalid rows");
         rows.push(...data);
         if (rows.length > MAX_REPLAY_EVENTS) throw new Error(`Full replay exceeds ${MAX_REPLAY_EVENTS} events`);
         if (data.length < PAGE_SIZE) return rows;
+        const last = data[data.length - 1];
+        if (typeof last.created_at !== "string" || typeof last.id !== "string") {
+          throw new Error("Event query returned an invalid keyset cursor");
+        }
+        cursor = { created_at: last.created_at, id: last.id };
       }
     },
     async fetchProductContext(ids, control) {

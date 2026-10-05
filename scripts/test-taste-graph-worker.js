@@ -143,7 +143,20 @@ async function main() {
   // Exercise the real Supabase adapter through a fluent fake. Unexpected
   // tables/RPCs throw: direct queue mutation and unguarded replacement cannot pass.
   const operations = [];
+  const eventId = (i) => `40000000-0000-0000-0000-${String(i).padStart(12, "0")}`;
+  const history = Array.from({ length: 1203 }, (_, i) => ({
+    ...event, id: eventId(i + 1),
+    event_type: "product_open",
+    created_at: i < 700 ? "2026-10-06T00:00:00.123456+00:00" : "2026-10-06T00:00:00.123457+00:00",
+  }));
+  const compareEvents = (a, b) => a.created_at < b.created_at ? -1 :
+    a.created_at > b.created_at ? 1 : a.id.localeCompare(b.id);
+  let storedEvents = [...history].reverse();
   let eventPages = 0;
+  let afterFirstPage = () => {};
+  let requestedGeneration = 2;
+  let processedGeneration = 0;
+  const publications = [];
   const client = {
     from(table) {
       assert.ok(["user_events", "products", "taste_entities"].includes(table), `forbidden table ${table}`);
@@ -153,14 +166,31 @@ async function main() {
         select(columns) { op.columns = columns; return query; },
         eq(column, value) { op.eq = [column, value]; return query; },
         order(column, opts) { (op.order ??= []).push([column, opts]); return query; },
-        range(from, to) { op.range = [from, to]; return query; },
+        range() { assert.fail("user_events must never use offset/range pagination"); },
+        limit(size) { op.limit = size; return query; },
+        or(filter) { op.filter = filter; return query; },
         in(column, ids) { op.ids = ids; return query; },
         upsert(rows, opts) { op.rows = rows; op.conflict = opts.onConflict; return query; },
         async abortSignal(signal) {
           assert.ok(signal instanceof AbortSignal);
           if (table === "user_events") {
+            assert.deepEqual(op.order, [["created_at", { ascending: true }], ["id", { ascending: true }]]);
+            assert.equal(op.limit, 500);
+            let candidates = [...storedEvents].sort(compareEvents);
+            if (op.filter) {
+              const match = /^created_at\.gt\.("[^"]+"),and\(created_at\.eq\.("[^"]+"),id\.gt\.("[^"]+")\)$/.exec(op.filter);
+              assert.ok(match, `invalid composite keyset filter: ${op.filter}`);
+              const createdAt = JSON.parse(match[1]);
+              assert.equal(JSON.parse(match[2]), createdAt);
+              const id = JSON.parse(match[3]);
+              candidates = candidates.filter((row) => row.created_at > createdAt ||
+                (row.created_at === createdAt && row.id > id));
+            }
+            const data = candidates.slice(0, op.limit);
+            op.returnedIds = data.map(({ id }) => id);
             eventPages += 1;
-            return { data: eventPages === 1 ? Array(500).fill(event) : [event], error: null };
+            if (eventPages === 1) afterFirstPage();
+            return { data, error: null };
           }
           if (table === "products") return { data: products, error: null };
           return { data: op.rows.map((row, i) => ({ ...row, id: `${row.entity_type}:${row.entity_key}` })), error: null };
@@ -174,7 +204,15 @@ async function main() {
       return {
         async abortSignal(signal) {
           assert.ok(signal instanceof AbortSignal);
-          const data = name === "claim_taste_graph_rebuild_jobs" ? [shortLease] :
+          if (name === "finalize_taste_graph_rebuild") {
+            if (params.p_captured_generation !== requestedGeneration) {
+              return { data: "stale_generation", error: null };
+            }
+            publications.push(params.p_rows);
+            processedGeneration = params.p_captured_generation;
+            return { data: "published", error: null };
+          }
+          const data = name === "claim_taste_graph_rebuild_jobs" ? [{ ...shortLease, captured_generation: requestedGeneration }] :
             name === "renew_taste_graph_rebuild_lease" ? new Date(AS_OF + 600_000).toISOString() :
               name === "finalize_taste_graph_rebuild" ? "published" : "retry_scheduled";
           return { data, error: null };
@@ -183,9 +221,17 @@ async function main() {
     },
   };
   const adapter = createTasteWorkerStore(client);
-  assert.equal((await run(adapter)).jobs[0].eventsProcessed, 501);
+  assert.equal((await run(adapter)).jobs[0].eventsProcessed, 1203);
   const pages = operations.filter(({ table }) => table === "user_events");
-  assert.deepEqual(pages.map(({ range }) => range), [[0, 499], [500, 999]]);
+  assert.equal(pages.length, 3);
+  assert.deepEqual(pages.map(({ limit }) => limit), [500, 500, 500]);
+  assert.equal(pages[0].filter, undefined);
+  for (const [page, boundary] of [[pages[1], history[499]], [pages[2], history[999]]]) {
+    assert.equal(page.filter,
+      `created_at.gt.${JSON.stringify(boundary.created_at)},and(created_at.eq.${JSON.stringify(boundary.created_at)},id.gt.${JSON.stringify(boundary.id)})`);
+  }
+  assert.deepEqual(pages.flatMap(({ returnedIds }) => returnedIds), history.map(({ id }) => id));
+  assert.equal(new Set(pages.flatMap(({ returnedIds }) => returnedIds)).size, history.length);
   assert.deepEqual(pages[0].eq, ["user_id", "u1"]);
   assert.deepEqual(pages[0].order.map(([column]) => column), ["created_at", "id"]);
   const rpc = operations.find(({ rpc }) => rpc === "finalize_taste_graph_rebuild");
@@ -196,6 +242,57 @@ async function main() {
     p_user_id: "u1", p_captured_generation: 2, p_lease_token: "token-u1",
   });
   const control = { checkpoint: async () => {}, requestSignal: () => AbortSignal.timeout(1000) };
+
+  // Non-taste inserts behind the cursor do not dirty the queue or repeat a
+  // boundary taste event. Generation guards alone cannot catch that old bug.
+  eventPages = 0;
+  afterFirstPage = () => {
+    storedEvents.push({ ...event, id: eventId(9000), event_type: "product_impression",
+      created_at: "2026-10-05T00:00:00+00:00" });
+  };
+  const readEvents = await adapter.fetchUserEvents("u1", control);
+  assert.deepEqual(readEvents, history);
+
+  // A taste event arriving during a claimed replay must invalidate publication,
+  // including a backdated event that the cursor will intentionally not revisit.
+  for (const createdAt of ["2026-10-05T00:00:00+00:00", "2026-10-07T00:00:00+00:00"]) {
+    operations.length = 0;
+    storedEvents = [...history];
+    eventPages = 0;
+    requestedGeneration = 2;
+    processedGeneration = 0;
+    publications.length = 0;
+    afterFirstPage = () => {
+      storedEvents.push({ ...event, id: eventId(9001), event_type: "product_open", created_at: createdAt });
+      requestedGeneration += 1;
+    };
+    result = await run(adapter);
+    assert.equal(result.jobs[0].generation, 2);
+    assert.equal(result.jobs[0].status, "stale_generation");
+    assert.equal(processedGeneration, 0);
+    assert.equal(requestedGeneration, 3);
+    assert.deepEqual(publications, []);
+    assert.ok(!operations.some(({ rpc }) => rpc === "fail_taste_graph_rebuild"));
+
+    eventPages = 0;
+    afterFirstPage = () => {};
+    result = await run(adapter);
+    assert.equal(result.jobs[0].generation, 3);
+    assert.equal(result.jobs[0].status, "published");
+    assert.equal(result.jobs[0].eventsProcessed, history.length + 1);
+    assert.equal(processedGeneration, 3);
+    assert.equal(publications.length, 1);
+  }
+
+  // The real paged adapter, not only the orchestration fake, enforces the cap.
+  eventPages = 0;
+  storedEvents = Array.from({ length: worker.MAX_REPLAY_EVENTS + 1 }, (_, i) => ({
+    ...event, id: eventId(i + 1),
+  }));
+  await assert.rejects(adapter.fetchUserEvents("u1", control), /Full replay exceeds 50000 events/);
+  storedEvents = [...history];
+  eventPages = 0;
+
   operations.length = 0;
   await adapter.fetchProductContext(Array.from({ length: 401 }, (_, i) => `p${i}`), control);
   assert.deepEqual(operations.map(({ ids }) => ids.length), [200, 200, 1]);
@@ -228,7 +325,7 @@ async function main() {
   assert.equal(requireServiceRoleCredentials({ SUPABASE_URL: "http://localhost", SUPABASE_SERVICE_ROLE_KEY: jwt("service_role") }).key, jwt("service_role"));
 
   // Static checks supplement, not replace, behavioral and PostgreSQL tests.
-  const repair = fs.readFileSync(path.join(__dirname, "../supabase/migrations/20261006_repair_taste_onboarding_event_authority.sql"), "utf8");
+  const repair = fs.readFileSync(path.join(__dirname, "../supabase/migrations/20261005_repair_taste_onboarding_event_authority.sql"), "utf8");
   for (const type of ["onboarding_category_select", "onboarding_category_deselect", "onboarding_product_select", "onboarding_product_deselect"]) {
     assert.ok(repair.includes(`'${type}'`));
   }

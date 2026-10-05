@@ -32,7 +32,7 @@ future Feed V2 / Search / onboarding / PENCHANT AI
 | Freshness queue migration (#37A) | `supabase/migrations/20261005_add_taste_graph_freshness_foundation.sql` | Already deployed, immutable. Transactional dirty generations, preference-state events, worker-only queue RPCs. |
 | Worker orchestration (#37B) | `lib/tasteGraphWorker.ts` | Dependency-injected, bounded single batch; reuses the rebuild preparation/entity mapping helpers. |
 | Worker runtime / adapter | `scripts/taste-graph-worker.js`, `scripts/lib/taste-worker-store.ts` | Server-only Node service-role invocation; paged events, chunked context/entities, request deadlines. No Edge Function or schedule. |
-| Onboarding authority repair | `supabase/migrations/20261006_repair_taste_onboarding_event_authority.sql` | New, unapplied migration: blocks direct onboarding events; preserves validated completion through a privileged wrapper. |
+| Onboarding authority repair | `supabase/migrations/20261005_repair_taste_onboarding_event_authority.sql` | New, unapplied migration: blocks direct onboarding events; preserves validated completion through a privileged wrapper. |
 | Inspect CLI | `scripts/taste-graph-inspect.js` | Read-only debug printing of a computed snapshot; supports `--user` and offline `--fixture` modes. |
 | Migration | `supabase/migrations/20261001_add_taste_graph_foundation.sql` | New tables, RLS, and the atomic replacement RPC. Applied manually via the Supabase SQL editor like all migrations in this repo. |
 | Tests | `scripts/test-taste-graph.js` | `npm run taste:test` — fully offline, deterministic. |
@@ -83,7 +83,16 @@ activated production automation.
    `lib/tasteGraphRebuild.ts` are shared with the existing manual rebuild.
    Full history, decay, toggles, missing-product fallback, product context
    semantics and fail-closed entity mapping are unchanged. No second algorithm.
-4. Events are read in `(created_at, id)` order, 500 rows per page. Product
+4. Events are read ascending in `(created_at, id)` order, 500 rows per page,
+   using keyset pagination, never offsets. Each full page retains its final
+   row's exact database timestamp and ID; the next page filters
+   `created_at > cursor.created_at OR
+   (created_at = cursor.created_at AND id > cursor.id)`. Timestamp precision
+   is preserved (no JavaScript Date rounding). Backdated non-taste inserts
+   cannot shift page boundaries and duplicate taste contributions. A new
+   taste-relevant event, even behind the cursor, advances requested generation;
+   finalize rejects the older generation without publication or acknowledgement,
+   leaving newer work dirty for a later full replay. Product
    context and entity upserts use chunks of 200 to avoid URL/response row limits.
    Supabase's configured API row limit must be **at least 500**.
 5. One explicit `asOf` is injected per invocation. No partial-history snapshot:

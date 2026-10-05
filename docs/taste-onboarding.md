@@ -203,7 +203,7 @@ The same delta algorithm is mirrored in pure JS
 
 ### RPC security model
 
-- After applying `20261006_repair_taste_onboarding_event_authority.sql` (#37B),
+- After applying `20261005_repair_taste_onboarding_event_authority.sql` (#37B),
   a narrow `SECURITY DEFINER` wrapper calls the **unchanged** validated
   completion implementation, moved to `taste_graph_private` with client and
   service-role execution revoked. No client privileges are added.

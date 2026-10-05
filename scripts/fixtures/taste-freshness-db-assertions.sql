@@ -159,11 +159,22 @@ begin
   select * into strict j from public.claim_taste_graph_rebuild_jobs(1);
   insert into public.user_events(user_id, event_type, seller_id)
   values(j.user_id, 'seller_open', '00000000-0000-0000-0000-000000000002');
-  if public.finalize_taste_graph_rebuild(j.user_id, j.captured_generation, j.lease_token, '[]', 1) <> 'stale_generation' then
+  if public.finalize_taste_graph_rebuild(j.user_id, j.captured_generation, j.lease_token,
+    '[{"taste_entity_id":"20000000-0000-0000-0000-000000000001","long_term_score":99,"recent_score":99,"positive_signal_count":1,"negative_signal_count":0}]', 1) <> 'stale_generation' then
     raise exception 'stale work published';
   end if;
   if (select processed_generation from public.taste_graph_rebuild_queue where user_id = j.user_id) <> 12 then
     raise exception 'stale work advanced processed generation';
+  end if;
+  if exists(select 1 from public.user_taste_affinities where user_id = j.user_id) then
+    raise exception 'stale work published an old snapshot';
+  end if;
+  if not exists (
+    select 1 from public.taste_graph_rebuild_queue
+    where user_id = j.user_id and requested_generation > processed_generation
+      and dirty_since is not null and lease_token is null
+  ) then
+    raise exception 'newer generation did not remain dirty and released';
   end if;
 end;
 $$;
