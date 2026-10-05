@@ -228,8 +228,9 @@ fallback.
 
 ## Stale-snapshot contract
 
-There is intentionally **no automatic/background materialization** of
-`user_taste_affinities` yet. FOR YOU V2 is therefore stale-tolerant:
+The freshness queue foundation exists, but there is **no automatic/background
+worker active yet**. Until the worker is deployed, FOR YOU V2 remains
+stale-tolerant:
 
 - no affinities → V1 fallback (`hasUsableTasteAffinities` is false);
 - affinity load failure → V1 fallback;
@@ -239,8 +240,12 @@ There is intentionally **no automatic/background materialization** of
 - `affinitySnapshotAt` exposes snapshot freshness metadata for observability;
 - the client never writes affinities.
 
-Automatic materialization (scheduled rebuild, trigger/queue on
-`user_events`) is **future infrastructure** after PR #36.
+The new queue is derived work state; `user_events` remains the source of
+truth, and full replay remains the correctness model. Queue generations and
+leases prevent stale workers from publishing, but the migration is not yet
+deployed and no worker/schedule is active. `pg_cron` and `pg_net` remain
+disabled. Product deletion/context invalidation and unrecoverable historical
+best-effort event gaps remain known limitations.
 
 ## Integration
 
