@@ -2,17 +2,20 @@
 
 The Taste Graph turns PENCHANT's append-only behavioral history
 (`public.user_events`) into deterministic, rebuildable user taste affinities.
-This document describes the foundation plus the durable freshness queue
-foundation (PR #37A). Feed V2 and Taste Onboarding build on it.
+This document describes the foundation, the deployed durable freshness queue
+(PR #37A), and the worker runtime implementation (PR #37B).
+Feed V2 and Taste Onboarding build on it. Production activation is NOT enabled.
 
 ```
 user_events (append-only source of truth)
     ↓  taste-relevant event increments a per-user dirty generation
-taste_graph_rebuild_queue (derived work state; worker not active yet)
-    ↓  future leased worker performs full replay
+taste_graph_rebuild_queue (derived work state; production worker not active)
+    ↓  claim ≤ 5 jobs, retaining generation + lease token + expiry
+    ↓  full replay + product context resolution
     ↓  event → taste signal mapping        (lib/tasteSignals.ts)
 taste_entities                             (public.taste_entities)
     ↓  deterministic replay engine         (lib/tasteGraph.ts)
+    ↓  generation-checked finalize (atomic snapshot + acknowledgement)
 user_taste_affinities                      (public.user_taste_affinities)
     ↓
 future Feed V2 / Search / onboarding / PENCHANT AI
@@ -26,7 +29,10 @@ future Feed V2 / Search / onboarding / PENCHANT AI
 | Engine | `lib/tasteGraph.ts` | Deterministic replay of one user's event history into a complete replacement snapshot. Pure, dependency-free; never calls `Date.now()` — the reference time is injected as `asOf`. |
 | Rebuild orchestration | `lib/tasteGraphRebuild.ts` | Store-agnostic rebuild pipeline (fetch events → resolve product context → snapshot → persist). Duck-typed `TasteGraphStore` keeps it testable offline. |
 | Rebuild CLI | `scripts/taste-graph-rebuild.js` | Service-role script. Dry-run by default; `--apply` writes. |
-| Freshness queue migration | `supabase/migrations/20261005_add_taste_graph_freshness_foundation.sql` | Transactional dirty generations, preference-state events, and worker-only queue RPCs. Not deployed; no worker or schedule is active. |
+| Freshness queue migration (#37A) | `supabase/migrations/20261005_add_taste_graph_freshness_foundation.sql` | Already deployed, immutable. Transactional dirty generations, preference-state events, worker-only queue RPCs. |
+| Worker orchestration (#37B) | `lib/tasteGraphWorker.ts` | Dependency-injected, bounded single batch; reuses the rebuild preparation/entity mapping helpers. |
+| Worker runtime / adapter | `scripts/taste-graph-worker.js`, `scripts/lib/taste-worker-store.ts` | Server-only Node service-role invocation; paged events, chunked context/entities, request deadlines. No Edge Function or schedule. |
+| Onboarding authority repair | `supabase/migrations/20261006_repair_taste_onboarding_event_authority.sql` | New, unapplied migration: blocks direct onboarding events; preserves validated completion through a privileged wrapper. |
 | Inspect CLI | `scripts/taste-graph-inspect.js` | Read-only debug printing of a computed snapshot; supports `--user` and offline `--fixture` modes. |
 | Migration | `supabase/migrations/20261001_add_taste_graph_foundation.sql` | New tables, RLS, and the atomic replacement RPC. Applied manually via the Supabase SQL editor like all migrations in this repo. |
 | Tests | `scripts/test-taste-graph.js` | `npm run taste:test` — fully offline, deterministic. |
@@ -35,12 +41,12 @@ future Feed V2 / Search / onboarding / PENCHANT AI
 `public.user_events`. The Taste Graph adds no new client write paths:
 affinity state is derived exclusively by the service-side rebuild.
 
-## Automatic freshness foundation (not active)
+## Freshness: deployed foundation, implemented runtime, activation pending
 
 The raw `public.user_events` table remains the source of truth; the
 `public.taste_graph_rebuild_queue` table is derived work state only. Its
 monotonic `requested_generation` and `processed_generation` identify exactly
-which event history a future full replay must publish. A worker lease token
+which event history a full replay must publish. A worker lease token
 prevents an expired or replaced worker from publishing. Finalization must
 validate the captured generation and replace the affinity snapshot in one
 transaction; a replay for generation G is rejected if a newer event has
@@ -55,10 +61,117 @@ The onboarding RPC's multi-event transaction advances one user's generation
 multiple times while retaining one coalesced queue row. Debounce is 40 seconds
 with a 90-second starvation cap.
 
-This PR adds only the database/queue foundation. The Edge Function worker is
-not implemented, no automatic rebuild is active, the migration is not yet
-deployed, and `pg_cron` / `pg_net` remain disabled. Until a worker is deployed
-and scheduled, the existing manual rebuild path remains the only materializer.
+#37A is merged and its queue migration is already deployed. The production
+like/unlike canary advanced requested generations 1 then 2, with processed
+generation 0 and no lease/block/retry state. **Do not reapply or edit that
+migration.**
+
+#37B implements a **one-shot Node worker**, not an Edge Function. No production
+worker has been invoked, no production schedule exists, and `pg_cron` /
+`pg_net` remain disabled. The runtime is ready for controlled validation, not
+activated production automation.
+
+### Worker flow and bounds
+
+`event → dirty generation → claim → full replay → generation-checked finalize`
+
+1. Exactly one `claim_taste_graph_rebuild_jobs(integer)` call, requesting 1–5
+   jobs (default 5). Invalid sizes fail before any claim.
+2. Jobs run concurrently within that bounded batch, each retaining its user,
+   captured generation, lease token and expiry. One failure cannot abort others.
+3. `prepareUserTasteSnapshot` and `persistTasteSnapshotEntities` in
+   `lib/tasteGraphRebuild.ts` are shared with the existing manual rebuild.
+   Full history, decay, toggles, missing-product fallback, product context
+   semantics and fail-closed entity mapping are unchanged. No second algorithm.
+4. Events are read in `(created_at, id)` order, 500 rows per page. Product
+   context and entity upserts use chunks of 200 to avoid URL/response row limits.
+   Supabase's configured API row limit must be **at least 500**.
+5. One explicit `asOf` is injected per invocation. No partial-history snapshot:
+   histories over 50,000 events or snapshots over 20,000 entities fail closed
+   and go through the fail RPC. These conservative safety ceilings require
+   future capacity review; raising them is not an operator CLI option.
+6. Replay work has a 240-second invocation budget, checked between stages and
+   every page/chunk. Each database request is abortable and limited to 15 seconds
+   or the remaining budget, whichever is smaller. Failure reporting has a
+   separate 10-second request budget. Synchronous deterministic replay cannot
+   be interrupted mid-call; the event/entity ceilings bound its input, and a
+   checkpoint afterwards prevents publishing after the budget.
+7. Checkpoints renew a live lease through `renew_taste_graph_rebuild_lease`
+   when at most 90 seconds remain. Renewal retains the captured generation
+   and token; a stale, replaced or expired lease is not overwritten.
+8. Affinities publish **only** through `finalize_taste_graph_rebuild` with
+   complete rows (including `[]` to clear the snapshot), generation, token and
+   duration. The worker never calls `replace_user_taste_affinity_snapshot`
+   directly, never writes the queue table and never advances a generation itself.
+
+### Supersession, retry and blocking
+
+- `stale_generation` from finalize is normal superseded work, not failure.
+  The RPC releases the lease without publishing/acknowledging and refunds that
+  attempt. The newer generation remains dirty for a later invocation.
+- Genuine read/replay/entity/finalize errors call `fail_taste_graph_rebuild`.
+  The RPC schedules exponential backoff: 30, 60, 120, 240, 480, 960, then
+  1800 seconds (cap). On attempt 8 it blocks. A stale failure also releases
+  the superseded lease and refunds the attempt rather than penalizing new work.
+- Crashes/claim response loss leave leases to expire; claim can reclaim them.
+  An expired eighth attempt is blocked by the claim RPC.
+- If failure reporting itself fails (expired/replaced lease, network ambiguity),
+  output includes `failure_unreported` and both errors; CLI exits nonzero.
+  A timed-out finalize may already have committed: do not manually acknowledge,
+  clear a lease, or assume it rolled back. Repeated invocations and the RPC
+  token/generation guards are the recovery mechanism.
+- Blocked jobs need an explicit **service-role operator**
+  `requeue_taste_graph_rebuild(user_id)` after the root cause is fixed. New
+  events do not silently unblock existing failed work.
+
+### Controlled invocation (writes; do not run against production yet)
+
+Requires Node 24+ with native TypeScript stripping. `npm run taste:worker`
+alone prints usage and claims nothing. Only `--run` performs one batch:
+
+```sh
+# Use an isolated/local or staging project, with server-managed environment:
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+npm run taste:worker -- --run --batch-size 5
+```
+
+The CLI does not auto-load Expo dotenv files or accept public/anon keys.
+It requires the legacy JWT credential whose role is `service_role`; opaque
+publishable/secret API keys are intentionally not accepted by this guard.
+JWT decoding is a local misconfiguration guard, not authentication; Supabase
+validates the actual credential and the RPCs enforce service-role grants.
+Never prefix the service-role secret with `EXPO_PUBLIC_`, import the CLI/adapter
+into Expo code, commit secrets, or log credentials. JSON output contains job
+status and replay counts, not event payloads.
+
+### Validation and eventual manual activation
+
+```sh
+npm run taste:freshness-test     # static #37A + offline worker/adapter tests
+npm run taste:freshness-db-test  # disposable PostgreSQL 17 via Docker
+```
+
+The database test starts a uniquely named container with **no network or host
+ports**, applies actual repository migrations on a minimal Supabase substrate,
+exercises real RLS/validated onboarding/queue RPC behavior, then destroys only
+that container. It never consumes a database URL or Supabase credentials.
+Static assertions are not a substitute for this integration test. It does not
+simulate a full Supabase deployment, PostgREST or concurrent database sessions.
+
+After review/merge and separate approval, eventual manual steps are:
+
+1. Apply **only** the new onboarding authority repair migration; never reapply
+   the deployed #37A foundation. Confirm the owner has the same privileges as
+   the existing migration owner and the private schema is not API-exposed.
+2. Validate completion, direct-insert denial, replay output, stale work and
+   lease/retry behavior in staging, including overlapping invocations.
+3. Provision a trusted Node runner with server-only service-role credentials
+   and verify time budgets, API row limits, output monitoring and blocked-job
+   alerts. Existing manual `taste:rebuild --apply` must not race a queued worker:
+   it deliberately uses the unguarded administrative replacement path.
+4. Separately approve any production canary and scheduler/hosting design.
+   No scheduler, extension enablement, deployment or production writes are
+   included in this change.
 
 Product deletion can still cascade-delete product-linked `user_events` under
 the existing foreign key, and product context changes do not automatically
@@ -296,7 +409,7 @@ runs fully offline for deterministic testing.
 | --- | --- | --- |
 | `taste_entities` | `SELECT` only (non-sensitive lookup rows) | full (rebuild writes) |
 | `user_taste_affinities` | `SELECT` own rows only (`auth.uid() = user_id`) | full (rebuild writes via RPC) |
-| `user_events` | insert own behavioral events; explicit like/save/follow events are trigger-only | full |
+| `user_events` | insert own behavioral events; like/save/follow trigger-only; onboarding events RPC-only after #37B repair | full |
 | `taste_graph_rebuild_queue` | no access | worker operations through restricted RPCs |
 
 The `public.replace_user_taste_affinity_snapshot(uuid, jsonb)` function is
@@ -314,8 +427,8 @@ client bundle — it is only used by `scripts/` run locally by an operator.
 
 ## Current limitations
 
-- Rebuild is manual/one-user-at-a-time; no automatic incremental or
-  background processing (deliberately — correctness first).
+- Worker runtime exists but production scheduling/activation is still pending.
+  Replay remains full-history, never incremental.
 - No database trigger recalculates taste on event insert.
 - `search_query` is context-only; no semantic/NLP classification.
 - `last_interaction_at` only reflects taste-contributing events.

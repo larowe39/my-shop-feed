@@ -187,6 +187,53 @@ export function buildAffinityRows(
   return rows;
 }
 
+export async function prepareUserTasteSnapshot(
+  store: Pick<TasteGraphStore, "fetchUserEvents" | "fetchProductContext">,
+  userId: string,
+  asOf: string | Date
+): Promise<TasteSnapshot> {
+  if (!userId || typeof userId !== "string") {
+    throw new Error("prepareUserTasteSnapshot requires a userId");
+  }
+  if (!Number.isFinite(new Date(asOf).getTime())) {
+    throw new Error("prepareUserTasteSnapshot requires a valid asOf timestamp");
+  }
+  const events = await store.fetchUserEvents(userId);
+  const productIds = [
+    ...new Set(
+      events
+        .map((event) => event.product_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    ),
+  ].sort();
+  const productRows =
+    productIds.length > 0 ? await store.fetchProductContext(productIds) : [];
+  return buildTasteSnapshot(events, {
+    asOf,
+    productContext: buildProductContextMap(productRows),
+  });
+}
+
+export async function persistTasteSnapshotEntities(
+  store: Pick<TasteGraphStore, "upsertTasteEntities">,
+  snapshot: TasteSnapshot
+) {
+  const persistedEntities = await store.upsertTasteEntities(
+    snapshot.entities.map((entity) => ({
+      entity_type: entity.entity_type,
+      entity_key: entity.entity_key,
+      display_name: entity.display_name,
+      metadata: { source: "taste_graph_rebuild", version: snapshot.version },
+    }))
+  );
+  return {
+    entitiesUpserted: persistedEntities.length,
+    affinityRows: buildAffinityRows(snapshot, persistedEntities).map(
+      ({ taste_entity_id, row }) => ({ taste_entity_id, ...row })
+    ),
+  };
+}
+
 export async function rebuildUserTasteGraph(
   store: TasteGraphStore,
   userId: string,
@@ -201,46 +248,19 @@ export async function rebuildUserTasteGraph(
     throw new Error("rebuildUserTasteGraph requires a valid asOf timestamp");
   }
 
-  const events = await store.fetchUserEvents(userId);
-  const productIds = [
-    ...new Set(
-      events
-        .map((event) => event.product_id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0)
-    ),
-  ].sort();
-  const productRows =
-    productIds.length > 0 ? await store.fetchProductContext(productIds) : [];
-
-  const snapshot = buildTasteSnapshot(events, {
-    asOf,
-    productContext: buildProductContextMap(productRows),
-  });
+  const snapshot = await prepareUserTasteSnapshot(store, userId, asOf);
 
   let entitiesUpserted = 0;
   let affinitiesUpserted = 0;
   let affinitiesDeleted = 0;
 
   if (apply) {
-    const persistedEntities = await store.upsertTasteEntities(
-      snapshot.entities.map((entity) => ({
-        entity_type: entity.entity_type,
-        entity_key: entity.entity_key,
-        display_name: entity.display_name,
-        metadata: { source: "taste_graph_rebuild", version: snapshot.version },
-      }))
-    );
-    entitiesUpserted = persistedEntities.length;
-
-    // Fail closed: throws if ANY snapshot entity lacks exactly one persisted
-    // id, before any affinity write is attempted.
-    const affinityRows = buildAffinityRows(snapshot, persistedEntities).map(
-      ({ taste_entity_id, row }) => ({
-        user_id: userId,
-        taste_entity_id,
-        ...row,
-      })
-    );
+    const prepared = await persistTasteSnapshotEntities(store, snapshot);
+    entitiesUpserted = prepared.entitiesUpserted;
+    const affinityRows = prepared.affinityRows.map((row) => ({
+      user_id: userId,
+      ...row,
+    }));
 
     // Atomic replacement: a single transactional store call (the
     // replace_user_taste_affinity_snapshot RPC) upserts the new rows and
