@@ -91,8 +91,9 @@ INSERT). It sets only the marker on the NEW user's row, uses
 `set search_path = ''` with schema-qualified objects, swallows errors so
 enrollment can never break signup, and has EXECUTE revoked from
 `public`/`anon`/`authenticated` (only the trigger invokes it). It is the
-migration's **only** SECURITY DEFINER function; the completion RPC stays
-SECURITY INVOKER.
+original migration's **only** SECURITY DEFINER function. The new #37B repair
+adds a narrow SECURITY DEFINER completion wrapper (see below); it does not
+edit or reapply the original migrations.
 
 ## Centralized navigation gate
 
@@ -185,8 +186,7 @@ no direct `user_events` inserts for onboarding.
 
 ### Why the delta comes from the state row
 
-`user_events` is insert-only under RLS, so an invoker-security function
-cannot read it. That is safe because the RPC is the **only** writer of
+`user_events` is insert-only under client RLS. The RPC is the **only** writer of
 onboarding events and updates the state row in the same transaction —
 "events emitted so far" always equals "the last completed row's selections".
 The same delta algorithm is mirrored in pure JS
@@ -203,8 +203,15 @@ The same delta algorithm is mirrored in pure JS
 
 ### RPC security model
 
-- `SECURITY INVOKER` (no `SECURITY DEFINER`): every write runs as the calling
-  user and must pass the existing RLS policies.
+- After applying `20261005_repair_taste_onboarding_event_authority.sql` (#37B),
+  a narrow `SECURITY DEFINER` wrapper calls the **unchanged** validated
+  completion implementation, moved to `taste_graph_private` with client and
+  service-role execution revoked. No client privileges are added.
+- The wrapper checks authenticated own-user identity and serializes same-user
+  completion calls with a transaction-scoped advisory lock. The private
+  implementation retains the eligibility, category, product, minimum and delta
+  checks and runs as the wrapper owner, allowing authoritative event inserts
+  while ordinary clients are denied by `user_events` RLS.
 - `set search_path = ''` and all tables are schema-qualified.
 - Explicit `auth.uid()` checks: one user can never complete, seed events
   for, or modify another user's onboarding (client-side validation is UX
@@ -215,8 +222,15 @@ The same delta algorithm is mirrored in pure JS
 
 ### RLS policies (state table)
 
-`public.user_taste_onboarding`: `select`/`insert`/`update` own-row only
-(`auth.uid() = user_id`), no delete policy, no anon access.
+`public.user_taste_onboarding`: own-row reads; client insert/update only for
+`in_progress` rows with `completed_at IS NULL`. Clients cannot manufacture,
+edit or demote a completed delta base. Existing progress upserts remain valid;
+only the validated RPC publishes completed state. No delete policy or anon access.
+
+The new #37B repair also denies direct inserts of all four authoritative
+onboarding preference events and `onboarding_complete`, while preserving
+ordinary own-user behavioral inserts and the #37A like/save/follow restrictions.
+It does not broaden `user_events` RLS or grant clients event-history reads.
 
 ## Product candidate selection
 
@@ -268,10 +282,12 @@ acquisition/persistence changes.
 - Category affinity from onboarding keys on curated ids (`fashion`), while
   product-derived category affinity keys on the product's free-text category
   (`hoodies`). PR #36 should join them via the curated keyword mapping.
-- Offline tests validate the RPC's and enrollment trigger's SQL/security
-  contract statically and the delta semantics via the pure mirror; real
-  PostgreSQL transactional/RLS/trigger behavior was **not** exercised
-  (migrations are applied manually).
+- Offline tests validate the original migration statically and the pure delta
+  semantics. #37B adds `npm run taste:freshness-db-test`: an isolated Docker
+  PostgreSQL test applying the actual onboarding, #37A and repair migrations,
+  proving direct event denial, legitimate completion/retry/changed-selection
+  behavior, progress protection and queue RPC semantics. It is separate from
+  static regex tests and never connects to production.
 - A signed-in user's gate check adds a brief loading veil on cold start
   while the profile/state fetch settles (by design: no flash of the app for
   required onboarding users).
