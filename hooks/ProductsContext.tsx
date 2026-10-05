@@ -9,7 +9,6 @@ import React, {
   useState,
 } from "react";
 import { useAuth } from "./AuthContext";
-import { trackEvent } from "../lib/analytics";
 import { supabase } from "../lib/supabase";
 import type { ProductModeration } from "../lib/moderation";
 import {
@@ -530,21 +529,6 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           if (insertError) throw insertError;
         }
 
-        const relatedProduct = products.find((p) => p.id === productId);
-        trackEvent({
-          eventType:
-            reaction === "like"
-              ? nextActive
-                ? "product_like"
-                : "product_unlike"
-              : nextActive
-              ? "product_save"
-              : "product_unsave",
-          productId,
-          sellerId: relatedProduct?.user_id ?? null,
-          category: relatedProduct?.category ?? null,
-        });
-
         return "updated";
       } catch (mutationError) {
         console.log(`Error toggling ${reaction}`, mutationError);
@@ -561,7 +545,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         setPending(reaction, productId, false);
       }
     },
-    [loadUserReactions, products, setPending, setReactionActive, user?.id]
+    [loadUserReactions, setPending, setReactionActive, user?.id]
   );
 
   const toggleLike = useCallback(
@@ -621,11 +605,6 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
           if (insertError) throw insertError;
         }
-
-        trackEvent({
-          eventType: nextFollowing ? "seller_follow" : "seller_unfollow",
-          sellerId,
-        });
 
         return "updated";
       } catch (mutationError) {

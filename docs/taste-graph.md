@@ -2,11 +2,14 @@
 
 The Taste Graph turns PENCHANT's append-only behavioral history
 (`public.user_events`) into deterministic, rebuildable user taste affinities.
-This document describes the foundation only — Feed V2, Taste Onboarding, and
-PENCHANT AI build on top of it in later PRs.
+This document describes the foundation plus the durable freshness queue
+foundation (PR #37A). Feed V2 and Taste Onboarding build on it.
 
 ```
 user_events (append-only source of truth)
+    ↓  taste-relevant event increments a per-user dirty generation
+taste_graph_rebuild_queue (derived work state; worker not active yet)
+    ↓  future leased worker performs full replay
     ↓  event → taste signal mapping        (lib/tasteSignals.ts)
 taste_entities                             (public.taste_entities)
     ↓  deterministic replay engine         (lib/tasteGraph.ts)
@@ -23,6 +26,7 @@ future Feed V2 / Search / onboarding / PENCHANT AI
 | Engine | `lib/tasteGraph.ts` | Deterministic replay of one user's event history into a complete replacement snapshot. Pure, dependency-free; never calls `Date.now()` — the reference time is injected as `asOf`. |
 | Rebuild orchestration | `lib/tasteGraphRebuild.ts` | Store-agnostic rebuild pipeline (fetch events → resolve product context → snapshot → persist). Duck-typed `TasteGraphStore` keeps it testable offline. |
 | Rebuild CLI | `scripts/taste-graph-rebuild.js` | Service-role script. Dry-run by default; `--apply` writes. |
+| Freshness queue migration | `supabase/migrations/20261005_add_taste_graph_freshness_foundation.sql` | Transactional dirty generations, preference-state events, and worker-only queue RPCs. Not deployed; no worker or schedule is active. |
 | Inspect CLI | `scripts/taste-graph-inspect.js` | Read-only debug printing of a computed snapshot; supports `--user` and offline `--fixture` modes. |
 | Migration | `supabase/migrations/20261001_add_taste_graph_foundation.sql` | New tables, RLS, and the atomic replacement RPC. Applied manually via the Supabase SQL editor like all migrations in this repo. |
 | Tests | `scripts/test-taste-graph.js` | `npm run taste:test` — fully offline, deterministic. |
@@ -30,6 +34,36 @@ future Feed V2 / Search / onboarding / PENCHANT AI
 `lib/analytics.ts` remains the **only** client-side writer to
 `public.user_events`. The Taste Graph adds no new client write paths:
 affinity state is derived exclusively by the service-side rebuild.
+
+## Automatic freshness foundation (not active)
+
+The raw `public.user_events` table remains the source of truth; the
+`public.taste_graph_rebuild_queue` table is derived work state only. Its
+monotonic `requested_generation` and `processed_generation` identify exactly
+which event history a future full replay must publish. A worker lease token
+prevents an expired or replaced worker from publishing. Finalization must
+validate the captured generation and replace the affinity snapshot in one
+transaction; a replay for generation G is rejected if a newer event has
+advanced the queue.
+
+The new migration records only allowlisted taste events. Like/save/follow
+state transitions create their corresponding `user_events` rows in the same
+database transaction as the authoritative row change. Other behavioral
+analytics remain best-effort. Clients may still insert their own behavioral
+events, but cannot directly manufacture like/save/follow transition events.
+The onboarding RPC's multi-event transaction advances one user's generation
+multiple times while retaining one coalesced queue row. Debounce is 40 seconds
+with a 90-second starvation cap.
+
+This PR adds only the database/queue foundation. The Edge Function worker is
+not implemented, no automatic rebuild is active, the migration is not yet
+deployed, and `pg_cron` / `pg_net` remain disabled. Until a worker is deployed
+and scheduled, the existing manual rebuild path remains the only materializer.
+
+Product deletion can still cascade-delete product-linked `user_events` under
+the existing foreign key, and product context changes do not automatically
+dirty affected users. Historical best-effort events that were never recorded
+cannot be reconstructed from the event log.
 
 ## user_events as the source of truth
 
@@ -262,7 +296,8 @@ runs fully offline for deterministic testing.
 | --- | --- | --- |
 | `taste_entities` | `SELECT` only (non-sensitive lookup rows) | full (rebuild writes) |
 | `user_taste_affinities` | `SELECT` own rows only (`auth.uid() = user_id`) | full (rebuild writes via RPC) |
-| `user_events` | unchanged: insert own only | unchanged |
+| `user_events` | insert own behavioral events; explicit like/save/follow events are trigger-only | full |
+| `taste_graph_rebuild_queue` | no access | worker operations through restricted RPCs |
 
 The `public.replace_user_taste_affinity_snapshot(uuid, jsonb)` function is
 `SECURITY INVOKER` with `set search_path = ''` and fully schema-qualified
