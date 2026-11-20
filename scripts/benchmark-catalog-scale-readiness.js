@@ -207,7 +207,13 @@ async function runWorkload(acquisition, count, canonicalSize, apply = false) {
   assert.strictEqual(result.persistence.length, apply ? 3 : 0);
   if (!apply) assert.strictEqual(result.executionMode, "dry-run");
   if (apply) {
-    assert.deepStrictEqual(store.calls, { upsertSource: 1, createImportRun: 1, updateImportRun: 1, countStagedCandidatesByRun: 1, upsertStagedCandidates: result.pages });
+    assert.deepStrictEqual(store.calls, {
+      upsertSource: 1,
+      createImportRun: 1,
+      updateImportRun: result.pages * 2 + 1,
+      countStagedCandidatesByRun: result.pages + 1,
+      upsertStagedCandidates: result.pages,
+    }, "apply persistence must account each discovery page before acknowledgment and reconcile once at finalization");
     assert.strictEqual(store.batches.productWriteBatches, result.pages);
     assert.strictEqual(store.batches.aliasWriteBatches, result.pages);
   }

@@ -2,6 +2,7 @@
 const assert = require("assert");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 
 function makeId(prefix) {
   const crypto = require("crypto");
@@ -9,7 +10,9 @@ function makeId(prefix) {
 }
 
 async function main() {
-  const ledgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.test.json");
+  const testLedgerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "catalog-acquisition-test-"));
+  const testLedgerPath = (name) => path.join(testLedgerDirectory, name);
+  const ledgerPath = testLedgerPath("catalog-staging-ledger.test.json");
   process.env.CATALOG_STAGING_LEDGER_PATH = ledgerPath;
   // Ensure the Supabase fail-closed test below actually has no credentials,
   // regardless of what a developer's local .env.local happens to contain.
@@ -450,7 +453,7 @@ async function main() {
   // ---------------------------------------------------------------------
   // 7. Duplicate/conflict recheck immediately before promotion + failure safety
   // ---------------------------------------------------------------------
-  const conflictLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.conflict-test.json");
+  const conflictLedgerPath = testLedgerPath("catalog-staging-ledger.conflict-test.json");
   const conflictStore = new LocalStagingStore(conflictLedgerPath);
   conflictStore.reset();
   const conflictRun = await acquireFromRecords(
@@ -478,7 +481,7 @@ async function main() {
   // ---------------------------------------------------------------------
   // 8. Ambiguous/unresolved canonical hierarchy -> leave unpromoted
   // ---------------------------------------------------------------------
-  const unresolvedLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.unresolved-test.json");
+  const unresolvedLedgerPath = testLedgerPath("catalog-staging-ledger.unresolved-test.json");
   const unresolvedStore = new LocalStagingStore(unresolvedLedgerPath);
   unresolvedStore.reset();
   const unresolvedRun = await acquireFromRecords(
@@ -496,7 +499,7 @@ async function main() {
   assert.strictEqual(unresolvedEntry.ok, false);
   assert.match(unresolvedEntry.message, /Human review required|does not exist/);
 
-  const hierarchyLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.hierarchy-test.json");
+  const hierarchyLedgerPath = testLedgerPath("catalog-staging-ledger.hierarchy-test.json");
   const hierarchyStore = new LocalStagingStore(hierarchyLedgerPath);
   hierarchyStore.reset();
   const hierarchyRun = await acquireFromRecords(
@@ -519,7 +522,7 @@ async function main() {
   assert.strictEqual(hierarchyEntry.ok, false, "family belonging to another brand must block promotion");
   assert.strictEqual((await hierarchyStore.getStagedCandidateById(hierarchyId)).status, "approved");
 
-  const unresolvedHierarchyLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-staging-ledger.unresolved-hierarchy-test.json");
+  const unresolvedHierarchyLedgerPath = testLedgerPath("catalog-staging-ledger.unresolved-hierarchy-test.json");
   const unresolvedHierarchyStore = new LocalStagingStore(unresolvedHierarchyLedgerPath);
   unresolvedHierarchyStore.reset();
   const unresolvedHierarchyRun = await acquireFromRecords(
@@ -552,14 +555,28 @@ async function main() {
       from(table) {
         recordedCalls.push(table);
         return {
-          upsert(rows) {
+          upsert(rows, options) {
             if (table === "catalog_sources") {
               return {
                 select: () => ({ single: async () => ({ data: sourceRow, error: null }) }),
               };
             }
             if (table === "catalog_staged_products") {
-              const inserted = (Array.isArray(rows) ? rows : [rows]).map((row) => {
+              const inputRows = Array.isArray(rows) ? rows : [rows];
+              const conflictKeys = new Set();
+              for (const row of inputRows) {
+                const key = `${row.import_run_id}\u0000${row.fingerprint}`;
+                if (conflictKeys.has(key)) {
+                  return { select: () => Promise.resolve({ data: null, error: { message: "ON CONFLICT DO UPDATE command cannot affect row a second time" } }) };
+                }
+                conflictKeys.add(key);
+              }
+              const inserted = inputRows.map((row) => {
+                const existing = [...stagedRowsById.values()].find((stored) => stored.import_run_id === row.import_run_id && stored.fingerprint === row.fingerprint);
+                if (existing) {
+                  Object.assign(existing, row);
+                  return { id: existing.id, fingerprint: row.fingerprint };
+                }
                 stagedSeq += 1;
                 const id = `supabase-staged-${stagedSeq}`;
                 stagedRowsById.set(id, { id, ...row, status: row.status ?? "pending" });
@@ -593,28 +610,40 @@ async function main() {
                 }),
               };
             }
-            return { eq: () => ({ select: () => ({ single: async () => ({ data: null, error: null }) }) }) };
-          },
-          select(_columns, options) {
-            if (table === "catalog_staged_aliases") {
+            if (table === "catalog_staged_products") {
               return {
-                in: async (_column, ids) => ({ data: stagedAliasRows.filter((row) => ids.includes(row.staged_product_id)), error: null }),
-              };
-            }
-            if (table === "catalog_staged_products" && options?.head) {
-              return {
-                eq: async (_column, value) => ({
-                  count: [...stagedRowsById.values()].filter((row) => row.import_run_id === value).length,
-                  error: null,
+                eq: (_column, value) => ({
+                  select: () => ({
+                    maybeSingle: async () => {
+                      const stored = stagedRowsById.get(value);
+                      if (stored) Object.assign(stored, row);
+                      return { data: stored ?? null, error: null };
+                    },
+                  }),
                 }),
               };
             }
-            return {
-              range: async () => ({ data: [...stagedRowsById.values()], error: null }),
-              eq: (_column, value) => ({
-                maybeSingle: async () => ({ data: stagedRowsById.get(value) ?? null, error: null }),
-              }),
+            return { eq: () => ({ select: () => ({ single: async () => ({ data: null, error: null }) }) }) };
+          },
+          select(_columns, options) {
+            const filters = [];
+            const tableRows = () => table === "catalog_staged_aliases" ? stagedAliasRows : [...stagedRowsById.values()];
+            const filteredRows = () => tableRows().filter((row) => filters.every(({ column, kind, value }) => {
+              if (kind === "eq") return row[column] === value;
+              return value.includes(row[column]);
+            }));
+            const query = {
+              eq(column, value) { filters.push({ column, kind: "eq", value }); return query; },
+              in(column, value) { filters.push({ column, kind: "in", value }); return query; },
+              range: async () => ({ data: filteredRows(), error: null }),
+              maybeSingle: async () => ({ data: filteredRows()[0] ?? null, error: null }),
+              order: async () => ({ data: filteredRows(), error: null }),
+              then(resolve, reject) {
+                const result = options?.head ? { count: filteredRows().length, error: null } : { data: filteredRows(), error: null };
+                return Promise.resolve(result).then(resolve, reject);
+              },
             };
+            return query;
           },
         };
       },
@@ -635,6 +664,22 @@ async function main() {
   assert.ok(recordedCalls.includes("catalog_staged_products"), "Supabase apply path must call catalog_staged_products");
   assert.ok(supabaseRun.persistence.every((entry) => entry.startsWith("supabase:")));
   assert.strictEqual(await supabaseStagingStore.countStagedCandidatesByRun(supabaseRun.runId), 1, "Supabase STAGED reconciliation must use a run-scoped persisted count");
+
+  const supabaseCandidate = supabaseRun.staged[0];
+  const supabaseDuplicateResult = await supabaseStagingStore.upsertStagedCandidates([
+    supabaseCandidate,
+    { ...supabaseCandidate, aliases: [...supabaseCandidate.aliases].reverse(), id: "duplicate-supabase-id" },
+  ]);
+  assert.strictEqual(supabaseDuplicateResult.length, 1, "Supabase upsert must deduplicate exact/reordered identities before SQL");
+  assert.strictEqual(await supabaseStagingStore.countStagedCandidatesByRun(supabaseRun.runId), 1);
+  await supabaseStagingStore.updateCandidateStatus(supabaseCandidate.id, "needs_review");
+  const preservedSupabaseRetry = await supabaseStagingStore.upsertStagedCandidates([supabaseCandidate]);
+  assert.strictEqual(preservedSupabaseRetry[0].status, "needs_review", "Supabase retry must not downgrade review state");
+  await supabaseStagingStore.updateCandidateStatus(supabaseCandidate.id, "approved", "human-reviewed");
+  await assert.rejects(() => supabaseStagingStore.upsertStagedCandidates([supabaseCandidate]), /protected human review or promotion state/);
+  const protectedSupabaseRow = await supabaseStagingStore.getStagedCandidateById(supabaseCandidate.id);
+  assert.strictEqual(protectedSupabaseRow.status, "approved");
+  assert.strictEqual(protectedSupabaseRow.reviewNotes, "human-reviewed");
 
   // ---------------------------------------------------------------------
   // 9b. Alias-propagation regression (PR #21 production smoke-test bug):
@@ -699,7 +744,7 @@ async function main() {
   // ---------------------------------------------------------------------
   // 10. Paging/run isolation for >500-row and >1000-row staging datasets.
   // ---------------------------------------------------------------------
-  const paginationLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-pagination.test.json");
+  const paginationLedgerPath = testLedgerPath("catalog-run-pagination.test.json");
   const paginationStore = new LocalStagingStore(paginationLedgerPath);
   paginationStore.reset();
   const paginationRows = Array.from({ length: 1200 }, (_, index) => ({
@@ -727,7 +772,7 @@ async function main() {
   // ---------------------------------------------------------------------
   // 11. Run-scoped reporting must remain isolated to the selected import run.
   // ---------------------------------------------------------------------
-  const reportLedgerPath = path.join(__dirname, "..", ".catalog-staging", "catalog-run-report.test.json");
+  const reportLedgerPath = testLedgerPath("catalog-run-report.test.json");
   const reportStore = new LocalStagingStore(reportLedgerPath);
   reportStore.reset();
 
@@ -805,7 +850,7 @@ async function main() {
   const explicitLocal = resolveStagingStore({ backend: "local" });
   assert.strictEqual(explicitLocal.kind, "local");
 
-  const multiPageLedgerPaths = [100, 101].map((total) => path.join(__dirname, "..", ".catalog-staging", `catalog-run-multipage-${total}.json`));
+  const multiPageLedgerPaths = [100, 101].map((total) => testLedgerPath(`catalog-run-multipage-${total}.json`));
   const makeDiscoveryProvider = (total) => ({
     capabilities: { lookup: false, discovery: true },
     getSourceMetadata: () => ({ name: `multi-page-source-${total}`, type: "external-provider", baseUrl: "https://example.test", metadata: {} }),
@@ -898,6 +943,7 @@ async function main() {
   for (const p of [conflictLedgerPath, unresolvedLedgerPath, hierarchyLedgerPath, unresolvedHierarchyLedgerPath, reportLedgerPath, ...multiPageLedgerPaths]) {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
+  fs.rmSync(testLedgerDirectory, { recursive: true, force: true });
   console.log("Catalog acquisition tests passed.");
 }
 

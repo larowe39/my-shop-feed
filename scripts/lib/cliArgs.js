@@ -10,4 +10,17 @@ function getFlagValue(args, flagName) {
   return null;
 }
 
-module.exports = { getFlagValue };
+function parseBoundedApplyLimit(args) {
+  const explicit = args.some((arg) => arg === "--limit" || arg.startsWith("--limit="));
+  const raw = getFlagValue(args, "--limit");
+  if (!explicit || raw === null || raw.trim() === "" || !/^\d+$/.test(raw)) {
+    throw new Error("Refusing apply: provide an explicit integer --limit between 1 and 100.");
+  }
+  const limit = Number(raw);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("Refusing apply: provide an explicit integer --limit between 1 and 100.");
+  }
+  return limit;
+}
+
+module.exports = { getFlagValue, parseBoundedApplyLimit };

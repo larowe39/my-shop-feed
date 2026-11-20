@@ -47,6 +47,7 @@ Detail attempts now reconcile into explicit categories:
 
 - usable successful detail;
 - failed detail request;
+- invalid detail normalization;
 - filtered/nonusable successful detail;
 - successful speculative completion beyond the usable frontier;
 - cancelled detail request.
@@ -218,6 +219,8 @@ Recommended future live dry-run settings remain:
 
 Page size 25 keeps replay/failure scope small and stays well within the repaired provider bound. Larger pages reduce page/update overhead but increase replay and persistence failure scope. Smaller pages improve granularity but increase acknowledgment and database overhead. Concurrency is not a request-rate limiter and should not exceed 3 for the first live 1K dry-run.
 
+The apply counting-store models product and alias statement batches within each discovery page. Pending page accounting is written before acknowledgment; cumulative counters/cursor are written after acknowledgment, followed by one final count and completed-status update. That is two run-summary updates per page and one final update; staged counts are reconciled per page and once at finalization. The 200/500 values are maximum rows per SQL statement, not a 200-product persistence or acknowledgment boundary.
+
 ## Apply Blockers Deferred
 
 The following are real but safe to defer until apply/unattended ingestion work. They do not block a no-write 1K dry-run after the provider repair:
@@ -245,11 +248,12 @@ Final terminology:
 
 - `Usable successful details`
 - `Failed detail requests`
+- `Invalid detail normalizations`
 - `Filtered/nonusable successful details`
 - `Successful speculative completions beyond usable frontier`
 - `Cancelled detail requests`
 
-Actual provider failures remain distinguishable from filtered/speculative/cancelled outcomes and from aggregate `Provider errors`.
+Actual provider failures remain distinguishable from invalid detail normalization, filtered/speculative/cancelled outcomes, and aggregate `Provider errors`.
 
 ## Advisory Gates
 
@@ -261,7 +265,7 @@ Actual provider failures remain distinguishable from filtered/speculative/cancel
 | Matcher equivalence | PASS | Existing matcher equivalence and 6,000-case differential suites pass. |
 | Matcher/index boundedness | REVIEW | One index is reused, but canonical-size cost grows as documented. |
 | Taxonomy query behavior | PASS | Reads scale with unique IDs via the run-scoped cache. |
-| Database batch behavior | PASS for dry-run readiness | Counting-store apply model is batched; apply blockers remain deferred. |
+| Database batch behavior | PASS for dry-run readiness | Counting-store models page-by-page accounting and product/alias statement batches; SQL statement caps are not page boundaries. |
 | Memory boundedness | REVIEW | Provider queue is bounded; raw payloads, pageStates, staged candidates, and metric records need redesign before 100K. |
 | Telemetry reconciliation | PASS | Detail outcome categories reconcile to attempts. |
 | Dry-run safety | PASS | Dry-run remains zero store calls/writes. |

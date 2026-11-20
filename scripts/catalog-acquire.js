@@ -24,6 +24,9 @@ function parseArgs() {
 
 async function main() {
   const args = parseArgs();
+  if (args.apply) {
+    throw new Error("Refusing apply: file/lookup acquisition is disabled; use the bounded Open Icecat --discover apply workflow.");
+  }
   const acquisition = await import("../lib/catalogAcquisition.ts");
   const { acquireFromRecords, parseJsonAdapterRecords, parseCsvAdapterRecords, printAcquisitionSummary } = acquisition;
 

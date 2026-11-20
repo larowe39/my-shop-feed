@@ -56,6 +56,7 @@ export type IcecatDiscoveryMetrics = {
   enrichmentAttempts: number;
   usableSuccessfulDetails: number;
   failedDetailRequests: number;
+  invalidDetails: number;
   filteredSuccessfulDetails: number;
   successfulSpeculativeCompletions: number;
   cancelledDetailRequests: number;
@@ -99,6 +100,7 @@ export type DiscoveryContinuation = {
 
 export type ProviderDiscoveryPage<TRaw> = {
   records: TRaw[];
+  invalidRecords?: Array<{ record: TRaw; errors: string[] }>;
   nextCursor: string | null;
   done: boolean;
   errors: ProviderFetchError[];
@@ -863,7 +865,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let currentCountryMarkets: string[] = [];
       let currentAlternateMpns: Array<{ value: string; supplierId: string | null; supplierName: string | null }> = [];
       let candidateRecords: IcecatIndexRecord[] = [];
-      type EnrichmentOutcome = { position: number; indexRecord: IcecatIndexRecord; record?: IcecatIndexRecord; error?: unknown };
+      type EnrichmentOutcome = { position: number; indexRecord: IcecatIndexRecord; record?: IcecatIndexRecord; error?: unknown; invalid?: unknown };
       const activeEnrichments = new Map<number, Promise<EnrichmentOutcome>>();
       const completedEnrichments = new Map<number, EnrichmentOutcome>();
       let nextCommitPosition: number | null = null;
@@ -876,6 +878,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let detailLatencyTotalMs = 0;
       let usableSuccessfulDetails = 0;
       let failedDetailRequests = 0;
+      let invalidDetails = 0;
       let filteredSuccessfulDetails = 0;
       let successfulSpeculativeCompletions = 0;
       let cancelledDetailRequests = 0;
@@ -887,6 +890,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       let lastDetailSettledAt: number | null = null;
       let speculativeCancellationCount = 0;
       let page: IcecatIndexRecord[] = [];
+      let pageInvalidRecords: Array<{ record: IcecatIndexRecord; errors: string[] }> = [];
       let pageErrors: ProviderFetchError[] = [];
       let readyPages: ProviderDiscoveryPage<IcecatIndexRecord>[] = [];
       let emittedCount = 0;
@@ -925,6 +929,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         enrichmentAttempts,
         usableSuccessfulDetails,
         failedDetailRequests,
+        invalidDetails,
         filteredSuccessfulDetails,
         successfulSpeculativeCompletions,
         cancelledDetailRequests,
@@ -949,10 +954,13 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       });
 
       const flushPage = () => {
-        if (!page.length && !pageErrors.length) return null;
+        if (!page.length && !pageInvalidRecords.length && !pageErrors.length) return null;
         const currentPage = page.slice();
+        const currentInvalidRecords = pageInvalidRecords.slice();
         const currentErrors = pageErrors.slice();
-        const lastRecord = currentPage[currentPage.length - 1];
+        const lastRecord = [...currentPage, ...currentInvalidRecords.map((entry) => entry.record)]
+          .sort((left, right) => (left.encounterPosition ?? 0) - (right.encounterPosition ?? 0))
+          .at(-1);
         if (lastRecord?.encounterPosition) emittedPosition = lastRecord.encounterPosition;
         const pageSequence = nextPageSequence++;
         const continuation = lastRecord ? {
@@ -972,10 +980,12 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         } satisfies DiscoveryContinuation : null;
         const emittedCursor = continuation ? encodeIcecatDiscoveryCursor(continuation) : null;
         page = [];
+        pageInvalidRecords = [];
         pageErrors = [];
         emittedCount += currentPage.length;
         const nextPage: ProviderDiscoveryPage<IcecatIndexRecord> = {
           records: currentPage,
+          invalidRecords: currentInvalidRecords,
           nextCursor: null,
           done: limit > 0 && emittedCount >= limit,
           errors: currentErrors,
@@ -1028,6 +1038,7 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
         if (!bodyStream.destroyed) bodyStream.destroy();
         for (const outcome of completedEnrichments.values()) {
           if (outcome.error) failedDetailRequests += 1;
+          else if (outcome.invalid) invalidDetails += 1;
           else if (!outcome.record || !matchesDiscoveryFilter(outcome.record, options)) filteredSuccessfulDetails += 1;
           else successfulSpeculativeCompletions += 1;
         }
@@ -1189,6 +1200,15 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
           if (page.length + pageErrors.length >= pageSize) flushPage();
           return;
         }
+        if (outcome.invalid) {
+          invalidDetails += 1;
+          pageInvalidRecords.push({
+            record: outcome.indexRecord,
+            errors: [`Icecat product normalization failed: ${outcome.invalid instanceof Error ? outcome.invalid.message : String(outcome.invalid)}`],
+          });
+          if (page.length + pageInvalidRecords.length + pageErrors.length >= pageSize) flushPage();
+          return;
+        }
         if (!outcome.record || !matchesDiscoveryFilter(outcome.record, options)) {
           filteredSuccessfulDetails += 1;
           return;
@@ -1212,17 +1232,27 @@ export class OpenIcecatProvider implements CatalogProvider<IcecatProduct | Iceca
       const enrichOne = async (indexRecord: IcecatIndexRecord): Promise<EnrichmentOutcome> => {
         enrichmentAttempts += 1;
         options.diagnostics?.onEnrichmentAttempt?.();
+        let detailXml: string;
         try {
-          const detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000, controller.signal);
-          const detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
-          if (detail.sourceExternalId !== indexRecord.sourceExternalId) throw new Error(`Icecat enrichment identity mismatch: index Product_ID ${indexRecord.sourceExternalId} does not match product ID ${detail.sourceExternalId}`);
-          if (indexRecord.mpn && detail.mpn && indexRecord.mpn !== detail.mpn) throw new Error(`Icecat enrichment MPN mismatch: index Prod_ID ${indexRecord.mpn} does not match product Prod_id ${detail.mpn}`);
-          return { position: indexRecord.encounterPosition!, indexRecord, record: { ...indexRecord, brand: detail.brand, productName: detail.productName, modelNumber: detail.modelNumber ?? indexRecord.modelNumber, mpn: detail.mpn ?? indexRecord.mpn, gtin: detail.gtin ?? indexRecord.gtin, imageUrl: detail.imageUrl ?? indexRecord.imageUrl, raw: { ...indexRecord.raw, indexProductId: indexRecord.sourceExternalId, detailProductId: detail.sourceExternalId, indexMpn: indexRecord.mpn, detailMpn: detail.mpn, enrichedProduct: detail.raw } } };
+          detailXml = await fetchWithTimeout(this.config.fetcher, indexRecord.sourceUrl!, { ...headers, Accept: "application/xml" }, 15000, controller.signal);
         } catch (error) {
           if (options.signal?.aborted) throw options.signal.reason ?? error;
           if (controller.signal.aborted) return { position: indexRecord.encounterPosition!, indexRecord, error };
           return { position: indexRecord.encounterPosition!, indexRecord, error };
         }
+        let detail: CatalogCandidateInput;
+        try {
+          detail = normalizeIcecatProduct(parseIcecatXml(detailXml), this.config.taxonomy ?? DEFAULT_ICECAT_TAXONOMY);
+        } catch (invalid) {
+          return { position: indexRecord.encounterPosition!, indexRecord, invalid };
+        }
+        if (detail.sourceExternalId !== indexRecord.sourceExternalId) {
+          return { position: indexRecord.encounterPosition!, indexRecord, error: new Error(`Icecat enrichment identity mismatch: index Product_ID ${indexRecord.sourceExternalId} does not match product ID ${detail.sourceExternalId}`) };
+        }
+        if (indexRecord.mpn && detail.mpn && indexRecord.mpn !== detail.mpn) {
+          return { position: indexRecord.encounterPosition!, indexRecord, error: new Error(`Icecat enrichment MPN mismatch: index Prod_ID ${indexRecord.mpn} does not match product Prod_id ${detail.mpn}`) };
+        }
+        return { position: indexRecord.encounterPosition!, indexRecord, record: { ...indexRecord, brand: detail.brand, productName: detail.productName, modelNumber: detail.modelNumber ?? indexRecord.modelNumber, mpn: detail.mpn ?? indexRecord.mpn, gtin: detail.gtin ?? indexRecord.gtin, imageUrl: detail.imageUrl ?? indexRecord.imageUrl, raw: { ...indexRecord.raw, indexProductId: indexRecord.sourceExternalId, detailProductId: detail.sourceExternalId, indexMpn: indexRecord.mpn, detailMpn: detail.mpn, enrichedProduct: detail.raw } } };
       };
 
       const admitCandidates = () => {

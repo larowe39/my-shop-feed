@@ -573,6 +573,32 @@ async function testMalformedDiscoveryRecord(OpenIcecatProvider) {
   assert.strictEqual(pages.flatMap((page) => page.records).length, 1);
   assert.strictEqual(pages.flatMap((page) => page.errors).length, 1);
   assert.match(pages[0].errors[0].message, /missing Product_ID, Model_Name\/Prod_ID, or product XML path/);
+
+  const detailIndex = '<ICECAT-interface><files.index><file path="export/freexml/INT/777.xml" Product_ID="777" Prod_ID="MPN-777" Model_Name="Model 777"/></files.index></ICECAT-interface>';
+  const detailProvider = new OpenIcecatProvider({
+    username: "u",
+    password: "p",
+    fetcher: async (url) => String(url).endsWith(".index.xml.gz")
+      ? new Response(detailIndex, { headers: { etag: "invalid-detail-snapshot" } })
+      : new Response('<ICECAT-interface><Product ID="777" Name="Model 777" Prod_id="MPN-777"/></ICECAT-interface>'),
+  });
+  let invalidDetailMetrics;
+  for await (const page of detailProvider.discoverProducts({
+    limit: 1,
+    pageSize: 1,
+    diagnostics: { onMetrics: (metrics) => { invalidDetailMetrics = metrics; } },
+  })) {
+    assert.strictEqual(page.records.length, 0);
+    assert.strictEqual(page.errors.length, 0, "detail normalization must not be counted as a provider transport error");
+    assert.strictEqual(page.invalidRecords.length, 1);
+    assert.strictEqual(page.invalidRecords[0].record.sourceExternalId, "777");
+    assert.match(page.invalidRecords[0].errors[0], /normalization failed.*explicit Supplier/);
+    page.acknowledge();
+    assert.ok(String(page.checkpoint.acknowledgedCursor).startsWith("ic2."), "invalid detail may advance only through an acknowledgeable accounted page");
+  }
+  assert.strictEqual(invalidDetailMetrics.invalidDetails, 1);
+  assert.strictEqual(invalidDetailMetrics.failedDetailRequests, 0);
+  assertOutcomeReconciliation(invalidDetailMetrics);
   console.log("testMalformedDiscoveryRecord passed.");
 }
 
@@ -868,7 +894,7 @@ function denseDetailXml(id, brand = "Dense Brand") {
 }
 
 function assertOutcomeReconciliation(metrics) {
-  const total = metrics.usableSuccessfulDetails + metrics.failedDetailRequests + metrics.filteredSuccessfulDetails + metrics.successfulSpeculativeCompletions + metrics.cancelledDetailRequests;
+  const total = metrics.usableSuccessfulDetails + metrics.failedDetailRequests + metrics.invalidDetails + metrics.filteredSuccessfulDetails + metrics.successfulSpeculativeCompletions + metrics.cancelledDetailRequests;
   assert.strictEqual(total, metrics.enrichmentAttempts, `detail outcomes must reconcile to attempts: ${JSON.stringify(metrics)}`);
 }
 
