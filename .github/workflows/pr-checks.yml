@@ -1,0 +1,49 @@
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPO_NO_DOTENV: '1'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Offline catalog checks
+        run: |
+          npm run catalog:validate
+          npm run catalog:test
+          npm run catalog:matcher-test
+          npm run catalog:matcher-equivalence-test
+          npm run catalog:matcher-differential-test
+
+      - name: Offline Taste Graph checks
+        run: |
+          npm run taste:test
+          npm run taste:onboarding-test
+          npm run taste:freshness-test
+          npm run taste:for-you-test
