@@ -4,7 +4,9 @@ The Taste Graph turns PENCHANT's append-only behavioral history
 (`public.user_events`) into deterministic, rebuildable user taste affinities.
 This document describes the foundation, the deployed durable freshness queue
 (PR #37A), and the worker runtime implementation (PR #37B).
-Feed V2 and Taste Onboarding build on it. Production activation is NOT enabled.
+Feed V2 and Taste Onboarding build on it. The
+[GitHub Actions scheduler](./taste-graph-freshness-scheduler.md) adds production
+automation on merge to `main`; opening its draft PR does not activate it.
 
 ```
 user_events (append-only source of truth)
@@ -178,9 +180,11 @@ After review/merge and separate approval, eventual manual steps are:
    and verify time budgets, API row limits, output monitoring and blocked-job
    alerts. Existing manual `taste:rebuild --apply` must not race a queued worker:
    it deliberately uses the unguarded administrative replacement path.
-4. Separately approve any production canary and scheduler/hosting design.
-   No scheduler, extension enablement, deployment or production writes are
-   included in this change.
+4. Separately approve production activation before merging the
+   [scheduler workflow](./taste-graph-freshness-scheduler.md). It schedules one
+   bounded batch every five minutes on `main`; its draft PR does not run the
+   worker. No extension enablement or production writes are performed while
+   implementing or validating the scheduler.
 
 Product deletion can still cascade-delete product-linked `user_events` under
 the existing foreign key, and product context changes do not automatically
